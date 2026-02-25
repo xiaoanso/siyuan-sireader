@@ -13,7 +13,7 @@ export interface Book {
   title: string;      // 书名
   author: string;     // 作者
   cover: string;      // 封面URL
-  format: string;     // 格式(epub/pdf/mobi/azw3/txt)
+  format: string;     // 格式(epub/pdf/mobi/azw3)
   path: string;       // 文件路径
   size: number;       // 文件大小(字节)
   added: number;      // 添加时间戳
@@ -53,10 +53,10 @@ export interface Annotation {
   block: string;      // 思源块ID
   
   // 便捷访问器（从 data 中读取）
-  format?: 'pdf' | 'epub' | 'txt';
+  format?: 'pdf' | 'epub';
   page?: number;      // PDF 页码
   cfi?: string;       // EPUB CFI
-  section?: number;   // TXT 章节
+  section?: number;   // 章节索引（在线书籍）
   rects?: any[];      // PDF 矩形区域
   style?: string;     // 标注样式
   shapeType?: string; // 形状类型
@@ -67,7 +67,7 @@ export interface Annotation {
 // ==================== 数据库 ====================
 
 let sqlJs: any;
-const getSql = async () => sqlJs || (sqlJs = await initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/${f}` }));
+const getSql = async () => sqlJs || (sqlJs = await initSqlJs({ locateFile: f => `/plugins/siyuan-sireader/sql.js/${f}` }));
 
 export class ReaderDatabase {
   private db: any;
@@ -310,7 +310,7 @@ export class ReaderDatabase {
     statusR[0]?.values.forEach((v: any) => { byStatus[v[0]] = v[1]; });
 
     const formatR = this.db.exec('SELECT format, COUNT(*) as cnt FROM books GROUP BY format');
-    const byFormat: Record<string, number> = { epub: 0, pdf: 0, mobi: 0, azw3: 0, txt: 0 };
+    const byFormat: Record<string, number> = { epub: 0, pdf: 0, mobi: 0, azw3: 0, online: 0 };
     formatR[0]?.values.forEach((v: any) => { byFormat[v[0]] = v[1]; });
 
     const updateR = this.db.exec("SELECT COUNT(*) FROM books WHERE json_extract(source, '$.updateCount') > 0");

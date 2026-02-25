@@ -15,7 +15,7 @@ export const copyMark=async(item:any,ctx:{bookUrl:string;bookInfo?:any;settings?
   const copy=(t:string,msg='已复制')=>navigator.clipboard.writeText(t).then(()=>showMsg(msg))
   if(!bookUrl||bookUrl.startsWith('file://'))return copy(item.text||item.note||'','本地文件仅复制文本')
   const isPdf=!!pdfViewer
-  const page=item.page||(isPdf?pdfViewer.getCurrentPage():null),cfi=item.cfi||(isPdf&&page?`#page-${page}`:item.section!==undefined?`#txt-${item.section}-${item.textOffset||0}`:'')
+  const page=item.page||(isPdf?pdfViewer.getCurrentPage():null),cfi=item.cfi||(isPdf&&page?`#page-${page}`:'')
   if(!cfi)return copy(item.text||item.note||'','仅复制文本')
   const{formatBookLink}=await import('@/composables/useSetting'),{formatAuthor}=await import('@/core/MarkManager'),book=reader?.getBook?.()
   let img=''

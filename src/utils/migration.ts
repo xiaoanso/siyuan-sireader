@@ -68,8 +68,6 @@ async function migrateBook(bookIndex: any, bookData: any) {
       if (mark.rects) annData.rects = mark.rects;
     } else if (data.format === 'epub' && mark.cfi) {
       annData.cfi = mark.cfi;
-    } else if (data.format === 'txt' && mark.section !== undefined) {
-      annData.section = mark.section;
     }
     if (mark.style) annData.style = mark.style;
     if (mark.shapeType) annData.shapeType = mark.shapeType;
@@ -146,8 +144,8 @@ async function migrateBook(bookIndex: any, bookData: any) {
     });
   });
   
-  // TXT 书签
-  data.txtBookmarks?.forEach((bm: any) => {
+  // EPUB 书签
+  data.epubBookmarks?.forEach((bm: any) => {
     annotations.push({
       id: `bookmark-section-${bm.section}-${bm.time}`,
       book: bookIndex.bookUrl,
@@ -156,7 +154,7 @@ async function migrateBook(bookIndex: any, bookData: any) {
       text: bm.title || '',
       note: '',
       color: '#2196f3',
-      data: { format: 'txt', section: bm.section, title: bm.title || '' },
+      data: { format: 'epub', section: bm.section, title: bm.title || '' },
       created: bm.time || now,
       updated: bm.time || now,
       chapter: bm.title || '',
@@ -308,7 +306,7 @@ function isWhitelisted(filePath: string): boolean {
   // 白名单规则
   const rules = [
     /^deck-data\.db$/,                                    // 卡包数据库
-    /^books\/[^/]+\.(epub|pdf|txt)$/,                    // 书籍文件
+    /^books\/[^/]+\.(epub|pdf)$/,                    // 书籍文件
     /^books\/[^/]+\.(jpg|jpeg|png|webp|gif)$/,           // 封面图片
     /^anki\/[^/]+\/collection\.anki21$/,                 // Anki集合数据库
     /^anki\/[^/]+\/source\.apkg$/,                       // Anki源文件

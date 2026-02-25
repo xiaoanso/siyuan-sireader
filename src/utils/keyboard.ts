@@ -49,28 +49,15 @@ export const createKeyboardHandler = (handlers: KeyboardHandlers, isPdfMode: () 
   }
 }
 
-// 为 iframe 添加键盘监听（EPUB/TXT）
-const setupIframeKeyboard = (doc: Document, handler: (e: KeyboardEvent) => void) => {
-  doc.addEventListener('keydown', handler)
-  doc.body?.setAttribute('tabindex', '0')
-}
-
 // EPUB 键盘监听初始化
 export const setupEpubKeyboard = (reader: any, handler: (e: KeyboardEvent) => void, onMouseup?: (doc: Document, e: MouseEvent) => void) => {
-  reader.on('load', ({doc}: any) => {
-    onMouseup && doc?.addEventListener?.('mouseup', (e: MouseEvent) => onMouseup(doc, e))
-    setupIframeKeyboard(doc, handler)
-  })
-  setTimeout(() => reader.getView().renderer?.getContents?.()?.forEach(({doc}: any) => {
-    onMouseup && doc?.addEventListener?.('mouseup', (e: MouseEvent) => onMouseup(doc, e))
-    setupIframeKeyboard(doc, handler)
-  }), 500)
-}
-
-// TXT 键盘监听初始化
-export const setupTxtKeyboard = (view: any, handler: (e: KeyboardEvent) => void) => {
-  setTimeout(() => {
-    const iframe = view.iframe
-    iframe?.contentDocument && setupIframeKeyboard(iframe.contentDocument, handler)
-  }, 500)
+  const setup = (doc: Document) => {
+    if (!doc) return
+    onMouseup && doc.addEventListener('mouseup', (e: MouseEvent) => onMouseup(doc, e))
+    doc.addEventListener('keydown', handler)
+    // 注意：不需要设置 tabindex，keydown 事件在 document 级别触发
+  }
+  
+  reader.on('load', ({doc}: any) => setup(doc))
+  setTimeout(() => reader.getView().renderer?.getContents?.()?.forEach(({doc}: any) => setup(doc)), 500)
 }

@@ -139,37 +139,22 @@ class BookSourceManager {
 
 
   async *searchBooksStream(keyword: string, sourceUrl?: string, page = 1, includeZLib = false) {
-    const sources = sourceUrl ? [this.getSource(sourceUrl)].filter(Boolean) : this.getEnabledSources()
+    const httpSources = ['gutenberg', 'standardebooks', 'anna']
+    const isHttpSource = sourceUrl && httpSources.includes(sourceUrl)
     
-    // 如果启用 Z-Library，先搜索 Z-Library
-    if (includeZLib && !sourceUrl) {
+    // HTTP书源搜索
+    if (isHttpSource || (!sourceUrl && includeZLib)) {
       try {
-        const { annaArchive } = await import('@/utils/AnnaBook')
-        const annaBooks = await annaArchive.search(keyword, page)
-        if (annaBooks.length > 0) {
-          const sourceName = annaArchive.getCurrentSource().name
-          const converted = annaBooks.map(book => ({
-            name: book.name,
-            author: book.author,
-            bookUrl: book.bookUrl,
-            coverUrl: book.coverUrl,
-            intro: book.intro,
-            extension: book.extension,
-            fileSize: book.fileSize,
-            language: book.language,
-            year: book.year,
-            kind: [book.extension, book.language, book.year].filter(Boolean).join(' · '),
-            sourceName: sourceName,
-            sourceUrl: 'ebook://search'
-          }))
-          yield converted
-        }
-      } catch (e: any) {
-        console.error('[EBook Search] 搜索失败:', e)
-      }
+        const { httpSourceManager } = await import('@/utils/HttpSources')
+        const httpBooks = await httpSourceManager.search(keyword, isHttpSource ? sourceUrl : undefined)
+        if (httpBooks.length) yield httpBooks
+      } catch (e: any) { console.error('[HTTP书源搜索失败]', e) }
     }
     
-    // 搜索常规书源
+    if (isHttpSource) return
+    
+    // 常规书源搜索
+    const sources = sourceUrl ? [this.getSource(sourceUrl)].filter(Boolean) : this.getEnabledSources()
     for (let i = 0; i < sources.length; i += 10) {
       const results = await Promise.allSettled(sources.slice(i, i + 10).map((s: any) => this.searchInSource(s, keyword, page)))
       for (const r of results) r.status === 'fulfilled' && r.value.length && (yield r.value)
@@ -182,13 +167,10 @@ class BookSourceManager {
     return results
   }
 
-  private parseField(data: any, rule: string | undefined, isJson = false) {
-    return rule ? ruleParser.getString(data, rule, isJson) : ''
-  }
-
+  private parseField(data: any, rule: string | undefined, isJson = false) { return rule ? ruleParser.getString(data, rule, isJson) : '' }
   private cleanField(value: string, type: 'url' | 'intro' | 'text' = 'text') {
     if (!value) return value
-    if (type === 'url' && value[0] === '/' && value[1] === '/') return 'https:' + value
+    if (type === 'url' && value.startsWith('//')) return 'https:' + value
     if (type === 'intro' && value.length > 500) return value.substring(0, 500) + '...'
     if (type === 'text') return value.replace(/综合信息：\s*([^/\n]+).*/, '$1').split('\n').filter(l => l.trim())[0]?.trim() || value
     return value
@@ -197,20 +179,18 @@ class BookSourceManager {
   private async searchInSource(source: BookSource, keyword: string, page = 1): Promise<SearchResult[]> {
     try {
       if (source.searchUrl.includes('<js>')) return []
-      
-      let url = source.searchUrl, method = 'GET', body = ''
+      let [url, method, body] = [source.searchUrl, 'GET', '']
       if (url.includes(',{')) {
         const [u, cfg] = url.split(',{')
         url = u
         try { const c = JSON.parse('{' + cfg); method = c.method || 'GET'; body = c.body || '' } catch {}
       }
-      
       url = this.resolveUrl(ruleEngine.replaceVariables(url, { key: encodeURIComponent(keyword), page }), source.bookSourceUrl)
       body = ruleEngine.replaceVariables(body, { key: encodeURIComponent(keyword), page })
       if (!url.startsWith('http')) return []
       
       const headers = ruleEngine.parseHeader(source.header || '')
-      headers['User-Agent'] || (headers['User-Agent'] = 'Mozilla/5.0')
+      headers['User-Agent'] ||= 'Mozilla/5.0'
       method === 'POST' && body && (headers['Content-Type'] = 'application/x-www-form-urlencoded')
       
       const html = await this.request(url, headers, method, body)
@@ -218,7 +198,6 @@ class BookSourceManager {
       
       const isJson = html.trim()[0] === '{' || html.trim()[0] === '['
       const books = ruleParser.getElements(html, source.ruleSearch.bookList)
-      
       if (!books.length) return []
       
       const isValid = (name: string, url: string) => 
@@ -229,59 +208,40 @@ class BookSourceManager {
           const json = el.getAttribute?.('data-json')
           const data = json ? (() => { try { return JSON.parse(json) } catch { return el.outerHTML } })() : el.outerHTML
           const parse = (field: keyof BookSource['ruleSearch']) => this.parseField(data, source.ruleSearch[field], isJson || !!json)
-          
           return {
-            name: parse('name'),
-            author: this.cleanField(parse('author'), 'text'),
+            name: parse('name'), author: this.cleanField(parse('author'), 'text'),
             bookUrl: this.resolveUrl(parse('bookUrl'), source.bookSourceUrl),
             coverUrl: this.cleanField(parse('coverUrl'), 'url'),
             intro: this.cleanField(parse('intro'), 'intro'),
-            lastChapter: parse('lastChapter') || undefined,
-            kind: parse('kind') || undefined,
+            lastChapter: parse('lastChapter') || undefined, kind: parse('kind') || undefined,
             sourceName: source.bookSourceName, sourceUrl: source.bookSourceUrl
           }
         } catch { return null }
       }).filter((r): r is NonNullable<typeof r> => r && isValid(r.name, r.bookUrl)) as SearchResult[]
-    } catch (e) {
-      console.error(`[搜索失败] ${source.bookSourceName}:`, e)
-      return []
-    }
+    } catch (e) { console.error(`[搜索失败] ${source.bookSourceName}:`, e); return [] }
   }
 
 
   async getBookInfo(url: string, bookUrl: string) {
     const s = this.getSource(url)
     if (!s) throw new Error('书源不存在')
-    
     if (!s.ruleBookInfo || !Object.keys(s.ruleBookInfo).length || !s.ruleBookInfo.tocUrl) {
-      return {
-        name: '', author: '', intro: '', coverUrl: '', tocUrl: bookUrl,
-        bookUrl, sourceName: s.bookSourceName, sourceUrl: s.bookSourceUrl
-      }
+      return { name: '', author: '', intro: '', coverUrl: '', tocUrl: bookUrl, bookUrl, sourceName: s.bookSourceName, sourceUrl: s.bookSourceUrl }
     }
-    
     let html = await this.request(bookUrl, ruleEngine.parseHeader(s.header || ''))
     const isJson = html.trim()[0] === '{' || html.trim()[0] === '['
-    
     if (isJson && s.ruleBookInfo.init) {
       try {
         const json = JSON.parse(html)
         s.ruleBookInfo.init === 'data' && json.data && (html = JSON.stringify(json.data))
-      } catch (e) {
-        console.error('[书籍信息] init规则执行失败:', e)
-      }
+      } catch (e) { console.error('[书籍信息] init规则执行失败:', e) }
     }
-    
     const parse = (rule: string) => this.parseField(html, rule, isJson)
-    
     return {
-      name: parse(s.ruleBookInfo.name),
-      author: this.cleanField(parse(s.ruleBookInfo.author), 'text'),
-      intro: this.cleanField(parse(s.ruleBookInfo.intro), 'intro'),
-      coverUrl: this.cleanField(parse(s.ruleBookInfo.coverUrl), 'url'),
+      name: parse(s.ruleBookInfo.name), author: this.cleanField(parse(s.ruleBookInfo.author), 'text'),
+      intro: this.cleanField(parse(s.ruleBookInfo.intro), 'intro'), coverUrl: this.cleanField(parse(s.ruleBookInfo.coverUrl), 'url'),
       tocUrl: this.resolveUrl(parse(s.ruleBookInfo.tocUrl), bookUrl),
-      lastChapter: parse(s.ruleBookInfo.lastChapter) || undefined,
-      kind: parse(s.ruleBookInfo.kind) || undefined,
+      lastChapter: parse(s.ruleBookInfo.lastChapter) || undefined, kind: parse(s.ruleBookInfo.kind) || undefined,
       bookUrl, sourceName: s.bookSourceName, sourceUrl: s.bookSourceUrl
     }
   }
@@ -351,15 +311,12 @@ class BookSourceManager {
     if (!url) return ''
     const cleanBase = baseUrl.split('#')[0].split('?')[0]
     if (url.startsWith('http://') || url.startsWith('https://')) return url
-    if (url[0] === '/' && url[1] === '/') return 'https:' + url
+    if (url.startsWith('//')) return 'https:' + url
     if (url[0] === '/') {
-      try {
-        const base = new URL(cleanBase)
-        return `${base.protocol}//${base.host}${url}`
-      } catch { return '' }
+      try { const base = new URL(cleanBase); return `${base.protocol}//${base.host}${url}` }
+      catch { return '' }
     }
-    try { return new URL(url, cleanBase).href }
-    catch { return '' }
+    try { return new URL(url, cleanBase).href } catch { return '' }
   }
 }
 

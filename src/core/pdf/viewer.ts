@@ -270,5 +270,23 @@ export class PDFViewer {
   private buildTocTree(flat: any[]) { if (!flat.length) return []; const root: any[] = [], stack: any[] = []; for (const item of flat) { const node = { label: item.title, href: `#page-${item.pageNumber}`, pageNumber: item.pageNumber, subitems: [] }; while (stack.length && stack[stack.length - 1].level >= item.level) stack.pop(); if (!stack.length) root.push(node); else stack[stack.length - 1].node.subitems.push(node); stack.push({ level: item.level, node }); } const clean = (items: any[]) => items.map(it => ({ ...it, subitems: it.subitems?.length ? clean(it.subitems) : undefined })); return clean(root) }
   private buildTocWithPath(flat:any[]){return flat.map((item,idx)=>{const ancestors:string[]=[];let lv=item.level;for(let i=idx-1;i>=0;i--)if(flat[i].level<lv){ancestors.unshift(flat[i].title);lv=flat[i].level;if(lv===0)break}return{...item,fullPath:[...ancestors,item.title].join(' - ')}})}
   destroy() { this.observer?.disconnect(); this.themeObserver?.disconnect(); this.pdf?.destroy(); this.pages.clear(); this.rendered.clear(); this.container.innerHTML = '' }
-  async createView() { const n = this.getPageCount(), pg = () => this.getCurrentPage(), nav = (d: number) => this.goToPage(pg() + d), thumbs: string[] = [], outline = await this.getOutline(); return { viewer: this, isPdf: true, pageCount: n, getThumbnail: async (p: number) => thumbs[p - 1] || (thumbs[p - 1] = await this.getThumbnail(p).catch(() => '')), book: { toc: this.buildTocTree(outline), flatToc: this.buildTocWithPath(outline) }, goTo: (t: any) => this.goToPage(typeof t === 'number' ? t : t?.pageNumber || +(String(t).replace('#page-', ''))), lastLocation: { page: 1, total: n }, nav: { prev: () => nav(-1), next: () => nav(1), goLeft: () => nav(-1), goRight: () => nav(1) } } }
+  async createView() {
+    const n = this.getPageCount()
+    const behavior = this.themeSettings?.pageAnimation === 'none' ? 'auto' : 'smooth'
+    // 连续滚动：按屏幕高度滚动；单页/双页：按页码跳转
+    const nav = (d: number) => this.viewMode === 'scroll'
+      ? this.container.scrollBy({ top: d * this.container.clientHeight * 0.9, behavior })
+      : this.goToPage(this.getCurrentPage() + d)
+    const prev = () => nav(-1), next = () => nav(1)
+    const thumbs: string[] = [], outline = await this.getOutline()
+    
+    return {
+      viewer: this, isPdf: true, pageCount: n,
+      getThumbnail: async (p: number) => thumbs[p - 1] || (thumbs[p - 1] = await this.getThumbnail(p).catch(() => '')),
+      book: { toc: this.buildTocTree(outline), flatToc: this.buildTocWithPath(outline) },
+      goTo: (t: any) => this.goToPage(typeof t === 'number' ? t : t?.pageNumber || +(String(t).replace('#page-', ''))),
+      lastLocation: { page: 1, total: n },
+      nav: { prev, next, goLeft: prev, goRight: next }
+    }
+  }
 }

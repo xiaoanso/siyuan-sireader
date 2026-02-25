@@ -1,5 +1,5 @@
 <template>
-  <div class="sr-source-mgr" @click="showAnnaMenu=false">
+  <div class="sr-source-mgr" @click="showMenu=null">
     <div class="sr-toolbar">
       <input v-model="keyword" placeholder="搜索书源...">
       <template v-if="selected.size">
@@ -13,20 +13,9 @@
           <svg><use xlink:href="#lucide-trash-2"/></svg>
         </button>
       </template>
-      <button class="b3-tooltips b3-tooltips__s" @click.stop="toggleAnna" @contextmenu.prevent.stop="showAnnaMenu=!showAnnaMenu" :aria-label="annaEnabled?(i18n?.annaEnabled||'安娜已启用'):(i18n?.annaDisabled||'安娜已禁用')">
-        <svg :style="{color:annaEnabled?'var(--b3-theme-primary)':''}"><use xlink:href="#lucide-library-big"/></svg>
+      <button class="b3-tooltips b3-tooltips__s" @click.stop="showHttpPanel=!showHttpPanel" :aria-label="i18n?.httpSources||'HTTP书源'">
+        <svg :style="{color:httpEnabled?'var(--b3-theme-primary)':''}"><use xlink:href="#lucide-library-big"/></svg>
       </button>
-      <div v-if="showAnnaMenu" class="sr-menu" @click.stop style="top:40px;right:8px;width:180px;padding:8px">
-        <div style="font-size:10px;opacity:.6;margin-bottom:6px">格式筛选</div>
-        <div style="display:flex;gap:4px;margin-bottom:8px">
-          <span v-for="e in ['epub','pdf','mobi','azw3']" :key="e" @click="toggleExt(e)" style="padding:3px 8px;border-radius:3px;font-size:10px;cursor:pointer;transition:all .15s" :style="{background:annaExts.includes(e)?'var(--b3-theme-primary)':'var(--b3-theme-background)',color:annaExts.includes(e)?'#fff':'var(--b3-theme-on-surface)'}">{{e.toUpperCase()}}</span>
-        </div>
-        <select v-model="annaDomain" @change="switchDomain" class="b3-select" style="width:100%;margin-bottom:6px">
-          <option v-for="d in annaDomains" :key="d" :value="d">{{d.replace('https://','').replace('annas-archive.','')}}</option>
-        </select>
-        <input v-model="newDomain" placeholder="https://..." @keyup.enter="addDomain" class="b3-text-field" style="width:100%;margin-bottom:6px">
-        <button @click="addDomain" class="b3-button b3-button--outline" style="width:100%">添加</button>
-      </div>
       <button v-if="!checking" class="b3-tooltips b3-tooltips__s" @click="checkAll" aria-label="检测书源">
         <svg><use xlink:href="#lucide-list-restart"/></svg>
       </button>
@@ -79,43 +68,149 @@
       
       <div v-if="!filtered.length" class="sr-empty">{{ keyword?'未找到匹配的书源':'暂无书源' }}</div>
     </div>
+
+    <!-- HTTP书源管理侧滑栏 -->
+    <Transition name="slide-panel">
+      <div v-if="showHttpPanel" class="sr-panel">
+        <div class="sr-panel-header">
+          <span>HTTP书源</span>
+          <button @click="showHttpPanel=false"><svg><use xlink:href="#lucide-x"/></svg></button>
+        </div>
+        <div class="sr-panel-body">
+          <div v-for="s in httpSources" :key="s.id" class="sr-http-card">
+            <div class="sr-http-header" @click="s.type==='custom'?null:toggleHttpSource(s.id)">
+              <svg class="sr-http-icon" :style="{color:s.enabled?'var(--b3-theme-primary)':''}">
+                <use :xlink:href="s.id==='anna'?'#lucide-library-big':s.id==='gutenberg'?'#lucide-book-open':s.id==='standardebooks'?'#lucide-book-marked':s.type==='custom'?'#lucide-globe':'#lucide-rss'"/>
+              </svg>
+              <span class="sr-http-title">{{s.name}}</span>
+              <button v-if="s.type==='custom'" class="sr-del-btn" @click.stop="removeCustomSource(s.id)"><svg><use xlink:href="#lucide-trash-2"/></svg></button>
+              <svg v-else class="sr-toggle-icon" :class="{on:s.enabled}"><use xlink:href="#lucide-toggle-left"/></svg>
+            </div>
+            <Transition name="expand">
+              <div v-if="s.enabled" class="sr-http-body">
+                <template v-if="s.id==='anna'">
+                  <div class="sr-field">
+                    <label>格式筛选</label>
+                    <div class="sr-chips">
+                      <span v-for="e in ['epub','pdf','mobi','azw3']" :key="e" @click="toggleExt(e)" :class="['sr-chip',{active:annaExts.includes(e)}]">{{e.toUpperCase()}}</span>
+                    </div>
+                  </div>
+                  <div class="sr-field">
+                    <label>域名</label>
+                    <select v-model="annaDomain" @change="switchDomain">
+                      <option v-for="d in annaDomains" :key="d" :value="d">{{d.replace('https://','').replace('annas-archive.','')}}</option>
+                    </select>
+                  </div>
+                  <div class="sr-field">
+                    <input v-model="newDomain" placeholder="添加域名 https://..." @keyup.enter="addDomain">
+                  </div>
+                </template>
+                <template v-else-if="s.type==='custom'">
+                  <div class="sr-desc">{{s.url}}</div>
+                  <div v-if="s.searchUrl" class="sr-desc">搜索: {{s.searchUrl}}</div>
+                </template>
+                <div v-else class="sr-desc">{{s.id==='gutenberg'?'70,000+ 公版英文书籍':s.id==='standardebooks'?'600+ 高质量排版书籍':'5,000+ 公版多语言书籍'}}</div>
+              </div>
+            </Transition>
+          </div>
+
+          <div class="sr-http-card sr-add-card">
+            <div class="sr-http-header" @click="showAddCustom=!showAddCustom">
+              <svg class="sr-http-icon"><use xlink:href="#lucide-plus-circle"/></svg>
+              <span class="sr-http-title">添加自定义书源</span>
+              <svg class="sr-toggle-icon" :class="{on:showAddCustom}"><use xlink:href="#lucide-chevron-down"/></svg>
+            </div>
+            <Transition name="expand">
+              <div v-if="showAddCustom" class="sr-http-body">
+                <div class="sr-field">
+                  <label>名称</label>
+                  <input v-model="customName" placeholder="书源名称">
+                </div>
+                <div class="sr-field">
+                  <label>URL</label>
+                  <input v-model="customUrl" placeholder="https://example.com">
+                </div>
+                <div class="sr-field">
+                  <label>搜索URL（可选）</label>
+                  <input v-model="customSearchUrl" placeholder="https://example.com/search?q={keyword}">
+                </div>
+                <button class="sr-add-btn" @click="addCustomSource">添加</button>
+              </div>
+            </Transition>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { bookSourceManager } from '@/utils/BookSearch'
-import { annaArchive } from '@/utils/AnnaBook'
+import { httpSourceManager } from '@/utils/HttpSources'
 import { showMessage } from 'siyuan'
 
 const props = defineProps<{ i18n?: any }>()
 const emit = defineEmits(['close'])
 
 const sources = ref<BookSource[]>([])
+const httpSources = ref<any[]>([])
 const status = ref<Record<string, 'checking'|'valid'|'invalid'>>({})
-const [checking, keyword, selected, stopCheck, annaEnabled, showAnnaMenu, annaExts, annaDomain, annaDomains, newDomain, removingSource, confirmAction] = 
-  [ref(false), ref(''), ref<Set<string>>(new Set()), ref(false), ref(localStorage.getItem('anna_enabled')==='true'), ref(false), ref<string[]>([]), ref(''), ref<string[]>([]), ref(''), ref<string|null>(null), ref<'batch'|'invalid'|null>(null)]
+const [checking, keyword, selected, stopCheck, showMenu, removingSource, confirmAction, showHttpPanel] = 
+  [ref(false), ref(''), ref<Set<string>>(new Set()), ref(false), ref<string|null>(null), ref<string|null>(null), ref<'batch'|'invalid'|null>(null), ref(false)]
+const [annaExts, annaDomain, annaDomains, newDomain] = [ref<string[]>([]), ref(''), ref<string[]>([]), ref('')]
+const [showAddCustom, customName, customUrl, customSearchUrl] = [ref(false), ref(''), ref(''), ref('')]
 
-const loadAnnaConfig = () => Object.assign(annaExts.value = annaArchive.getConfig().filters?.extensions || [], annaDomain.value = annaArchive.getConfig().currentDomain || '', annaDomains.value = annaArchive.getAllDomains())
-const toggleExt = (e: string) => (annaExts.value.includes(e) ? annaExts.value.splice(annaExts.value.indexOf(e), 1) : annaExts.value.push(e), annaArchive.setExtensionFilter(annaExts.value))
-const switchDomain = () => (annaArchive.switchDomain(annaDomain.value), showMessage('域名已切换', 1500))
-const addDomain = () => newDomain.value.startsWith('http') ? (annaArchive.addCustomDomain(newDomain.value), annaDomains.value = annaArchive.getAllDomains(), newDomain.value = '', showMessage('域名已添加', 1500)) : showMessage('请输入完整URL', 2000, 'error')
+const loadHttpSources = () => {
+  httpSources.value = httpSourceManager.getSources()
+  const anna = httpSources.value.find(s => s.id === 'anna')
+  if (anna) { annaExts.value = anna.filters?.extensions || []; annaDomain.value = anna.currentDomain || ''; annaDomains.value = anna.domains || [] }
+}
 
+const httpEnabled = computed(() => httpSources.value.some(s => s.enabled))
 const filtered = computed(() => keyword.value ? sources.value.filter(s => [s.bookSourceName, s.bookSourceUrl, s.bookSourceGroup].some(x => x?.toLowerCase().includes(keyword.value.toLowerCase()))) : sources.value)
 const invalidCount = computed(() => sources.value.filter(s => status.value[s.bookSourceUrl] === 'invalid').length)
 const isSelected = (url: string) => selected.value.has(url)
 const reload = () => sources.value = bookSourceManager.getSources()
 const toggleSelect = (url: string) => selected.value.has(url) ? selected.value.delete(url) : selected.value.add(url)
 
+const toggleHttpSource = async (id: string) => {
+  await httpSourceManager.toggleSource(id)
+  loadHttpSources()
+  const s = httpSources.value.find(x => x.id === id)
+  showMessage(s?.enabled ? `已启用 ${s.name}` : `已禁用 ${s?.name}`, 1500)
+}
+
+const toggleExt = async (e: string) => {
+  annaExts.value.includes(e) ? annaExts.value.splice(annaExts.value.indexOf(e), 1) : annaExts.value.push(e)
+  await httpSourceManager.setAnnaExtensions(annaExts.value)
+  loadHttpSources()
+}
+
+const switchDomain = async () => { await httpSourceManager.switchAnnaDomain(annaDomain.value); loadHttpSources(); showMessage('域名已切换', 1500) }
+const addDomain = async () => {
+  if (!newDomain.value.startsWith('http')) return showMessage('请输入完整URL', 2000, 'error')
+  await httpSourceManager.addAnnaDomain(newDomain.value)
+  loadHttpSources()
+  newDomain.value = ''
+  showMessage('域名已添加', 1500)
+}
+
+const addCustomSource = async () => {
+  if (!customName.value.trim() || !customUrl.value.trim()) return showMessage('请填写名称和URL', 2000, 'error')
+  await httpSourceManager.addCustomSource({ name: customName.value, url: customUrl.value, searchUrl: customSearchUrl.value, enabled: true })
+  loadHttpSources()
+  customName.value = customUrl.value = customSearchUrl.value = ''
+  showAddCustom.value = false
+  showMessage('已添加', 1500)
+}
+
+const removeCustomSource = async (id: string) => { await httpSourceManager.removeSource(id); loadHttpSources(); showMessage('已删除', 1500) }
+
 const batchEnable = (enable: boolean) => {
   let count = 0
-  selected.value.forEach(url => {
-    const s = sources.value.find(x => x.bookSourceUrl === url)
-    s && s.enabled !== enable && (s.enabled = enable, bookSourceManager.addSource(s), count++)
-  })
-  reload()
-  selected.value.clear()
-  showMessage(`${enable ? '启用' : '禁用'} ${count} 个书源`)
+  selected.value.forEach(url => { const s = sources.value.find(x => x.bookSourceUrl === url); s && s.enabled !== enable && (s.enabled = enable, bookSourceManager.addSource(s), count++) })
+  reload(); selected.value.clear(); showMessage(`${enable ? '启用' : '禁用'} ${count} 个书源`)
 }
 
 const execDelete = () => {
@@ -129,8 +224,7 @@ const execDelete = () => {
     invalid.forEach(s => (bookSourceManager.removeSource(s.bookSourceUrl), delete status.value[s.bookSourceUrl]))
     showMessage(`已删除 ${invalid.length} 个`)
   }
-  reload()
-  confirmAction.value = null
+  reload(); confirmAction.value = null
 }
 
 const toggle = (s: BookSource) => (s.enabled = !s.enabled, bookSourceManager.addSource(s), reload())
@@ -159,9 +253,7 @@ const checkAll = async () => {
   showMessage(stopCheck.value ? `检测停止: ${validCount} 有效` : `检测完成: ${validCount}/${enabled.length} 有效`)
 }
 
-const toggleAnna = () => (annaEnabled.value = !annaEnabled.value, localStorage.setItem('anna_enabled', String(annaEnabled.value)), showMessage(annaEnabled.value ? (props.i18n?.annaEnabled || '已启用安娜的档案') : (props.i18n?.annaDisabled || '已禁用安娜的档案')), window.dispatchEvent(new CustomEvent('anna-toggle')))
-
-onMounted(async () => (await bookSourceManager.loadSources(), reload(), loadAnnaConfig()))
+onMounted(async () => { await bookSourceManager.loadSources(); reload(); loadHttpSources() })
 onBeforeUnmount(() => (stopCheck.value = true, checking.value = false))
 </script>
 
@@ -179,6 +271,29 @@ onBeforeUnmount(() => (stopCheck.value = true, checking.value = false))
 .sr-info{flex:1;min-width:0}
 .sr-name{font-size:13px;font-weight:600;margin-bottom:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sr-url{font-size:11px;opacity:.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sr-menu{position:absolute;background:var(--b3-theme-surface);border-radius:6px;box-shadow:0 4px 12px #0003;z-index:20}
 .sr-btn{width:28px;height:28px;padding:0;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:background .15s;flex-shrink:0;svg{width:16px;height:16px}&:hover{background:var(--b3-theme-background)}}
+
+// 侧滑栏
+.slide-panel-enter-active,.slide-panel-leave-active{transition:all .2s}
+.slide-panel-enter-from,.slide-panel-leave-to{opacity:0;transform:translateX(15px)}
+.sr-panel{position:absolute;top:0;right:0;bottom:0;width:340px;background:var(--b3-theme-surface);border-left:1px solid var(--b3-border-color);box-shadow:-2px 0 8px rgba(0,0,0,.1);z-index:100;display:flex;flex-direction:column}
+.sr-panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--b3-border-color);font-size:14px;font-weight:600;button{width:24px;height:24px;padding:0;border:none;background:transparent;cursor:pointer;svg{width:16px;height:16px}&:hover{color:var(--b3-theme-primary)}}}
+.sr-panel-body{flex:1;overflow-y:auto;padding:12px}
+
+// HTTP书源卡片
+.sr-http-card{background:var(--b3-theme-background);border-radius:6px;margin-bottom:8px;border:1px solid var(--b3-border-color);transition:border-color .15s;&:hover{border-color:var(--b3-theme-primary)}}
+.sr-http-header{display:flex;align-items:center;gap:10px;padding:12px;cursor:pointer;transition:background .15s;&:hover{background:var(--b3-list-hover)}}
+.sr-http-icon{width:20px;height:20px;flex-shrink:0;transition:color .15s}
+.sr-http-title{flex:1;font-size:13px;font-weight:600}
+.sr-toggle-icon{width:32px;height:20px;flex-shrink:0;opacity:.3;transition:all .15s;&.on{opacity:1;color:var(--b3-theme-primary);transform:scaleX(-1)}}
+.sr-http-body{padding:0 12px 12px}
+.expand-enter-active,.expand-leave-active{transition:all .2s;overflow:hidden}
+.expand-enter-from,.expand-leave-to{opacity:0;max-height:0}
+.expand-enter-to,.expand-leave-from{opacity:1;max-height:500px}
+.sr-field{margin-bottom:10px;&:last-child{margin-bottom:0}label{display:block;font-size:11px;font-weight:500;color:var(--b3-theme-on-surface-variant);margin-bottom:6px}input,select{width:100%;padding:6px 10px;border:1px solid var(--b3-border-color);border-radius:4px;font-size:12px;background:var(--b3-theme-surface);color:var(--b3-theme-on-surface);box-sizing:border-box;transition:border-color .15s;&:focus{outline:none;border-color:var(--b3-theme-primary)}&::placeholder{color:var(--b3-theme-on-surface-variant);opacity:.5}}}
+.sr-desc{font-size:11px;color:var(--b3-theme-on-surface-variant);padding:4px 0}
+.sr-chips{display:flex;gap:6px;flex-wrap:wrap;.sr-chip{padding:4px 10px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);color:var(--b3-theme-on-surface);border-radius:12px;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;&:hover{background:var(--b3-list-hover);transform:translateY(-1px)}&.active{background:var(--b3-theme-primary);color:white;border-color:var(--b3-theme-primary);box-shadow:0 2px 4px rgba(var(--b3-theme-primary-rgb),.3)}}}
+.sr-del-btn{width:28px;height:28px;padding:0;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:all .15s;svg{width:14px;height:14px}&:hover{background:var(--b3-theme-error-lighter);color:var(--b3-theme-error)}}
+.sr-add-card{border-style:dashed;&:hover{border-color:var(--b3-theme-primary);background:color-mix(in srgb,var(--b3-theme-primary) 3%,transparent)}}
+.sr-add-btn{width:100%;padding:8px;border:none;background:var(--b3-theme-primary);color:white;border-radius:4px;font-size:12px;font-weight:500;cursor:pointer;transition:opacity .15s;&:hover{opacity:.9}}
 </style>

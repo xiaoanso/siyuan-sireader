@@ -8,7 +8,7 @@
         </button>
         <div v-if="showSourceMenu" class="sr-menu" @click.stop>
           <div :class="['sr-menu-item', { active: !selectedSource }]" @click="selectedSource = ''; showSourceMenu = false">{{ i18n.allSources || '全部书源' }}</div>
-          <div v-if="annaEnabled" :class="['sr-menu-item', { active: selectedSource === 'anna' }]" @click="selectedSource = 'anna'; showSourceMenu = false">{{ i18n.annaArchive || '安娜的档案' }}</div>
+          <div v-for="src in httpSources" :key="src.id" :class="['sr-menu-item', { active: selectedSource === src.id }]" @click="selectedSource = src.id; showSourceMenu = false">{{ src.name }}</div>
           <div v-for="src in enabledSources" :key="src.bookSourceUrl" :class="['sr-menu-item', { active: selectedSource === src.bookSourceUrl }]" @click="selectedSource = src.bookSourceUrl; showSourceMenu = false">{{ src.bookSourceName }}</div>
         </div>
       </div>
@@ -47,7 +47,10 @@
             <div v-if="book.lastChapter" class="sr-chapter">{{ book.lastChapter }}</div>
             <div class="sr-source">{{ book.sourceName }}</div>
           </div>
-          <button v-if="isAnnaBook(book)" class="sr-btn sr-btn-icon b3-tooltips b3-tooltips__w" :aria-label="i18n.openLink || '打开链接'" @click.stop="openAnnaLink(book.bookUrl)">
+          <button v-if="hasDownloadUrl(book)" class="sr-btn sr-btn-icon b3-tooltips b3-tooltips__w" :class="{ active: isInShelf(book) }" :aria-label="isInShelf(book) ? '已在书架' : '添加到书架'" @click.stop="addUrlBook(book)">
+            <svg><use :xlink:href="isInShelf(book) ? '#iconCheck' : '#iconDownload'"/></svg>
+          </button>
+          <button v-else-if="isAnnaBook(book)" class="sr-btn sr-btn-icon b3-tooltips b3-tooltips__w" :aria-label="i18n.openLink || '打开链接'" @click.stop="openAnnaLink(book.bookUrl)">
             <svg><use xlink:href="#iconLink"/></svg>
           </button>
           <button v-else class="sr-btn sr-btn-icon b3-tooltips b3-tooltips__w" :class="{ active: isInShelf(book) }" :aria-label="isInShelf(book) ? '已在书架' : '加入书架'" @click.stop="addToShelf(book)">
@@ -93,7 +96,16 @@
           
           <p v-if="detailBook.intro" class="sr-intro-full">{{ detailBook.intro }}</p>
           
-          <div v-if="isAnnaBook(detailBook)" class="sr-actions-full">
+          <div v-if="hasDownloadUrl(detailBook)" class="sr-actions-full">
+            <button class="sr-btn sr-btn-primary" :class="{ active: isInShelf(detailBook) }" @click="isInShelf(detailBook) || addUrlBook(detailBook)">
+              <svg><use :xlink:href="isInShelf(detailBook) ? '#iconCheck' : '#iconDownload'"/></svg>
+              {{ isInShelf(detailBook) ? '已在书架' : '添加到书架' }}
+            </button>
+            <button class="sr-btn sr-btn-primary" @click="openAnnaLink(detailBook.bookUrl)">
+              <svg><use xlink:href="#iconLink"/></svg>{{ i18n.openLink || '打开链接' }}
+            </button>
+          </div>
+          <div v-else-if="isAnnaBook(detailBook)" class="sr-actions-full">
             <button class="sr-btn sr-btn-primary" @click="openAnnaLink(detailBook.bookUrl)">
               <svg><use xlink:href="#iconLink"/></svg>{{ i18n.openLink || '打开链接' }}
             </button>
@@ -141,59 +153,44 @@ import SourceMgr from './SourceMgr.vue'
 const props = defineProps<{ i18n: any }>()
 const emit = defineEmits(['read'])
 
-const isInShelf = (book: any) => bookshelfManager.hasBook(book.bookUrl)
+const shelfBooks = ref(new Set<string>())
+const checkInShelf = async (book: any) => { if (await bookshelfManager.hasBook(book.bookUrl)) shelfBooks.value.add(book.bookUrl) }
+const isInShelf = (book: any) => shelfBooks.value.has(book.bookUrl)
 const isAnnaBook = (book: any) => book.bookUrl?.includes('annas-archive')
-const detailBook = ref<any>(null)
-const chapters = ref<any[]>([])
-const reversed = ref(false)
-const loadingChapters = ref(false)
-const showSourceMgr = ref(false)
+const isHttpBook = (book: any) => !!book.sourceId && ['anna', 'gutenberg', 'standardebooks'].includes(book.sourceId)
+const hasDownloadUrl = (book: any) => isHttpBook(book) || (book.downloadUrl || book.bookUrl)?.match(/^https?:\/\/.+\.(epub|pdf|mobi|azw3)(\?|$)/i)
 
+const [detailBook, chapters, reversed, loadingChapters, showSourceMgr] = [ref<any>(null), ref<any[]>([]), ref(false), ref(false), ref(false)]
 const tags = computed(() => detailBook.value?.kind?.split(',').filter(Boolean) || [])
 const displayChapters = computed(() => reversed.value ? [...chapters.value].reverse() : chapters.value)
 
-const openAnnaLink = (url: string) => {
-  const isChinese = props.i18n.name === '思阅'
-  const targetUrl = isChinese ? url.replace('annas-archive.org', 'zh.annas-archive.org') : url
-  window.open(targetUrl, '_blank')
-}
+const openAnnaLink = (url: string) => window.open(props.i18n.name === '思阅' ? url.replace('annas-archive.org', 'zh.annas-archive.org') : url, '_blank')
 
-const keyword = ref('')
-const selectedSource = ref('')
-const showSourceMenu = ref(false)
-const searching = ref(false)
-const results = ref<SearchResult[]>([])
-const resultsContainer = ref<HTMLElement>()
-const hasMore = ref(false)
-const searchIterator = ref<AsyncGenerator<SearchResult[]> | null>(null)
-const annaEnabled = ref(localStorage.getItem('anna_enabled') === 'true')
+const [keyword, selectedSource, showSourceMenu, searching, results, resultsContainer, hasMore, searchIterator, httpSources] = 
+  [ref(''), ref(''), ref(false), ref(false), ref<SearchResult[]>([]), ref<HTMLElement>(), ref(false), ref<AsyncGenerator<SearchResult[]> | null>(null), ref<any[]>([])]
 const failedCovers = new Set<string>()
 
 const enabledSources = computed(() => bookSourceManager.getEnabledSources())
 const selectedSourceName = computed(() => {
   if (!selectedSource.value) return props.i18n.allSources || '全部书源'
-  if (selectedSource.value === 'anna') return props.i18n.annaArchive || '安娜的档案'
-  const src = enabledSources.value.find(s => s.bookSourceUrl === selectedSource.value)
-  return src?.bookSourceName || ''
+  const httpSrc = httpSources.value.find(s => s.id === selectedSource.value)
+  if (httpSrc) return httpSrc.name
+  return enabledSources.value.find(s => s.bookSourceUrl === selectedSource.value)?.bookSourceName || ''
 })
 const shouldShowCover = (book: any) => book.coverUrl && !failedCovers.has(book.coverUrl)
 const handleCoverError = (book: any) => failedCovers.add(book.coverUrl)
 
 const search = async () => {
   if (!keyword.value.trim()) return
-  searching.value = true
-  results.value = []
-  hasMore.value = true
+  searching.value = true; results.value = []; hasMore.value = true
   try {
-    const isAnnaOnly = selectedSource.value === 'anna'
-    const enableAnna = isAnnaOnly || (!selectedSource.value && annaEnabled.value)
-    searchIterator.value = bookSourceManager.searchBooksStream(keyword.value, isAnnaOnly ? undefined : selectedSource.value || undefined, 1, enableAnna)
+    const { httpSourceManager } = await import('@/utils/HttpSources')
+    const isHttp = httpSourceManager.getEnabledSources().some(s => s.id === selectedSource.value)
+    const enableAnna = httpSourceManager.getEnabledSources().some(s => s.id === 'anna' && s.enabled) && !selectedSource.value
+    searchIterator.value = bookSourceManager.searchBooksStream(keyword.value, isHttp ? selectedSource.value : (selectedSource.value || undefined), 1, enableAnna)
     await loadMore()
-  } catch (e: any) {
-    showMessage('搜索失败: ' + e.message, 3000, 'error')
-  } finally {
-    searching.value = false
-  }
+  } catch (e: any) { showMessage('搜索失败: ' + e.message, 3000, 'error') }
+  finally { searching.value = false }
 }
 
 const loadMore = async () => {
@@ -202,58 +199,40 @@ const loadMore = async () => {
   try {
     const { value, done } = await searchIterator.value.next()
     hasMore.value = !done
-    if (value) results.value.push(...value)
-  } catch (e: any) {
-    showMessage('加载失败: ' + e.message, 3000, 'error')
-  } finally {
-    searching.value = false
-  }
+    if (value) { results.value.push(...value); value.forEach(checkInShelf) }
+  } catch (e: any) { showMessage('加载失败: ' + e.message, 3000, 'error') }
+  finally { searching.value = false }
 }
 
-const stopSearch = () => {
-  searchIterator.value = null
-  hasMore.value = false
-  searching.value = false
-}
-
-const showDetail = (book: any) => {
-  detailBook.value = book
-  if (!isAnnaBook(book)) loadChapters()
-}
+const stopSearch = () => { searchIterator.value = null; hasMore.value = false; searching.value = false }
+const showDetail = (book: any) => { detailBook.value = book; if (!isAnnaBook(book) && !isHttpBook(book)) loadChapters() }
 
 const loadChapters = async () => {
   if (!detailBook.value) return
-  loadingChapters.value = true
-  chapters.value = []
+  loadingChapters.value = true; chapters.value = []
   try {
     const bookInfo = await bookSourceManager.getBookInfo(detailBook.value.sourceUrl || detailBook.value.origin, detailBook.value.bookUrl)
-    const tocUrl = bookInfo.tocUrl || detailBook.value.bookUrl
-    chapters.value = await bookSourceManager.getChapters(detailBook.value.sourceUrl || detailBook.value.origin, tocUrl)
-  } catch (e: any) {
-    showMessage(`加载章节失败: ${e.message}`, 3000, 'error')
-  } finally {
-    loadingChapters.value = false
-  }
+    chapters.value = await bookSourceManager.getChapters(detailBook.value.sourceUrl || detailBook.value.origin, bookInfo.tocUrl || detailBook.value.bookUrl)
+  } catch (e: any) { showMessage(`加载章节失败: ${e.message}`, 3000, 'error') }
+  finally { loadingChapters.value = false }
 }
 
 const addToShelf = async (book: any) => {
   try {
-    await bookshelfManager.addBook({
-      bookUrl: book.bookUrl,
-      tocUrl: book.tocUrl || book.bookUrl,
-      origin: book.sourceUrl || book.origin,
-      originName: book.sourceName || book.originName,
-      name: book.name,
-      author: book.author,
-      kind: book.kind,
-      coverUrl: book.coverUrl,
-      intro: book.intro,
-      wordCount: book.wordCount,
-    })
+    const { addOnlineBook } = await import('@/core/online')
+    await addOnlineBook(book)
+    shelfBooks.value.add(book.bookUrl)
     showMessage(`《${book.name}》已加入书架`, 2000, 'info')
-  } catch (e: any) {
-    showMessage(e.message, 3000, 'error')
-  }
+  } catch (e: any) { showMessage(e.message, 3000, 'error') }
+}
+
+const addUrlBook = async (book: any) => {
+  try {
+    const { httpSourceManager } = await import('@/utils/HttpSources')
+    await httpSourceManager.addToBookshelf(book, bookshelfManager)
+    shelfBooks.value.add(book.bookUrl)
+    showMessage(`《${book.name}》已添加到书架`, 2000, 'info')
+  } catch (e: any) { showMessage(e.message || '添加失败', 3000, 'error') }
 }
 
 const onScroll = () => {
@@ -262,10 +241,13 @@ const onScroll = () => {
   if (scrollTop + clientHeight >= scrollHeight - 100) loadMore()
 }
 
-const handleAnnaToggle = () => annaEnabled.value = localStorage.getItem('anna_enabled') === 'true'
+const loadHttpSources = async () => {
+  const { httpSourceManager } = await import('@/utils/HttpSources')
+  httpSources.value = httpSourceManager.getEnabledSources()
+}
 
-onMounted(() => window.addEventListener('anna-toggle', handleAnnaToggle))
-onUnmounted(() => window.removeEventListener('anna-toggle', handleAnnaToggle))
+onMounted(() => { loadHttpSources(); window.addEventListener('http-sources-updated', loadHttpSources) })
+onUnmounted(() => window.removeEventListener('http-sources-updated', loadHttpSources))
 </script>
 
 <style scoped lang="scss">

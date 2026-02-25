@@ -77,7 +77,7 @@ import { COLORS, STYLES, getColorMap } from '@/core/MarkManager'
 import { openBlock, showFloat, hideFloat } from '@/utils/copy'
 import { jump } from '@/utils/jump'
 
-interface MarkSelection { text: string; location: { format: 'pdf'|'epub'|'txt'; cfi?: string; section?: number; page?: number; rects?: any[] } }
+interface MarkSelection { text: string; location: { format: 'pdf'|'epub'; cfi?: string; section?: number; page?: number; rects?: any[] } }
 
 const props = defineProps<{ manager: MarkManager|null; i18n?: Record<string,string>; pdfViewer?: any; reader?: any; currentView?: any }>()
 const emit = defineEmits<{ 
@@ -166,9 +166,9 @@ const getCoords = (rect: DOMRect, doc: Document) => {
   return { x: (rect.left > ir.width ? rect.left % ir.width : rect.left) + ir.left, y: rect.top + ir.top }
 }
 
-// EPUB/TXT 文本选择检测
-const checkSelection = (txtDoc?: Document, e?: MouseEvent) => {
-  if (e && (e.target as HTMLElement).closest('.mark-card,.mark-selection-menu,[data-note-marker],[data-txt-mark]')) return
+// EPUB 文本选择检测
+const checkSelection = (doc?: Document, e?: MouseEvent) => {
+  if (e && (e.target as HTMLElement).closest('.mark-card,.mark-selection-menu,[data-note-marker]')) return
   
   const processSelection = (doc: Document, index?: number) => {
     const sel = doc.defaultView?.getSelection()
@@ -178,29 +178,20 @@ const checkSelection = (txtDoc?: Document, e?: MouseEvent) => {
       const { x, y } = getCoords(rect, doc)
       const text = sel.toString().trim()
       const cfi = index !== undefined ? props.reader?.getView().getCFI(index, range) : undefined
-      const section = index === undefined ? props.currentView?.lastLocation?.section || 0 : undefined
       
-      let textOffset: number | undefined
-      if (section !== undefined && !cfi) {
-        let o = 0
-        const w = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
-        for (let n: Node | null; n = w.nextNode();) {
-          if (n === range.startContainer) { textOffset = o + range.startOffset; break }
-          o += (n.textContent || '').length
-        }
-      }
-      
-      currentSelection = { text, cfi, section, textOffset }
-      showMenu({ text, location: { format: props.pdfViewer ? 'pdf' : 'epub', cfi, section, textOffset } }, x + (index === undefined ? rect.width / 2 : 0), y)
+      currentSelection = { text, cfi }
+      showMenu({ text, location: { format: props.pdfViewer ? 'pdf' : 'epub', cfi } }, x + (index === undefined ? rect.width / 2 : 0), y)
       return true
-    } catch { return false }
+    } catch (err) {
+      return false
+    }
   }
   
   if (props.reader) {
     const c = props.reader.getView().renderer?.getContents?.()
     if (!c) return
     for (const { doc, index } of c) if (processSelection(doc, index)) return
-  } else if (props.currentView && txtDoc && processSelection(txtDoc)) return
+  } else if (props.currentView && doc && processSelection(doc)) return
 }
 
 // EPUB 标注点击监听器
@@ -224,31 +215,15 @@ const handleGlobalEdit = (e: Event) => {
   d?.item && showCard(d.item, d.position?.x, d.position?.y, true)
 }
 
-// TXT 选择事件处理
-const handleTxtSelection = (e: Event) => {
-  const d = (e as CustomEvent).detail
-  setTimeout(() => checkSelection(d?.doc, d?.event), 50)
-}
-
-// TXT 标注点击事件处理
-const handleTxtAnnotationClick = (e: Event) => {
-  const { mark, x, y } = (e as CustomEvent).detail
-  showCard(mark, x, y, false)
-}
-
 // 初始化监听器
 const initListeners = () => {
   setupAnnotationListeners()
   window.addEventListener('sireader:edit-mark', handleGlobalEdit)
-  window.addEventListener('txt-selection', handleTxtSelection)
-  window.addEventListener('txt-annotation-click', handleTxtAnnotationClick)
 }
 
 // 清理监听器
 const cleanupListeners = () => {
   window.removeEventListener('sireader:edit-mark', handleGlobalEdit)
-  window.removeEventListener('txt-selection', handleTxtSelection)
-  window.removeEventListener('txt-annotation-click', handleTxtAnnotationClick)
 }
 
 // 生命周期

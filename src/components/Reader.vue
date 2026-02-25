@@ -56,6 +56,7 @@ import type { ReaderSettings } from '@/composables/useSetting'
 import { PRESET_THEMES } from '@/composables/useSetting'
 import { openDict as openDictDialog } from '@/utils/dictionary'
 import { createReader, type FoliateReader, setActiveReader, clearActiveReader } from '@/core/epub'
+import type { FoliateView } from '@/core/epub/types'
 import { createMarkManager, type MarkManager } from '@/core/MarkManager'
 import { createInkToolManager, type InkToolManager } from '@/core/pdf/ink'
 import { createShapeToolManager, type ShapeToolManager } from '@/core/pdf/shape'
@@ -65,7 +66,7 @@ import MarkPanel from './MarkPanel.vue'
 import ReaderToc from './ReaderToc.vue'
 import { gotoPDF, gotoEPUB, restorePosition as restorePos, initJump } from '@/utils/jump'
 import { copyMark as copyMarkUtil } from '@/utils/copy'
-import { createKeyboardHandler, setupEpubKeyboard, setupTxtKeyboard } from '@/utils/keyboard'
+import { createKeyboardHandler, setupEpubKeyboard } from '@/utils/keyboard'
 
 const props = defineProps<{ file?: File; plugin: Plugin; settings?: ReaderSettings; url?: string; blockId?: string; bookInfo?: any; onReaderReady?: (r: FoliateReader) => void; i18n?: any }>()
 
@@ -83,31 +84,7 @@ const handleSettingsUpdate = async (e: Event) => {
   currentSettings.value = settings
   ;(window as any).__sireader_settings = settings
   reader?.updateSettings?.(settings)
-  currentView.value && applyTxtSettings(currentView.value, settings)
-  // PDF主题和视图模式更新（统一在updateTheme中处理）
   pdfViewer.value && await pdfViewer.value.updateTheme(settings)
-}
-
-// 应用 TXT 设置
-const applyTxtSettings = (view: any, settings: ReaderSettings) => {
-  if (!view?.iframe?.contentDocument) return
-  const doc = view.iframe.contentDocument
-  doc.querySelectorAll('style[data-sireader]').forEach((s: Element) => s.remove())
-  const { textSettings: t, paragraphSettings: p, layoutSettings: l, visualSettings: v, theme, customTheme } = settings
-  const th = theme === 'custom' ? customTheme : (theme && PRESET_THEMES[theme]) || PRESET_THEMES.default
-  const filters = [v.brightness !== 1 && `brightness(${v.brightness})`, v.contrast !== 1 && `contrast(${v.contrast})`, v.sepia > 0 && `sepia(${v.sepia})`, v.saturate !== 1 && `saturate(${v.saturate})`, v.invert && 'invert(1) hue-rotate(180deg)'].filter(Boolean).join(' ')
-  const isCustomFont = t.fontFamily === 'custom' && t.customFont.fontFamily
-  const font = isCustomFont ? `"${t.customFont.fontFamily}", sans-serif` : (t.fontFamily || 'inherit')
-  const fontFace = isCustomFont ? `@font-face{font-family:"${t.customFont.fontFamily}";src:url("/plugins/custom-fonts/${t.customFont.fontFile}")}` : ''
-  const bgStyle = th.bgImg ? `background:url("${th.bgImg}") center/cover no-repeat` : `background:${th.bg}`
-  const css = `${fontFace}body{${bgStyle}!important;color:${th.color}!important;font-family:${font}!important;font-size:${t.fontSize}px!important;letter-spacing:${t.letterSpacing}em!important;padding:${l.marginVertical}px ${l.marginHorizontal}px!important${filters ? `;filter:${filters}` : ''}}p{line-height:${p.lineHeight}!important;margin:${p.paragraphSpacing}em 0!important;text-indent:${p.textIndent}em!important}`
-  const style = doc.createElement('style')
-  style.setAttribute('data-sireader', 'true')
-  style.textContent = css
-  doc.head.appendChild(style)
-  // 应用整体主题到容器
-  const iframe = view.iframe as HTMLIFrameElement
-  if (iframe) Object.assign(iframe.style, { background: th.bgImg ? `url("${th.bgImg}") center/cover no-repeat` : th.bg })
 }
 
 const containerRef = ref<HTMLElement>()
@@ -157,22 +134,16 @@ const init=async()=>{
     error.value=''
     const bookUrl=props.bookInfo?.url||props.url||(props.file?`file://${props.file.name}`:`book-${Date.now()}`)
     ;(window as any).__currentBookUrl=bookUrl
-    const format=props.bookInfo?.format||(props.bookInfo?.isEpub?'epub':props.file?.name.endsWith('.txt')?'txt':props.file?.name.endsWith('.pdf')?'pdf':'online')
-    const isTxt=format==='txt'||format==='online',isPdf=format==='pdf'
-    const onProgress=async()=>{updateBookmarkState();const{bookshelfManager}=await import('@/core/bookshelf');await bookshelfManager.updateProgressAuto(bookUrl,reader,pdfViewer.value);updatePageInfo()}
+    const isPdf=props.file?.name.endsWith('.pdf')||props.bookInfo?.format==='pdf'
+    const{bookshelfManager}=await import('@/core/bookshelf')
+    const onProgress=async()=>{updateBookmarkState();await bookshelfManager.updateProgressAuto(bookUrl,reader,pdfViewer.value,currentView.value);updatePageInfo()}
     
     // 统一文件加载
     const loadFile=async()=>{
       if(props.file)return props.file
       const path=props.bookInfo?.path
       if(!path)return null
-      
-      // assets 文件 HTTP 访问，books 文件 API 访问
-      const url=path.startsWith('assets/')?`/${path}`:'/api/file/getFile'
-      const opts=path.startsWith('assets/')?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path})}
-      const res=await fetch(url,opts)
-      if(!res.ok)throw new Error(`文件读取失败: ${path}`)
-      return new File([await res.arrayBuffer()],path.split('/').pop()||'book',{type:res.headers.get('content-type')||'application/octet-stream'})
+      return await bookshelfManager.loadFile(path)
     }
     
     if(isPdf){
@@ -194,7 +165,6 @@ const init=async()=>{
       
       markManager.value=createMarkManager({format:'pdf',plugin:props.plugin,bookUrl,bookName:props.bookInfo?.title||props.file?.name||'book',onAnnotationClick:showAnn,pdfViewer:viewer})
       await markManager.value.init()
-      const{bookshelfManager}=await import('@/core/bookshelf')
       await bookshelfManager.restoreProgress(bookUrl,null,viewer)
       
       currentView.value={...view,isPdf:true,marks:markManager.value}
@@ -252,54 +222,42 @@ const init=async()=>{
         viewerContainerRef.value?.removeEventListener('keydown',handleKeydown)
         window.removeEventListener('pdf:layer-ready',handleLayerReady as any)
       }
-    }else if(isTxt){
-      const{createFoliateView,loadTxtBook}=await import('@/core/epub/reader')
-      const view=createFoliateView(viewerContainerRef.value!)
-      currentView.value=view
-      
-      if(format==='online'&&props.bookInfo){
-        await loadTxtBook(view,'',props.bookInfo.toc||[],props.bookInfo,props.settings)
-      }else{
-        const file=await loadFile()
-        if(!file)throw new Error('未提供TXT文件')
-        await loadTxtBook(view,await file.arrayBuffer(),[],null,props.settings)
-      }
-      
-      markManager.value=createMarkManager({format:'txt',view,plugin:props.plugin,bookUrl,bookName:props.bookInfo?.title||props.file?.name||'book',reader:null})
-      await markManager.value.init()
-      ;(view as any).marks=markManager.value
-      const{bookshelfManager}=await import('@/core/bookshelf')
-      await bookshelfManager.restoreProgress(bookUrl,null,null)
-      
-      view.addEventListener('relocate',()=>onProgress())
-      setupTxtKeyboard(view,handleKeydown)
-      setActiveReader(view,null,props.settings)
     }else{
       reader=createReader({container:viewerContainerRef.value!,settings:props.settings!,plugin:props.plugin})
       
-      if(props.file){
-        await reader.open(props.file)
-      }else if(props.url){
-        await reader.open(props.url)
+      // 在线书籍
+      if(props.bookInfo?.format==='online'){
+        const{loadOnlineBook}=await import('@/core/online')
+        await loadOnlineBook(reader,props.bookInfo)
       }else{
-        const file=await loadFile()
-        if(!file)throw new Error('未提供书籍')
-        await reader.open(file)
+        if(props.file){
+          await reader.open(props.file)
+        }else if(props.url){
+          await reader.open(props.url)
+        }else{
+          const file=await loadFile()
+          if(!file)throw new Error('未提供书籍')
+          await reader.open(file)
+        }
       }
       
       markManager.value=createMarkManager({format:'epub',view:reader.getView(),plugin:props.plugin,bookUrl,bookName:props.bookInfo?.title||props.file?.name||'book',reader})
       await markManager.value.init()
       ;(reader.getView() as any).marks=markManager.value
-      const{bookshelfManager}=await import('@/core/bookshelf')
+      
+      console.log('[Reader] 恢复进度')
       await bookshelfManager.restoreProgress(bookUrl,reader,null)
+      console.log('[Reader] 进度恢复完成')
       
       reader.on('relocate',()=>onProgress())
-      setupEpubKeyboard(reader,handleKeydown,(doc,e)=>setTimeout(()=>markPanelRef.value?.checkSelection(doc,e),50))
-      markPanelRef.value?.setupAnnotationListeners()
+      setupEpubKeyboard(reader,handleKeydown,(doc,e)=>markPanelRef.value?.checkSelection(doc,e))
       currentView.value=reader.getView()
       setActiveReader(currentView.value,reader,props.settings)
       props.onReaderReady?.(reader)
     }
+    
+    // 统一设置标注监听
+    markPanelRef.value?.setupAnnotationListeners()
   }catch(e){
     error.value=e instanceof Error?e.message:'加载失败'
     markPanelRef.value?.closeAll()
@@ -348,8 +306,18 @@ const handleOpenDict=(text:string,x:number,y:number,selection:any)=>{
 }
 
 // 导航
-const handlePrev=()=>pdfViewer.value?pdfViewer.value.goToPage(Math.max(1,pdfViewer.value.getCurrentPage()-1)):reader?reader.prev():currentView.value?.prev?.()
-const handleNext=()=>pdfViewer.value?pdfViewer.value.goToPage(Math.min(totalPages.value,pdfViewer.value.getCurrentPage()+1)):reader?reader.next():currentView.value?.next?.()
+const handlePrev=()=>{
+  if(isPdfMode.value)return currentView.value?.nav?.prev?.()
+  if(reader)return reader.prev()
+  if(currentView.value?.prev)return currentView.value.prev()
+  currentView.value?.goLeft?.()
+}
+const handleNext=()=>{
+  if(isPdfMode.value)return currentView.value?.nav?.next?.()
+  if(reader)return reader.next()
+  if(currentView.value?.next)return currentView.value.next()
+  currentView.value?.goRight?.()
+}
 const handlePageJump=()=>{const p=Math.max(1,Math.min(totalPages.value,pageInput.value||1));pageInput.value=p;pdfViewer.value?.goToPage(p)}
 const updatePageInfo=()=>{if(!pdfViewer.value)return;totalPages.value=pdfViewer.value.getPageCount();pageInput.value=pdfViewer.value.getCurrentPage()}
 
@@ -423,7 +391,7 @@ const handlePdfLastPage=()=>pdfViewer.value?.goToPage(pdfViewer.value.getPageCou
 const handlePdfPageUp=()=>handlePrev()
 const handlePdfPageDown=()=>handleNext()
 
-const handleGoto=(e:CustomEvent)=>{const{cfi,id,section,textOffset,text}=e.detail;if(isPdfMode.value&&cfi?.startsWith('#page-'))gotoPDF(parseInt(cfi.slice(6)),id,pdfViewer.value,markManager.value,shapeToolManager);else if(section!==undefined||cfi?.startsWith('#txt-')){const m=cfi?.match(/#txt-(\d+)-(\d+)/);import('@/utils/jump').then(({gotoTXT})=>gotoTXT(section!==undefined?section:m?parseInt(m[1]):0,textOffset!==undefined?textOffset:m?parseInt(m[2]):undefined,text,id,currentView.value))}else if(cfi)gotoEPUB(cfi,id,reader,markManager.value)}
+const handleGoto=(e:CustomEvent)=>{const{cfi,id}=e.detail;if(isPdfMode.value){if(cfi?.startsWith('#page-'))gotoPDF(parseInt(cfi.slice(6)),id,pdfViewer.value,markManager.value,shapeToolManager);else if(cfi&&/^\d+$/.test(cfi))gotoPDF(parseInt(cfi),id,pdfViewer.value,markManager.value,shapeToolManager)}else if(cfi)gotoEPUB(cfi,id,reader,markManager.value)}
 
 // 快捷键
 const handleKeydown=createKeyboardHandler({handlePrev,handleNext,handlePdfFirstPage,handlePdfLastPage,handlePdfPageUp,handlePdfPageDown,handlePdfRotate,handlePdfZoomIn,handlePdfZoomOut,handlePdfZoomReset,handlePdfSearch,handlePrint},()=>!!pdfViewer.value)

@@ -19,7 +19,7 @@ const MAX_ZIP_CACHE = 2 // 最多 2 个 zip（降低内存占用）
 const ZIP_CACHE_TTL = 5 * 60 * 1000 // 5 分钟过期
 let mediaCacheSize = 0
 
-export const getSqlJs = async () => { if (!sqlJs) sqlJs = await initSqlJs({ locateFile: (f) => `https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/${f}` }); return sqlJs }
+export const getSqlJs = async () => { if (!sqlJs) sqlJs = await initSqlJs({ locateFile: (f) => `/plugins/siyuan-sireader/sql.js/${f}` }); return sqlJs }
 export const getAnkiDbPath = (cid: string) => `${ANKI_BASE}/${cid}/collection.anki21`
 export const clearAnkiDbCache = () => { 
   ankiDbCache.clear()

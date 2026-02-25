@@ -46,7 +46,7 @@ export interface VocabularyItem {
 export interface Location {
   index?: number             // 章节索引
   cfi?: string               // CFI 位置（EPUB/MOBI/FB2）
-  section?: number           // 章节索引（TXT/在线）
+  section?: number           // 章节索引（在线书籍）
   href?: string              // 链接
   fraction?: number          // 进度百分比
   range?: Range              // DOM Range

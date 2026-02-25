@@ -1,5 +1,5 @@
 <template>
-  <div class="sr-bookshelf">
+  <div ref="bookshelfEl" class="sr-bookshelf">
     <div class="sr-toolbar">
       <button v-if="currentGroup" @click="selectGroup(null)" class="sr-back"><svg><use xlink:href="#iconBack"/></svg></button>
       <button v-else @click.stop="showGroupMenu"><svg><use xlink:href="#iconFolder"/></svg></button>
@@ -7,7 +7,7 @@
       <button @click.stop="showFilterMenu" :class="{active:activeFilterCount}"><svg><use xlink:href="#lucide-sliders-horizontal"/></svg><span v-if="activeFilterCount">({{activeFilterCount}})</span></button>
       <button @click.stop="showSortMenu"><svg><use xlink:href="#lucide-arrow-up-1-0"/></svg></button>
       <button @click="toggleViewMode"><svg><use :xlink:href="viewModeIcon"/></svg></button>
-      <button @click="fileInput?.click()"><svg><use xlink:href="#lucide-book-plus"/></svg></button>
+      <button @click.stop="showAddMenu"><svg><use xlink:href="#lucide-book-plus"/></svg></button>
     </div>
     <input ref="fileInput" type="file" accept=".epub,.pdf,.mobi,.azw3,.azw,.fb2,.cbz,.txt" multiple style="display:none" @change="handleFileUpload">
     <Transition name="slide">
@@ -53,16 +53,18 @@
             <!-- 书籍 -->
             <div v-else :class="['sr-card',viewMode,{selected:selectedBooks.has(item.data.url)}]" @click="handleClick(item.data,$event)" @contextmenu.prevent="showContextMenu(item.data,$event)">
               <div v-if="selectedBooks.size" class="sr-check" @click.stop="toggleSelect(item.data)"><input type="checkbox" :checked="selectedBooks.has(item.data.url)"></div>
+              <!-- Grid视图 -->
               <div v-if="viewMode==='grid'" class="sr-grid-content">
                 <img v-if="getCoverUrl(item.data)" :src="getCoverUrl(item.data)" :alt="item.data.title">
                 <div v-else class="sr-text" :style="{background:getBookColor(item.data.title)}">{{item.data.title}}</div>
                 <span :class="['sr-tag',item.data.status]">{{STATUS_MAP[item.data.status]}}</span>
                 <span v-if="item.data.rating" class="sr-tag sr-tag-rating">{{'★'.repeat(item.data.rating)}}</span>
-                <div v-if="item.data.source?.updateCount" class="sr-badge">{{item.data.source.updateCount}}</div>
+                <span class="sr-tag sr-tag-bl">{{item.data.format.toUpperCase()}}</span>
+                <button v-if="item.data.format==='online'" class="sr-tag sr-tag-br" @click.stop="refreshOnline(item.data)"><svg><use xlink:href="#iconRefresh"/></svg></button>
                 <div class="sr-grid-info">
                   <div class="sr-row">
                     <span class="sr-title">{{item.data.title}}</span>
-                    <span class="sr-progress">{{item.data.progress||0}}%</span>
+                    <span class="sr-progress">{{getProgress(item.data)}}</span>
                   </div>
                   <span class="sr-author">{{item.data.author}}</span>
                   <div v-if="item.data.tags.length" class="sr-tags">
@@ -70,24 +72,37 @@
                   </div>
                 </div>
               </div>
-              <template v-else>
-                <div v-if="viewMode==='list'" class="sr-cover">
+              <!-- List视图 -->
+              <template v-else-if="viewMode==='list'">
+                <div class="sr-cover">
                   <img v-if="getCoverUrl(item.data)" :src="getCoverUrl(item.data)" :alt="item.data.title">
                   <div v-else class="sr-text" :style="{background:getBookColor(item.data.title)}">{{item.data.title.slice(0,2)}}</div>
+                  <span v-if="item.data.rating" class="sr-cover-rating">{{'★'.repeat(item.data.rating)}}</span>
                 </div>
                 <div class="sr-info">
                   <div class="sr-row">
                     <span class="sr-title">{{item.data.title}}</span>
-                    <span class="sr-progress">{{item.data.progress||0}}%</span>
+                    <span class="sr-progress">{{getProgress(item.data)}}</span>
                   </div>
-                  <span v-if="viewMode==='list'" class="sr-author">{{item.data.author}}</span>
-                  <div v-if="viewMode==='list'&&(item.data.status!=='unread'||item.data.rating||item.data.tags.length)" class="sr-tags">
-                    <span v-if="item.data.status!=='unread'" :class="['sr-chip',item.data.status]">{{STATUS_MAP[item.data.status]}}</span>
-                    <span v-if="item.data.rating" class="sr-chip sr-chip-rating">{{' ★'.repeat(item.data.rating)}}</span>
+                  <div class="sr-row">
+                    <span class="sr-author">{{item.data.author}}</span>
+                    <span :class="['sr-chip',item.data.status]">{{STATUS_MAP[item.data.status]}}</span>
+                    <span class="sr-chip sr-chip-format">{{item.data.format.toUpperCase()}}</span>
+                    <button v-if="item.data.format==='online'" class="sr-icon-sm" @click.stop="refreshOnline(item.data)"><svg><use xlink:href="#iconRefresh"/></svg></button>
+                    <span v-if="item.data.source?.lastChapter" class="sr-chip sr-chip-latest">{{item.data.source.lastChapter}}</span>
+                  </div>
+                  <div v-if="item.data.tags.length" class="sr-row">
                     <span v-for="tag in item.data.tags" :key="tag" class="sr-chip" :style="{background:getBookColor(tag)}">{{tag}}</span>
                   </div>
                 </div>
                 <button class="sr-more" @click.stop="showContextMenu(item.data,$event)"><svg><use xlink:href="#lucide-more-vertical"/></svg></button>
+              </template>
+              <!-- Compact视图 -->
+              <template v-else>
+                <div class="sr-info">
+                  <span class="sr-title">{{item.data.title}}</span>
+                  <span class="sr-progress">{{getProgress(item.data)}}</span>
+                </div>
               </template>
               <Transition name="fade">
                 <div v-if="confirmDelete?.type==='book'&&confirmDelete.id===item.data.url" class="sr-confirm" @click.stop>
@@ -102,19 +117,17 @@
     </div>
     <!-- 统一侧栏 -->
     <Transition name="slide">
-      <div v-if="panelMode" class="sr-panel">
+      <div v-if="panelMode" class="sr-panel" :style="{width:panelWidth+'px'}">
+        <div class="sr-panel-resize" @mousedown="startResize"></div>
         <div class="sr-panel-header">
-          <span>{{panelMode==='detail'?'详情':panelMode==='edit'?'编辑':panelMode==='filter'?'筛选':editingGroup?.type==='smart'?'智能分组':'分组'}}</span>
+          <span>{{panelMode==='add'?'添加书籍':['详情','编辑','筛选'][['detail','edit','filter'].indexOf(panelMode)]||editingGroup?.type==='smart'?'智能分组':'分组'}}</span>
           <button @click="closePanel"><svg><use xlink:href="#lucide-x"/></svg></button>
         </div>
         <div class="sr-panel-body">
           <!-- 书籍详情 -->
           <template v-if="panelMode==='detail'">
             <div v-if="panelBook&&getCoverUrl(panelBook)" class="sr-panel-cover"><img :src="getCoverUrl(panelBook)"></div>
-            <div v-for="f in detailFields" :key="f.label" class="sr-panel-field">
-              <label>{{f.label}}</label>
-              <span :class="{mono:f.mono}">{{f.value}}</span>
-            </div>
+            <div v-for="f in detailFields" :key="f.label" class="sr-panel-field"><label>{{f.label}}</label><span :class="{mono:f.mono}">{{f.value}}</span></div>
           </template>
           <!-- 书籍编辑 -->
           <template v-else-if="panelMode==='edit'">
@@ -122,64 +135,49 @@
             <div v-for="f in editFields" :key="f.key" class="sr-panel-field">
               <label>{{f.label}}</label>
               <input v-if="f.type==='text'" v-model="editForm[f.key]" :placeholder="f.placeholder">
-              <select v-else-if="f.type==='select'" v-model="editForm[f.key]">
-                <option v-for="opt in f.options" :key="opt.value" :value="opt.value">{{opt.label}}</option>
-              </select>
+              <select v-else-if="f.type==='select'" v-model="editForm[f.key]"><option v-for="opt in f.options" :key="opt.value" :value="opt.value">{{opt.label}}</option></select>
               <template v-else-if="f.key==='tags'">
                 <input v-model="editForm.tags" :placeholder="f.placeholder">
-                <div v-if="allTags.length" class="sr-chips">
-                  <span v-for="t in allTags.slice(0,8)" :key="t.tag" @click="toggleTag(t.tag)" :class="['sr-chip',{active:editForm.tags.includes(t.tag)}]">#{{t.tag}}</span>
-                </div>
+                <div v-if="allTags.length" class="sr-chips"><span v-for="t in allTags.slice(0,8)" :key="t.tag" @click="toggleTag(t.tag)" :class="['sr-chip',{active:editForm.tags.includes(t.tag)}]">#{{t.tag}}</span></div>
               </template>
               <template v-else-if="f.key==='groups'">
-                <div v-if="folderGroups.length" class="sr-chips">
-                  <span v-for="g in folderGroups" :key="g.id" @click="toggleGroup(g.id)" :class="['sr-chip',{active:editForm.groups.includes(g.id)}]">{{g.name}}</span>
-                </div>
+                <div v-if="folderGroups.length" class="sr-chips"><span v-for="g in folderGroups" :key="g.id" @click="toggleGroup(g.id)" :class="['sr-chip',{active:editForm.groups.includes(g.id)}]">{{g.name}}</span></div>
                 <span v-else style="font-size:12px;opacity:.5">暂无分组</span>
               </template>
               <template v-else-if="f.key==='bind'">
                 <input v-if="!editForm.bindDocId" v-model="bindSearch" placeholder="搜索文档..." @input="searchBindDoc">
-                <div v-if="bindResults.length" class="sr-chips">
-                  <span v-for="d in bindResults.slice(0,8)" :key="d.path||d.id" @click="selectBindDoc(d)" class="sr-chip">{{d.hPath||d.content||'无标题'}}</span>
-                </div>
+                <div v-if="bindResults.length" class="sr-chips"><span v-for="d in bindResults.slice(0,8)" :key="d.path||d.id" @click="selectBindDoc(d)" class="sr-chip">{{d.hPath||d.content||'无标题'}}</span></div>
                 <div v-else-if="editForm.bindDocId">
-                  <div class="sr-chips" style="margin-bottom:8px">
-                    <span class="sr-chip active">{{editForm.bindDocName}}</span>
-                    <span @click="unbindDoc" class="sr-chip" style="background:var(--b3-theme-error);color:white">解绑</span>
-                  </div>
-                  <div class="sr-chips">
-                    <span @click="editForm.autoSync=!editForm.autoSync" :class="['sr-chip',{active:editForm.autoSync}]">添加时同步</span>
-                    <span @click="editForm.syncDelete=!editForm.syncDelete" :class="['sr-chip',{active:editForm.syncDelete}]">删除时同步</span>
-                  </div>
+                  <div class="sr-chips" style="margin-bottom:8px"><span class="sr-chip active">{{editForm.bindDocName}}</span><span @click="unbindDoc" class="sr-chip" style="background:var(--b3-theme-error);color:white">解绑</span></div>
+                  <div class="sr-chips"><span @click="editForm.autoSync=!editForm.autoSync" :class="['sr-chip',{active:editForm.autoSync}]">添加时同步</span><span @click="editForm.syncDelete=!editForm.syncDelete" :class="['sr-chip',{active:editForm.syncDelete}]">删除时同步</span></div>
                 </div>
               </template>
             </div>
-            <div class="sr-panel-actions">
-              <button @click="cancelEdit" class="btn-cancel">取消</button>
-              <button @click="saveEdit" class="btn-save">保存</button>
-            </div>
+            <div class="sr-panel-actions"><button @click="cancelEdit" class="btn-cancel">取消</button><button @click="saveEdit" class="btn-save">保存</button></div>
           </template>
           <!-- 分组编辑 -->
           <template v-else-if="panelMode==='group'&&editingGroup">
             <div v-for="f in groupFields" :key="f.key" class="sr-panel-field">
               <label>{{f.label}}</label>
               <input v-if="f.type==='text'" v-model="editingGroup[f.key]" :placeholder="f.placeholder">
-              <div v-else-if="f.type==='chips'" class="sr-chips">
-                <span v-for="opt in f.options" :key="opt.value" @click="f.single?editingGroup.rules[f.key]=opt.value:toggleArrayItem(editingGroup.rules[f.key],opt.value)" :class="['sr-chip',{active:f.single?editingGroup.rules[f.key]===opt.value:editingGroup.rules[f.key]?.includes(opt.value)}]">{{opt.label}}</span>
-              </div>
+              <div v-else-if="f.type==='chips'" class="sr-chips"><span v-for="opt in f.options" :key="opt.value" @click="f.single?editingGroup.rules[f.key]=opt.value:toggleArrayItem(editingGroup.rules[f.key],opt.value)" :class="['sr-chip',{active:f.single?editingGroup.rules[f.key]===opt.value:editingGroup.rules[f.key]?.includes(opt.value)}]">{{opt.label}}</span></div>
             </div>
-            <div class="sr-panel-actions">
-              <button @click="cancelGroup" class="btn-cancel">取消</button>
-              <button @click="saveGroup" class="btn-save">保存</button>
-            </div>
+            <div class="sr-panel-actions"><button @click="cancelGroup" class="btn-cancel">取消</button><button @click="saveGroup" class="btn-save">保存</button></div>
+          </template>
+          <!-- 添加书籍 -->
+          <template v-else-if="panelMode==='add'">
+            <div class="sr-panel-field"><label>链接或路径</label><input v-model="urlInput" placeholder="HTTP(S)链接、绝对路径或相对路径" @keyup.enter="previewBook"></div>
+            <template v-if="previewBookInfo">
+              <div v-if="previewBookInfo.cover" class="sr-panel-cover"><img :src="previewBookInfo.cover"></div>
+              <div v-for="f in previewFields" :key="f.label" class="sr-panel-field"><label>{{f.label}}</label><span>{{f.value}}</span></div>
+            </template>
+            <div class="sr-panel-actions"><button @click="closePanel">取消</button><button v-if="!previewBookInfo" @click="previewBook" :disabled="!urlInput.trim()||previewLoading">{{previewLoading?'加载中...':'预览'}}</button><button v-else @click="confirmAdd" class="btn-save">确认添加</button></div>
           </template>
           <!-- 筛选 -->
           <template v-else-if="panelMode==='filter'">
             <div v-for="s in filterSections" :key="s.key" class="sr-panel-field">
               <label>{{s.label}}</label>
-              <div class="sr-chips">
-                <span v-for="opt in s.options" :key="opt.value" @click="toggleFilterItem(s.key,opt.value)" :class="['sr-chip',{active:isFilterActive(s.key,opt.value)}]">{{opt.label}} ({{opt.count}})</span>
-              </div>
+              <div class="sr-chips"><span v-for="opt in s.options" :key="opt.value" @click="toggleFilterItem(s.key,opt.value)" :class="['sr-chip',{active:isFilterActive(s.key,opt.value)}]">{{opt.label}} ({{opt.count}})</span></div>
             </div>
           </template>
         </div>
@@ -205,15 +203,16 @@ const MENU_ICONS = {status:{unread:'iconUncheck',reading:'iconEye',finished:'ico
 
 // 状态
 const books = ref<Book[]>([]), groups = ref<GroupConfig[]>([]), allTags = ref<Array<{tag:string;count:number}>>([])
-const stats = ref({byStatus:{unread:0,reading:0,finished:0},byFormat:{epub:0,pdf:0,mobi:0,azw3:0,txt:0},withUpdate:0})
-const keyword = ref(''), currentGroup = ref<string|null>(null), fileInput = ref<HTMLInputElement>()
+const stats = ref({byStatus:{unread:0,reading:0,finished:0},byFormat:{epub:0,pdf:0,mobi:0,azw3:0,online:0},withUpdate:0})
+const keyword = ref(''), currentGroup = ref<string|null>(null), fileInput = ref<HTMLInputElement>(), urlInput = ref('')
+const previewBookInfo = ref<any>(null), previewLoading = ref(false)
 const filterStatus = ref<BookStatus[]>([]), filterRating = ref(0), filterFormats = ref<BookFormat[]>([]), filterTags = ref<string[]>([]), filterHasUpdate = ref(false)
 const sortType = ref<SortType>('time'), sortReverse = ref(false), viewMode = ref<'grid'|'list'|'compact'>('grid')
 const selectedBooks = ref<Set<string>>(new Set()), groupCounts = ref<Record<string,number>>({}), groupPreviews = ref<Record<string,any[]>>({})
 const editingBook = ref<string|null>(null), editingGroup = ref<GroupConfig|null>(null), confirmDelete = ref<{type:'group'|'book';id:string;item:any}|null>(null)
-const panelMode = ref<'detail'|'edit'|'group'|'filter'|null>(null), panelBook = ref<Book|null>(null)
+const panelMode = ref<'detail'|'edit'|'group'|'filter'|'add'|null>(null), panelBook = ref<Book|null>(null), panelWidth = ref(320)
 const editForm = ref({title:'',author:'',tags:'',rating:0,status:'unread' as BookStatus,cover:'',groups:[] as string[],bindDocId:'',bindDocName:'',autoSync:false,syncDelete:false})
-const bindSearch = ref(''), bindResults = ref<any[]>([])
+const bindSearch = ref(''), bindResults = ref<any[]>([]), bookshelfEl = ref<HTMLElement>()
 let settingsLoaded = false
 
 // 计算
@@ -253,17 +252,26 @@ const selectGroup = (id: string|null) => currentGroup.value=id
 const toggleViewMode = () => {const modes = ['grid','list','compact'] as const;viewMode.value=modes[(modes.indexOf(viewMode.value)+1)%3]}
 const getBookColor = (title: string) => bookshelfManager.getBookColor(title)
 const getCoverUrl = (book: Book) => bookshelfManager.getCoverUrl(book)
+const getProgress = (book: Book) => book.format === 'online' && book.total ? `${(book.chapter ?? 0) + 1}/${book.total}` : `${book.progress || 0}%`
 const toggleArrayItem = (arr: any[], value: any) => {const i = arr.indexOf(value); i>-1?arr.splice(i,1):arr.push(value)}
-const filterMap = {status:filterStatus,rating:filterRating,format:filterFormats,tags:filterTags,update:filterHasUpdate}
 const toggleFilterItem = (key: string, value: any) => {
   const target = filterMap[key];
-  if (key==='rating') target.value=value;
-  else if (key==='update') target.value=!target.value;
-  else toggleArrayItem(target.value,value);
+  key==='rating'?target.value=value:key==='update'?target.value=!target.value:toggleArrayItem(target.value,value);
 }
 const isFilterActive = (key: string, value: any) => {
   const target = filterMap[key];
   return key==='rating'?target.value===value:key==='update'?target.value:target.value.includes(value);
+}
+const filterMap = {status:filterStatus,rating:filterRating,format:filterFormats,tags:filterTags,update:filterHasUpdate}
+
+// 在线书籍刷新
+const refreshOnline = async (book: Book) => {
+  try {
+    const { refreshOnlineBook } = await import('@/core/online')
+    await refreshOnlineBook(book, refresh, showMessage)
+  } catch (e: any) {
+    showMessage(`刷新失败: ${e.message}`, 3000, 'error')
+  }
 }
 
 // 刷新
@@ -271,8 +279,7 @@ const refreshGroups = async () => {
   groups.value = await bookshelfManager.getGroups();
   await Promise.all(groups.value.map(async g => {
     const [count,preview]=await Promise.all([bookshelfManager.getGroupCount(g.id,groups.value),bookshelfManager.getGroupPreviewBooks(g.id,4,groups.value)]);
-    groupCounts.value[g.id]=count;
-    groupPreviews.value[g.id]=[...preview,...Array(4)].slice(0,4);
+    groupCounts.value[g.id]=count;groupPreviews.value[g.id]=[...preview,...Array(4)].slice(0,4);
   }));
 }
 const loadBooks = async () => {
@@ -337,12 +344,15 @@ const updateBookField = async (book: Book, field: string, value: any, msg: strin
 }
 const readBook = async (book: Book) => {const {getBookWithFallback,findOpenedTab} = await import('@/utils/bookOpen');const full = await getBookWithFallback(bookshelfManager,book.url);if(!full)return showMessage('加载失败',3000,'error');const tab = findOpenedTab(full.title);if(tab)return tab.click();if(isMobile()){window.dispatchEvent(new CustomEvent('reader:open',{detail:{book:full}}))}else{emit('read',full)}}
 const removeBook = async (book: Book) => {const res = await bookshelfManager.removeBooks([book.url]); confirmDelete.value = null; await refresh(); showMessage(res.failed ? '删除失败' : '已移出', 2000, res.failed ? 'error' : 'info');}
-const handleFileUpload = async (e: Event) => {
-  const files = Array.from((e.target as HTMLInputElement).files||[]); if (!files.length) return;
-  const {success, failed} = await bookshelfManager.uploadBooks(files); await loadBooks();
-  showMessage(failed ? (success ? `成功${success}本，失败${failed}本` : '导入失败') : `导入${success}本`, 3000, failed && !success ? 'error' : 'info');
-  if (fileInput.value) fileInput.value.value = '';
-}
+const showAddMenu = (e: MouseEvent) => buildMenu([{icon:'iconLink',label:'添加链接',click:()=>{panelMode.value='add';urlInput.value='';previewBookInfo.value=null}},{icon:'iconUpload',label:'选择文件',click:()=>fileInput.value?.click()}]).open({x:e.clientX,y:e.clientY})
+const handleFileUpload = async (e: Event) => {const files = Array.from((e.target as HTMLInputElement).files||[]); if (!files.length) return; const {success, failed} = await bookshelfManager.uploadBooks(files); await loadBooks(); showMessage(failed ? (success ? `成功${success}本，失败${failed}本` : '导入失败') : `导入${success}本`, 3000, failed && !success ? 'error' : 'info'); if (fileInput.value) fileInput.value.value = '';}
+const previewBook = async () => {if (!urlInput.value.trim()||previewLoading.value) return; previewLoading.value = true; try { previewBookInfo.value = await bookshelfManager.previewUrlBook(urlInput.value.trim()) } catch(e) { showMessage(e instanceof Error?e.message:'预览失败',2000,'error') } finally { previewLoading.value = false }}
+const confirmAdd = async () => {try { await bookshelfManager.addUrlBook(urlInput.value.trim()); await loadBooks(); showMessage('添加成功',2000,'info'); closePanel() } catch(e) { showMessage(e instanceof Error?e.message:'添加失败',2000,'error') }}
+const previewFields = computed(() => {
+  if (!previewBookInfo.value) return []
+  const m = previewBookInfo.value
+  return [{label:'书名',value:m.title},{label:'作者',value:m.author},{label:'格式',value:m.format?.toUpperCase()},{label:'出版社',value:m.publisher},{label:'出版日期',value:m.published},{label:'语言',value:m.language},{label:'ISBN',value:m.identifier},{label:'简介',value:m.intro}].filter(f=>f.value)
+})
 const handleClick = (book: Book, e?: MouseEvent) => {if (selectedBooks.value.size || e?.ctrlKey || e?.metaKey) return toggleSelect(book); readBook(book);}
 
 // 选择
@@ -379,7 +389,7 @@ const editFields = computed(() => [
   {key:'title',label:'书名',type:'text',placeholder:'书名'},{key:'author',label:'作者',type:'text',placeholder:'作者'},{key:'cover',label:'封面',type:'text',placeholder:'封面图片URL'},
   {key:'rating',label:'评分',type:'select',options:[{value:0,label:'无评分'},...[1,2,3,4,5].map(i=>({value:i,label:'★'.repeat(i)+` ${i}星`}))]},
   {key:'status',label:'状态',type:'select',options:STATUS_OPTIONS.map(([k,v])=>({value:k,label:v}))},
-  {key:'tags',label:'标签',type:'tags',placeholder:'用逗号分隔，如：小说, 科幻'},{key:'groups',label:'分组',type:'groups'},{key:'bind',label:'绑定思源',type:'bind'}
+  {key:'tags',label:'标签',type:'tags',placeholder:'用逗号分隔'},{key:'groups',label:'分组',type:'groups'},{key:'bind',label:'绑定思源',type:'bind'}
 ])
 const groupFields = computed(() => editingGroup.value ? [
   {key:'name',label:'名称',type:'text',placeholder:'分组名称'},
@@ -408,6 +418,12 @@ const selectBindDoc = (d: any) => {const id = d.path?.split('/').pop()?.replace(
 const unbindDoc = () => {editForm.value.bindDocId = ''; editForm.value.bindDocName = ''}
 const showPanel = (mode: 'detail'|'edit'|'group', book?: Book, group?: GroupConfig) => {panelMode.value = mode; if (book) {panelBook.value = book; if (mode === 'edit') handleEdit(book)} if (group) startEditGroup(group);}
 const closePanel = () => {panelMode.value = null; panelBook.value = null; editingBook.value = null; editingGroup.value = null}
+const startResize = (e: MouseEvent) => {
+  const {clientX, offsetWidth = 800} = {clientX: e.clientX, offsetWidth: bookshelfEl.value?.offsetWidth}, w = panelWidth.value
+  const move = (e: MouseEvent) => panelWidth.value = Math.max(280, Math.min(offsetWidth - 20, w + clientX - e.clientX))
+  const up = () => {document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); settingsLoaded && getDatabase().then(db => db.saveSetting('bookshelf_panelWidth', panelWidth.value))}
+  document.addEventListener('mousemove', move); document.addEventListener('mouseup', up)
+}
 // 详情
 const fmt = {
   bytes: (n: number) => {const k=1024,i=n<k?0:Math.floor(Math.log(n)/Math.log(k)); return (n/Math.pow(k,i)).toFixed(1)+' '+['B','KB','MB','GB'][i]},
@@ -434,6 +450,7 @@ onMounted(async () => {
   sortType.value = await db.getSetting('bookshelf_sortType') || 'time';
   sortReverse.value = await db.getSetting('bookshelf_sortReverse') || false;
   viewMode.value = await db.getSetting('bookshelf_viewMode') || 'grid';
+  panelWidth.value = await db.getSetting('bookshelf_panelWidth') || 320;
   settingsLoaded = true;
   await loadBooks();
   window.addEventListener('sireader:bookshelf-updated', () => Promise.all([loadBooks(),refreshGroups()]));
@@ -459,32 +476,32 @@ $ease: cubic-bezier(.4,0,.2,1);
 .sr-grid{display:grid;gap:12px}
 .sr-list{display:flex;flex-direction:column;gap:8px}
 .sr-compact{display:flex;flex-direction:column;gap:3px}
-.sr-card{position:relative;cursor:pointer;border-radius:8px;border:2px solid var(--b3-border-color);box-shadow:0 1px 3px rgba(0,0,0,.08);transition:all .3s $ease;overflow:hidden;&:hover{transform:scale(1.05);box-shadow:0 6px 16px rgba(0,0,0,.15);border-color:var(--b3-theme-primary);z-index:10}&.selected{outline:2px solid var(--b3-theme-primary);outline-offset:2px}&.grid{aspect-ratio:2/3;background:var(--b3-theme-surface);.sr-grid-content{position:absolute;inset:0;img,.sr-text{position:absolute;inset:0}img{width:100%;height:100%;object-fit:cover}.sr-text{display:flex;align-items:center;justify-content:center;padding:8px;font-size:12px;font-weight:600;text-align:center;line-height:1.2;color:var(--b3-theme-on-surface);word-break:break-word}}&.sr-group .sr-group-preview{position:absolute;inset:0 0 56px 0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;padding:2px;.sr-preview-item{position:relative;overflow:hidden;border-radius:4px;img{width:100%;height:100%;object-fit:cover}.sr-preview-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:4px;font-size:9px;font-weight:600;line-height:1.3;text-align:center;word-break:break-all;color:var(--b3-theme-on-surface)}.sr-preview-empty{width:100%;height:100%;background:linear-gradient(135deg,rgba(var(--b3-theme-primary-rgb),.08),rgba(var(--b3-theme-primary-rgb),.02));display:flex;align-items:center;justify-content:center;svg{width:20px;height:20px;opacity:.3}}}}}&.list{display:flex;align-items:center;gap:12px;padding:10px 12px;background:var(--b3-theme-surface)}&.compact{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--b3-theme-surface);border-width:1px;&:hover{transform:scale(1.01);box-shadow:0 2px 6px rgba(0,0,0,.1)}}}
-.sr-cover{position:relative;flex-shrink:0;border-radius:6px;overflow:hidden;background:var(--b3-theme-background);width:48px;height:68px;img,.sr-text,.sr-icon{position:absolute;inset:0}img{width:100%;height:100%;object-fit:cover}.sr-text{display:flex;align-items:center;justify-content:center;font-weight:600;text-align:center;color:var(--b3-theme-on-surface);font-size:14px}.sr-icon{display:flex;align-items:center;justify-content:center;color:var(--b3-theme-primary);opacity:.6;svg{width:60%;height:60%}}}
-.sr-icon{flex-shrink:0;width:20px;height:20px;color:var(--b3-theme-primary);opacity:.7;cursor:pointer;transition:opacity .15s;svg{width:100%;height:100%}&:hover{opacity:1}}
+.sr-card{position:relative;cursor:pointer;border-radius:8px;border:2px solid var(--b3-border-color);box-shadow:0 1px 3px rgba(0,0,0,.08);transition:all .3s $ease;overflow:hidden;&:hover{transform:scale(1.05);box-shadow:0 6px 16px rgba(0,0,0,.15);border-color:var(--b3-theme-primary);z-index:10}&.selected{outline:2px solid var(--b3-theme-primary);outline-offset:2px}&.grid{aspect-ratio:2/3;background:var(--b3-theme-surface);.sr-grid-content{position:absolute;inset:0;img,.sr-text{position:absolute;inset:0}img{width:100%;height:100%;object-fit:cover}.sr-text{display:flex;align-items:center;justify-content:center;padding:8px;font-size:12px;font-weight:600;text-align:center;line-height:1.2;color:var(--b3-theme-on-surface);word-break:break-word}}&.sr-group .sr-group-preview{position:absolute;inset:0 0 56px 0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;padding:2px;.sr-preview-item{position:relative;overflow:hidden;border-radius:4px;img{width:100%;height:100%;object-fit:cover}.sr-preview-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:4px;font-size:9px;font-weight:600;line-height:1.3;text-align:center;word-break:break-all;color:var(--b3-theme-on-surface)}.sr-preview-empty{width:100%;height:100%;background:linear-gradient(135deg,rgba(var(--b3-theme-primary-rgb),.08),rgba(var(--b3-theme-primary-rgb),.02));display:flex;align-items:center;justify-content:center;svg{width:20px;height:20px;opacity:.3}}}}}&.list{display:flex;align-items:center;gap:12px;padding:2px;background:var(--b3-theme-surface)}&.compact{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--b3-theme-surface);border-width:1px;&:hover{transform:scale(1.01);box-shadow:0 2px 6px rgba(0,0,0,.1)}.sr-info{flex-direction:row;align-items:center;gap:8px}}}
+.sr-cover{position:relative;flex-shrink:0;border-radius:6px;overflow:hidden;background:var(--b3-theme-background);width:48px;height:68px;img,.sr-text,.sr-icon{position:absolute;inset:0}img{width:100%;height:100%;object-fit:cover}.sr-text{display:flex;align-items:center;justify-content:center;font-weight:600;text-align:center;color:var(--b3-theme-on-surface);font-size:14px}.sr-icon{display:flex;align-items:center;justify-content:center;color:var(--b3-theme-primary);opacity:.6;svg{width:60%;height:60%}}.sr-cover-rating{position:absolute;top:2px;right:2px;padding:1px 3px;border-radius:4px;font-size:7px;font-weight:700;line-height:1;color:white;background:var(--b3-theme-primary);z-index:1}}
+.sr-icon{flex-shrink:0;width:20px;height:20px;color:var(--b3-theme-primary);opacity:.7;cursor:pointer;transition:opacity .15s;border:none;background:transparent;padding:0;svg{width:100%;height:100%}&:hover{opacity:1}}
+.sr-icon-sm{flex-shrink:0;width:16px;height:16px;color:var(--b3-theme-primary);opacity:.7;cursor:pointer;transition:opacity .15s;border:none;background:transparent;padding:0;svg{width:100%;height:100%}&:hover{opacity:1}}
 .sr-check{position:absolute;top:6px;left:6px;z-index:10;width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,.1);input{cursor:pointer;width:16px;height:16px}}
-.sr-tag{position:absolute;top:6px;z-index:10;padding:4px 8px;border-radius:6px;font-size:9px;font-weight:700;line-height:1;color:white;&.unread{left:6px;background:#9ca3af}&.reading{left:6px;background:var(--b3-theme-primary)}&.finished{left:6px;background:#22c55e}&.sr-tag-rating{right:6px;background:var(--b3-theme-primary)}}
-.sr-badge{position:absolute;top:6px;right:6px;z-index:2;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#ff6b6b,#ee5a6f);color:white;border-radius:9px;font-size:10px;font-weight:700;padding:0 5px;box-shadow:0 2px 4px rgba(0,0,0,.2)}
+.sr-tag{position:absolute;top:6px;z-index:10;padding:4px 8px;border-radius:6px;font-size:9px;font-weight:700;line-height:1;color:white;&.unread{left:6px;background:#9ca3af}&.reading{left:6px;background:var(--b3-theme-primary)}&.finished{left:6px;background:#22c55e}&.sr-tag-rating{right:6px;background:var(--b3-theme-primary)}&.sr-tag-bl{left:6px;bottom:56px;top:auto;background:rgba(0,0,0,.7)}&.sr-tag-br{right:6px;bottom:56px;top:auto;width:28px;height:28px;padding:0;background:rgba(0,0,0,.7);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;svg{width:14px;height:14px}&:hover{background:var(--b3-theme-primary);transform:rotate(180deg)}}}
 .sr-title,.sr-author,.sr-progress,.sr-count{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1;margin:0;padding:0}
-.sr-title{font-size:13px;font-weight:700;color:var(--b3-theme-on-surface);flex:1;min-width:0}
+.sr-title{font-size:13px;font-weight:700;color:var(--b3-theme-on-surface);flex:1;min-width:0;padding-right:60px}
 .sr-author{font-size:12px;color:var(--b3-theme-on-surface-variant)}
 .sr-progress,.sr-count{font-size:12px;color:var(--b3-theme-primary);font-weight:600;flex-shrink:0}
-.sr-chip{display:inline-block;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:500;color:#333;white-space:nowrap;flex-shrink:0;&.unread,&.reading,&.finished,&.sr-chip-rating{color:white}&.unread{background:#9ca3af}&.reading,&.sr-chip-rating{background:var(--b3-theme-primary)}&.finished{background:#22c55e}}
+.sr-chip{display:inline-block;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:500;white-space:nowrap;flex-shrink:0;color:#333;&.unread,&.reading,&.finished,&.sr-chip-rating{color:white}&.unread{background:#9ca3af}&.reading,&.sr-chip-rating{background:var(--b3-theme-primary)}&.finished{background:#22c55e}&.sr-chip-format{background:var(--b3-theme-surface-lighter);color:var(--b3-theme-on-surface-variant);font-weight:600}&.sr-chip-latest{background:transparent;color:var(--b3-theme-on-surface-variant);font-size:11px;overflow:hidden;text-overflow:ellipsis;max-width:300px;padding:0}}
 .sr-row{display:flex;align-items:center;gap:8px;width:100%}
-.sr-info,.sr-grid-info{display:flex;flex-direction:column;gap:3px}
-.sr-info{flex:1;min-width:0}
-.sr-grid-info{position:absolute;bottom:0;left:0;right:0;background:var(--b3-theme-surface);border-top:1px solid var(--b3-border-color);padding:6px 8px}
+.sr-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;position:relative;padding-right:32px;.sr-progress{position:absolute;top:0;right:2px}}
+.sr-grid-info{position:absolute;bottom:0;left:0;right:0;background:var(--b3-theme-surface);border-top:1px solid var(--b3-border-color);padding:6px 8px;display:flex;flex-direction:column;gap:3px}
 .sr-tags{display:flex;gap:3px;overflow:hidden;width:100%;flex-wrap:nowrap}
-.sr-more{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:6px;cursor:pointer;transition:background .15s $ease;flex-shrink:0;svg{width:14px;height:14px}&:hover{background:rgba(var(--b3-theme-on-surface-rgb),.08)}}
+.sr-more{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:6px;cursor:pointer;transition:background .15s $ease;flex-shrink:0;svg{width:14px;height:14px}&:hover{background:rgba(var(--b3-theme-on-surface-rgb),.08)}}
 .slide-enter-from,.slide-leave-to{transform:translateY(-100%);opacity:0}
 .fade-enter-active,.fade-leave-active{transition:opacity .2s}
 .fade-enter-from,.fade-leave-to{opacity:0}
 @keyframes slideIn{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
-.sr-panel{position:absolute;top:0;right:0;bottom:0;width:300px;background:var(--b3-theme-surface);border-left:1px solid var(--b3-border-color);box-shadow:-2px 0 8px rgba(0,0,0,.1);z-index:100;display:flex;flex-direction:column}
+.sr-panel{position:absolute;top:0;right:0;bottom:0;min-width:280px;background:var(--b3-theme-surface);border-left:1px solid var(--b3-border-color);box-shadow:-2px 0 8px rgba(0,0,0,.1);z-index:100;display:flex;flex-direction:column}
+.sr-panel-resize{position:absolute;left:-2px;top:0;bottom:0;width:4px;cursor:ew-resize;z-index:101;&::after{content:'';position:absolute;left:2px;top:0;bottom:0;width:1px;background:var(--b3-border-color);transition:all .2s}&:hover::after,&:active::after{background:var(--b3-theme-primary);width:2px;left:1px}}
 .sr-panel-header{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--b3-border-color);font-size:14px;font-weight:600;button{width:24px;height:24px;padding:0;border:none;background:transparent;cursor:pointer;svg{width:16px;height:16px}&:hover{color:var(--b3-theme-primary)}}}
 .sr-panel-body{flex:1;overflow-y:auto;padding:16px}
 .sr-panel-cover{width:120px;height:170px;margin:0 auto 16px;border-radius:6px;overflow:hidden;img{width:100%;height:100%;object-fit:cover}}
-.sr-panel-field{display:flex;flex-direction:column;gap:4px;padding:8px 0;border-bottom:1px solid var(--b3-border-color);font-size:12px;&:last-child{border-bottom:none}label{color:var(--b3-theme-on-surface-variant);font-weight:500}span{color:var(--b3-theme-on-surface);word-break:break-all;line-height:1.4;&.mono{font-size:10px;font-family:monospace;opacity:.8}}input,select{width:100%;padding:6px 8px;border:1px solid var(--b3-border-color);border-radius:4px;font-size:12px;background:var(--b3-theme-background);color:var(--b3-theme-on-surface);box-sizing:border-box;&:focus{outline:none;border-color:var(--b3-theme-primary)}}}
+.sr-panel-field{display:flex;flex-direction:column;gap:4px;padding:8px 0;border-bottom:1px solid var(--b3-border-color);font-size:12px;&:last-child{border-bottom:none}label{color:var(--b3-theme-on-surface-variant);font-weight:500}span{color:var(--b3-theme-on-surface);word-break:break-word;line-height:1.4;&.mono{font-size:10px;font-family:monospace;opacity:.8;word-break:break-all}}input,select{width:100%;padding:6px 8px;border:1px solid var(--b3-border-color);border-radius:4px;font-size:12px;background:var(--b3-theme-background);color:var(--b3-theme-on-surface);box-sizing:border-box;&:focus{outline:none;border-color:var(--b3-theme-primary)}}}
 .sr-panel-actions{display:flex;gap:8px;padding-top:16px;border-top:1px solid var(--b3-border-color);button{flex:1;padding:8px 12px;border-radius:4px;cursor:pointer;font-size:13px;transition:all .15s;border:1px solid var(--b3-border-color);background:var(--b3-theme-surface);color:var(--b3-theme-on-surface);&:hover{background:var(--b3-list-hover)}&.btn-save{background:var(--b3-theme-primary);color:white;border-color:var(--b3-theme-primary);&:hover{opacity:.9;background:var(--b3-theme-primary)}}}}
 .sr-chips{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;.sr-chip{padding:3px 8px;background:var(--b3-theme-background);border:1px solid var(--b3-border-color);color:var(--b3-theme-on-surface);border-radius:10px;font-size:11px;cursor:pointer;transition:all .15s;&:hover{background:var(--b3-list-hover)}&.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary);border-color:var(--b3-theme-primary)}}}
 </style>

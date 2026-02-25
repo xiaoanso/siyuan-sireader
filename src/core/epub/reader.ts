@@ -1,23 +1,15 @@
 /**
  * Foliate Reader - 统一阅读器
- * 整合 View 创建、配置、TXT 加载、标记管理等所有功能
+ * 整合 View 创建、配置、标记管理等所有功能
  */
 
 import type { Plugin } from 'siyuan'
 import type { FoliateView, Location } from './types'
 import type { ReaderSettings } from '@/composables/useSetting'
 import { PRESET_THEMES } from '@/composables/useSetting'
-import { bookSourceManager } from '@/utils/BookSearch'
 import { createTooltip, showTooltip, hideTooltip } from '@/core/MarkManager'
 import { EPUBSearch } from './search'
 import 'foliate-js/view.js'
-
-interface TxtChapter {
-  index: number
-  title: string
-  url?: string
-  content?: string
-}
 
 export interface ReaderOptions {
   container: HTMLElement
@@ -161,9 +153,9 @@ export class FoliateReader {
     this.view.addEventListener('load', ((e: CustomEvent) => {
       const { doc } = e.detail || {}
       if (!doc) return
-      doc.querySelectorAll('img').forEach((img: HTMLImageElement) => {
-        img.onerror = () => { img.style.display = 'none' }
-      })
+      
+      // 隐藏加载失败的图片
+      doc.querySelectorAll('img').forEach((img: HTMLImageElement) => img.onerror = () => img.style.display = 'none')
     }) as EventListener)
     
     // 脚注处理
@@ -330,141 +322,3 @@ export function createReader(options: ReaderOptions): FoliateReader {
 // ===== 导出工具函数 =====
 
 export { createFoliateView, configureView, applyCustomCSS, getCurrentLocation, destroyView }
-
-// ===== TXT/在线书籍支持 =====
-
-// TXT 编码检测和解码
-async function detectAndDecodeText(buffer:ArrayBuffer):Promise<string>{
-  const bytes=new Uint8Array(buffer)
-  
-  // 检测 UTF-8 BOM
-  if(bytes.length>=3&&bytes[0]===0xEF&&bytes[1]===0xBB&&bytes[2]===0xBF){
-    return new TextDecoder('utf-8').decode(bytes.slice(3))
-  }
-  
-  // 检测 UTF-16 BOM
-  if(bytes.length>=2){
-    if(bytes[0]===0xFF&&bytes[1]===0xFE)return new TextDecoder('utf-16le').decode(bytes.slice(2))
-    if(bytes[0]===0xFE&&bytes[1]===0xFF)return new TextDecoder('utf-16be').decode(bytes.slice(2))
-  }
-  
-  // 尝试 UTF-8 解码
-  try{
-    const text=new TextDecoder('utf-8',{fatal:true}).decode(bytes)
-    if(!text.includes('�'))return text
-  }catch{}
-  
-  // 降级到 GBK
-  try{
-    return new TextDecoder('gbk').decode(bytes)
-  }catch{
-    return new TextDecoder('utf-8').decode(bytes)
-  }
-}
-
-export async function loadTxtBook(view: FoliateView, content: string|ArrayBuffer, chapters: TxtChapter[], bookInfo?: any, settings?: ReaderSettings) {
-  let text=''
-  if(content instanceof ArrayBuffer){
-    text=await detectAndDecodeText(content)
-  }else{
-    text=content
-  }
-  
-  const chaps = chapters.length ? chapters : splitTxtContent(text)
-  
-  const loadChapter = async (ch: TxtChapter) => {
-    let html = ''
-    if (ch.url && bookInfo) {
-      try {
-        const text = await bookSourceManager.getChapterContent(bookInfo.sourceUrl || bookInfo.origin, ch.url)
-        html = toHtml(ch.title, text)
-      } catch {
-        html = toHtml(ch.title, '加载失败')
-      }
-    } else {
-      html = toHtml(ch.title, ch.content || '')
-    }
-    return URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-  }
-  
-  const book = {
-    sections: chaps.map((ch, idx) => ({ load: () => loadChapter(ch), id: `chapter-${idx}`, linear: 'yes' })),
-    toc: chaps.map((ch, i) => ({ label: ch.title, href: `#chapter-${i}`, level: 0 })),
-    resolveHref: (href: string) => {
-      const match = href.match(/#chapter-(\d+)/)
-      return match ? { index: parseInt(match[1]), anchor: () => null } : null
-    },
-    resolveCFI: () => null
-  }
-  
-  await view.open(book)
-  if (settings) {
-    configureView(view, settings)
-    applyCustomCSS(view, settings)
-  }
-  
-  const updateLocation = (index: number, fraction = 0) => {
-    const title = chaps[index]?.title || ''
-    const totalChapters=chaps.length
-    const overallFraction=totalChapters>0?(index+fraction)/totalChapters:0
-    view.lastLocation = { section: index, fraction: overallFraction, label: title, tocItem: { label: title, href: `#chapter-${index}` }, index }
-    return view.lastLocation
-  }
-  
-  updateLocation(0, 0)
-  
-  view.addEventListener('relocate', ((e: CustomEvent) => {
-    const detail = e.detail || {}
-    let index = detail.index ?? detail.section ?? 0
-    if (!index && detail.cfi) {
-      const match = detail.cfi.match(/\/6\/(\d+)/)
-      if (match) index = Math.floor((parseInt(match[1]) - 2) / 2)
-    }
-    updateLocation(index, detail.fraction || 0)
-    
-    setTimeout(() => {
-      try{
-        const contents = (view as any).renderer?.getContents?.()
-        const marks = (view as any).marks
-        if (contents && marks && typeof marks.bindTxtDocEvents === 'function') {
-          for (const { doc } of contents) {
-            if (doc && doc.body) marks.bindTxtDocEvents(doc, index)
-          }
-        }
-      }catch{}
-    }, 200)
-  }) as EventListener)
-  
-  ;(view as any).getLocation = () => {
-    const renderer = view.renderer as any
-    return renderer?.index !== undefined ? updateLocation(renderer.index, renderer.fraction || 0) : (view.lastLocation || updateLocation(0, 0))
-  }
-}
-
-function splitTxtContent(content: string): TxtChapter[] {
-  const lines = content.split('\n')
-  const chapters: TxtChapter[] = []
-  let current: { title: string; content: string[] } | null = null
-  let idx = 0
-  const chapterRegex = /^(第[零一二三四五六七八九十百千万\d]+[章节回集部]|Chapter\s+\d+|\d+\.|【.*?】)/i
-  
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (chapterRegex.test(trimmed)) {
-      if (current) chapters.push({ index: idx++, title: current.title, content: current.content.join('\n') })
-      current = { title: trimmed || `第 ${idx + 1} 章`, content: [] }
-    } else if (trimmed) {
-      if (!current) current = { title: '开始', content: [] }
-      current.content.push(trimmed)
-    }
-  }
-  
-  if (current) chapters.push({ index: idx, title: current.title, content: current.content.join('\n') })
-  return chapters.length ? chapters : [{ index: 0, title: '全文', content }]
-}
-
-function toHtml(title: string, content: string): string {
-  const escape = (text: string) => { const div = document.createElement('div'); div.textContent = text; return div.innerHTML }
-  const paragraphs = escape(content).split(/\n+/).map(p => p.trim()).filter(Boolean).map(p => `<p>${p}</p>`).join('')
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{max-width:800px;margin:0 auto;padding:2em;font-size:18px;line-height:1.8}h1{text-align:center;margin-bottom:2em}p{text-indent:2em;margin:1em 0}</style></head><body><h1>${escape(title)}</h1>${paragraphs}</body></html>`
-}

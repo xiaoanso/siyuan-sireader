@@ -4,7 +4,7 @@
 <p style="color: rgba(255,255,255,0.9); margin: 0 0 1.5em; font-size: 1.1em;">Professional eBook Reader · Smart Annotation · Multi-format Support</p>
 <p style="color: rgba(255,255,255,0.85); margin: 0 0 1.5em; line-height: 1.6; font-size: 0.95em;">Transform SiYuan Notes into a professional eBook reader<br>Support EPUB/PDF/TXT/Online novels with smart annotation, multi-theme switching, dictionary lookup, AI translation, deck system, and more for an immersive reading experience</p>
 <p style="margin: 0 0 1em;">
-<img src="https://img.shields.io/badge/version-0.8.6-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
+<img src="https://img.shields.io/badge/version-0.8.7-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/SiYuan-3.0+-orange.svg" alt="SiYuan" style="display: inline-block; margin: 0 4px;">
 </p>
@@ -73,6 +73,47 @@
 ---
 
 ## 📝 Latest Updates
+
+### v0.8.7 (2026.2.25)
+
+#### ✨ New Features
+
+**Enhanced Book Addition Methods**
+- Support "Add Link" or "Select File" when adding books
+- Support HTTP(S) links, Windows/Unix absolute paths, relative paths
+- Preview book info when adding links (title, author, cover, publication info, etc.)
+- Auto-extract book metadata (title, author, cover, publisher, ISBN, etc.)
+
+**Enhanced Book Search**
+- New unified HTTP book source management system
+- Built-in sources: Anna's Archive, Project Gutenberg, Standard Ebooks
+- Book source management interface for unified HTTP and regular source management
+- Support enable/disable HTTP book sources
+- Anna's Archive supports format filtering and custom domains
+- Search results auto-recognize HTTP download links with quick add to bookshelf
+
+**Unified TXT Reading Experience**
+- Unified TXT format reading experience, consistent with EPUB
+- Support complete annotation features (highlight/note/bookmark)
+
+#### ⚙️ Improvements
+
+**Performance Optimization**
+- Optimized bookshelf loading speed, SQL.js wasm file now bundled locally (~660KB), eliminating network download delay
+- Optimized online book refresh and loading logic
+- Unified file loading logic, eliminated duplicate code
+- Simplified computed fields in multiple components to single-line expressions
+
+**Interface Optimization**
+- Optimized bookshelf sidebar layout with drag-to-resize support
+
+#### 🐛 Bug Fixes
+
+- Fixed online book search failure issue
+- Fixed PDF page turning scrolling by screen height instead of page number in continuous scroll mode
+- Fixed EPUB annotation selection offset issue
+
+---
 
 ### v0.8.6 (2026.2.19)
 

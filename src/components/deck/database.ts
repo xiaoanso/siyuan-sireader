@@ -10,7 +10,7 @@ let sqlJs: any = null
 const getSqlJs = async () => {
   if (!sqlJs) {
     sqlJs = await initSqlJs({
-      locateFile: (f) => `https://cdn.jsdelivr.net/npm/sql.js@1.13.0/dist/${f}`
+      locateFile: (f) => `/plugins/siyuan-sireader/sql.js/${f}`
     })
   }
   return sqlJs

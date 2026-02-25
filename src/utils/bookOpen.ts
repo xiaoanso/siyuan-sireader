@@ -15,25 +15,9 @@ export const findOpenedTab = (bookName: string, pluginName: string) => {
   return null
 }
 
-// 获取书籍（带在线章节加载）
+// 获取书籍
 export const getBookWithFallback = async (manager: typeof bookshelfManager, bookUrl: string) => {
-  const book = await manager.getBook(bookUrl)
-  if (!book) return null
-  
-  // 在线书籍延迟加载章节
-  if (book.format === 'online' && book.source?.origin && !book.total) {
-    try {
-      const { bookSourceManager } = await import('@/utils/BookSearch')
-      const info = await bookSourceManager.getBookInfo(book.source.origin, book.url)
-      const chapters = await bookSourceManager.getChapters(book.source.origin, info.tocUrl || book.url)
-      await manager.updateBook(book.url, { total: chapters.length })
-    } catch (e) {
-      console.error('[章节加载]', e)
-      return null
-    }
-  }
-  
-  return book
+  return await manager.getBook(bookUrl)
 }
 
 // 获取或添加assets书籍
