@@ -4,7 +4,7 @@
 <p style="color: rgba(255,255,255,0.9); margin: 0 0 1.5em; font-size: 1.1em;">Professional eBook Reader · Smart Annotation · Multi-format Support</p>
 <p style="color: rgba(255,255,255,0.85); margin: 0 0 1.5em; line-height: 1.6; font-size: 0.95em;">Transform SiYuan Notes into a professional eBook reader<br>Support EPUB/PDF/TXT/Online novels with smart annotation, multi-theme switching, dictionary lookup, AI translation, deck system, and more for an immersive reading experience</p>
 <p style="margin: 0 0 1em;">
-<img src="https://img.shields.io/badge/version-0.8.7-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
+<img src="https://img.shields.io/badge/version-0.8.8-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/SiYuan-3.0+-orange.svg" alt="SiYuan" style="display: inline-block; margin: 0 4px;">
 </p>
@@ -73,6 +73,47 @@
 ---
 
 ## 📝 Latest Updates
+
+### v0.8.8 (2026.2.27)
+
+#### ✨ New Features
+
+**Reading Statistics System**
+- New complete reading statistics feature, click status bar clock icon to view
+- Simple view: Display current session/today/total reading time
+- Detailed view: Includes reading calendar, book distribution, favorite books, rating distribution, format distribution
+- Reading calendar: Year/month view toggle, color depth indicates reading duration, hover to show detailed data
+- Favorite books: Sorted by reading time, display top 10 books with complete duration (accurate to seconds)
+- Daily quote: Random inspirational quotes (from Hitokoto API)
+- Auto-save every 60 seconds to prevent data loss from abnormal exits
+- Auto-save before page close, double protection
+
+#### ⚙️ Improvements
+
+**Bookshelf Interface Optimization**
+- Remove local file annotation copy restrictions
+- Optimize bookshelf grid view display, status as background, book source as type tag
+- Change reading status from "Read" to "Finished" for more accurate semantics
+- Book detail panel auto-refreshes latest data (including reading time)
+
+**Online Book Optimization**
+- Optimize online book search and add logic, cache improves performance
+- Optimize online book refresh and loading logic
+
+**EPUB Rendering Optimization**
+- Refactored CSS style application logic for improved code readability and maintainability
+- Enhanced font application strength to fix font settings not working for some books
+- Optimized style rule classification: base styles, font forcing, paragraph formatting, footnote hiding, etc., with modular management
+
+#### 🐛 Bug Fixes
+
+- Fix PDF color inversion issue in SiYuan default theme
+- Fix reading time resetting to zero after 59 seconds
+- Fix statistics data not refreshing in real-time
+- Fix calendar and favorite books time not updating
+- Fix EPUB footnote content displaying in main text (footnote content now hidden, only shown in popup when clicking footnote links)
+
+---
 
 ### v0.8.7 (2026.2.25)
 

@@ -14,8 +14,8 @@ export interface BookStats { total: number; byStatus: Record<BookStatus, number>
 
 // ===== 常量 =====
 export const SORTS = [['time','最近阅读'],['added','最近添加'],['progress','阅读进度'],['rating','评分'],['readTime','阅读时长'],['name','书名'],['author','作者'],['update','最近更新']] as const;
-export const STATUS_OPTIONS = [['unread','未读'],['reading','在读'],['finished','已读']] as const;
-export const STATUS_MAP: Record<BookStatus,string> = {unread:'未读',reading:'在读',finished:'已读'};
+export const STATUS_OPTIONS = [['unread','未读'],['reading','在读'],['finished','读完']] as const;
+export const STATUS_MAP: Record<BookStatus,string> = {unread:'未读',reading:'在读',finished:'读完'};
 export const RATING_OPTIONS = [[0,'☆☆☆☆☆ 全部'],[5,'★★★★★ 仅5星'],[4,'★★★★☆ 4星及以上'],[3,'★★★☆☆ 3星及以上']] as const;
 export const FORMAT_OPTIONS: BookFormat[] = ['epub','pdf','mobi','azw3','online'];
 

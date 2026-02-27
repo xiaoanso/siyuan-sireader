@@ -61,13 +61,100 @@ function applyViewTheme(view: FoliateView, th: any) {
 }
 
 function applyCustomCSS(view: FoliateView, s: ReaderSettings) {
-  const { textSettings: t = { fontFamily: 'inherit', fontSize: 16, letterSpacing: 0, customFont: { fontFamily: '', fontFile: '' } }, paragraphSettings: p = { lineHeight: 1.8, textIndent: 2, paragraphSpacing: 1 }, layoutSettings: l = { marginHorizontal: 40, marginVertical: 20 } } = s
+  const { 
+    textSettings: t = { fontFamily: 'inherit', fontSize: 16, letterSpacing: 0, customFont: { fontFamily: '', fontFile: '' } }, 
+    paragraphSettings: p = { lineHeight: 1.8, textIndent: 2, paragraphSpacing: 1 }, 
+    layoutSettings: l = { marginHorizontal: 40, marginVertical: 20 } 
+  } = s
+  
   const th = getTheme(s)
   const isCustomFont = t.fontFamily === 'custom' && t.customFont?.fontFamily
   const font = isCustomFont ? `"${t.customFont.fontFamily}", sans-serif` : t.fontFamily || 'inherit'
-  const fontFace = isCustomFont ? `@font-face{font-family:"${t.customFont.fontFamily}";src:url("${location.origin}/plugins/custom-fonts/${t.customFont.fontFile}")}` : ''
-  const bgStyle = th.bgImg ? `background:url("${th.bgImg}") center/cover no-repeat` : `background:${th.bg}`
-  view.renderer?.setStyles?.(`@namespace epub "http://www.idpf.org/2007/ops";${fontFace}html{color-scheme:light dark}body{${bgStyle}!important;color:${th.color}!important;font-family:${font}!important;font-size:${t.fontSize}px!important;letter-spacing:${t.letterSpacing}em!important;padding:${l.marginVertical}px ${l.marginHorizontal}px!important}p,li,blockquote,dd{line-height:${p.lineHeight}!important;text-align:start;text-indent:${p.textIndent}em!important;margin-bottom:${p.paragraphSpacing}em!important}[align="left"]{text-align:left!important}[align="right"]{text-align:right!important}[align="center"]{text-align:center!important}[align="justify"]{text-align:justify!important}pre{white-space:pre-wrap!important}`)
+  
+  // 自定义字体 @font-face 声明
+  const fontFace = isCustomFont 
+    ? `@font-face{font-family:"${t.customFont.fontFamily}";src:url("${location.origin}/plugins/custom-fonts/${t.customFont.fontFile}")}` 
+    : ''
+  
+  // 背景样式
+  const bgStyle = th.bgImg 
+    ? `background:url("${th.bgImg}") center/cover no-repeat` 
+    : `background:${th.bg}`
+  
+  // ===== CSS 规则构建 =====
+  
+  // 1. 命名空间声明
+  const namespace = `@namespace epub "http://www.idpf.org/2007/ops";`
+  
+  // 2. 基础样式：html 和 body
+  const baseStyles = `
+    html{color-scheme:light dark}
+    body{
+      ${bgStyle}!important;
+      color:${th.color}!important;
+      font-family:${font}!important;
+      font-size:${t.fontSize}px!important;
+      letter-spacing:${t.letterSpacing}em!important;
+      padding:${l.marginVertical}px ${l.marginHorizontal}px!important;
+    }
+  `
+  
+  // 3. 字体强制应用：覆盖所有文本元素（解决部分书籍字体不生效的问题）
+  const fontForceStyles = `
+    *{font-family:${font}!important}
+    body,p,div,span,a,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,code{
+      font-family:${font}!important;
+    }
+  `
+  
+  // 4. 段落排版样式
+  const paragraphStyles = `
+    p,li,blockquote,dd{
+      line-height:${p.lineHeight}!important;
+      text-align:start;
+      text-indent:${p.textIndent}em!important;
+      margin-bottom:${p.paragraphSpacing}em!important;
+    }
+  `
+  
+  // 5. 对齐方式样式
+  const alignStyles = `
+    [align="left"]{text-align:left!important}
+    [align="right"]{text-align:right!important}
+    [align="center"]{text-align:center!important}
+    [align="justify"]{text-align:justify!important}
+  `
+  
+  // 6. 代码块样式
+  const codeStyles = `pre{white-space:pre-wrap!important}`
+  
+  // 7. 隐藏脚注/尾注元素（防止脚注内容显示在正文中）
+  const footnoteHideStyles = `
+    aside[epub|type~="footnote"],
+    aside[epub|type~="endnote"],
+    aside[epub|type~="rearnote"],
+    section[epub|type~="footnote"],
+    section[epub|type~="endnote"],
+    section[epub|type~="rearnote"],
+    [role~="doc-footnote"],
+    [role~="doc-endnote"]{
+      display:none!important;
+    }
+  `
+  
+  // 组合所有样式
+  const styles = [
+    namespace,
+    fontFace,
+    baseStyles,
+    fontForceStyles,
+    paragraphStyles,
+    alignStyles,
+    codeStyles,
+    footnoteHideStyles
+  ].join('')
+  
+  view.renderer?.setStyles?.(styles)
 }
 
 function getCurrentLocation(view: FoliateView): Location | null {

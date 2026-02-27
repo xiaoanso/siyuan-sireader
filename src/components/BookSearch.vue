@@ -205,14 +205,15 @@ const loadMore = async () => {
 }
 
 const stopSearch = () => { searchIterator.value = null; hasMore.value = false; searching.value = false }
-const showDetail = (book: any) => { detailBook.value = book; if (!isAnnaBook(book) && !isHttpBook(book)) loadChapters() }
+const showDetail = (book: any) => { detailBook.value = book; chapters.value = []; if (!isAnnaBook(book) && !isHttpBook(book)) loadChapters() }
 
 const loadChapters = async () => {
   if (!detailBook.value) return
-  loadingChapters.value = true; chapters.value = []
+  loadingChapters.value = true
   try {
-    const bookInfo = await bookSourceManager.getBookInfo(detailBook.value.sourceUrl || detailBook.value.origin, detailBook.value.bookUrl)
-    chapters.value = await bookSourceManager.getChapters(detailBook.value.sourceUrl || detailBook.value.origin, bookInfo.tocUrl || detailBook.value.bookUrl)
+    const info = await bookSourceManager.getBookInfo(detailBook.value.sourceUrl || detailBook.value.origin, detailBook.value.bookUrl)
+    Object.assign(detailBook.value, info)
+    chapters.value = await bookSourceManager.getChapters(detailBook.value.sourceUrl || detailBook.value.origin, info.tocUrl || detailBook.value.bookUrl)
   } catch (e: any) { showMessage(`加载章节失败: ${e.message}`, 3000, 'error') }
   finally { loadingChapters.value = false }
 }
@@ -220,7 +221,7 @@ const loadChapters = async () => {
 const addToShelf = async (book: any) => {
   try {
     const { addOnlineBook } = await import('@/core/online')
-    await addOnlineBook(book)
+    await addOnlineBook(book, chapters.value.length ? chapters.value : undefined)
     shelfBooks.value.add(book.bookUrl)
     showMessage(`《${book.name}》已加入书架`, 2000, 'info')
   } catch (e: any) { showMessage(e.message, 3000, 'error') }

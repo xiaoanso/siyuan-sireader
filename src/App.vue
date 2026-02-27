@@ -1,10 +1,11 @@
 <template>
   <div class="plugin-app-main">
+    <Stats :visible="showStats" @close="showStats=false" @open="handleOpenBook" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, provide } from 'vue'
 import { createApp, type Component } from 'vue'
 import { MotionPlugin } from '@vueuse/motion'
 import { openTab, showMessage } from 'siyuan'
@@ -15,9 +16,11 @@ import { bookSourceManager } from '@/utils/BookSearch'
 import { isMobile } from '@/utils/mobile'
 import Settings from '@/components/Settings.vue'
 import Reader from '@/components/Reader.vue'
+import Stats from '@/components/Stats.vue'
 
 const plugin = usePlugin()
 const { settings, isLoaded } = useSetting(plugin)
+const showStats = ref(false)
 
 let settingsApp: any = null
 let mobileReaderApp: any = null
@@ -446,8 +449,22 @@ plugin.addDock({
 
 plugin.addTopBar({ icon: `<svg><use xlink:href="#${iconId}"/></svg>`, title: '思阅', callback: openSetting })
 
-// 暂时停用底部右下角的阅读统计功能
-// useStats(plugin).init()
+// 启用底部右下角的阅读统计功能
+const statsInstance = useStats(plugin)
+statsInstance.init()
+provide('stats', statsInstance)
+
+// 处理统计面板切换
+const handleStatsToggle = () => showStats.value = !showStats.value
+const handleOpenBook = async (book: any) => {
+  showStats.value = false
+  const { getBookWithFallback, openOrActivateBook } = await import('@/utils/bookOpen')
+  const { bookshelfManager } = await import('@/core/bookshelf')
+  await bookshelfManager.init()
+  const full = await getBookWithFallback(bookshelfManager, book.url)
+  if (!full) return showMessage('加载失败', 3000, 'error')
+  openOrActivateBook(plugin, full, settings.value)
+}
 
 // 移动端 Reader 处理
 const handleMobileReaderOpen = async (e: CustomEvent) => {
@@ -482,7 +499,11 @@ const handleMobileReaderClose = () => {
 onMounted(async () => {
   await bookSourceManager.loadSources()
   window.addEventListener('click', handleEbookLink, true)
-  registerCleanup(() => window.removeEventListener('click', handleEbookLink, true))
+  window.addEventListener('stats:toggle', handleStatsToggle as any)
+  registerCleanup(() => {
+    window.removeEventListener('click', handleEbookLink, true)
+    window.removeEventListener('stats:toggle', handleStatsToggle as any)
+  })
   
   if (isMobile()) {
     window.addEventListener('reader:open', handleMobileReaderOpen as any)

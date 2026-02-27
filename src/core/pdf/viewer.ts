@@ -20,7 +20,7 @@ const resolveColor = (c: string) => c.startsWith('var(') ? getComputedStyle(docu
 const resolveTheme = (theme: any) => ({ ...theme, bg: resolveColor(theme.bg), color: resolveColor(theme.color) })
 const watchTheme = (callback: () => void) => new MutationObserver(() => requestAnimationFrame(() => requestAnimationFrame(callback))).observe(document.documentElement, { attributeFilter: ['data-theme-mode', 'class'] })
 const invertColor = (hex: string) => '#' + hex.replace('#', '').match(/.{2}/g)!.map(x => (255 - parseInt(x, 16)).toString(16).padStart(2, '0')).join('')
-const isDarkBg = (bg: string) => bg && parseInt(bg.replace('#', ''), 16) < 0x808080
+const isDarkBg = (bg: string) => { const h = bg?.replace('#', '') || '0'; return parseInt(h.length === 3 ? h.split('').map(x => x + x).join('') : h, 16) < 0x808080 }
 
 export class PDFViewer {
   private pdf: PDFDocumentProxy | null = null

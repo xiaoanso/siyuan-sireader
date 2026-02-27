@@ -21,12 +21,12 @@ const extract = (html: string, i: number) => {
 export const getCurrentChapter = (reader: any) => reader?.getBook?.()?.getCurrentChapter?.() ?? undefined
 
 // 加入书架
-export async function addOnlineBook(book: any) {
+export async function addOnlineBook(book: any, preloadedChapters?: any[]) {
   const { bookSourceManager } = await import('@/utils/BookSearch')
   const { putFile } = await import('@/api')
   const { bookshelfManager } = await import('@/core/bookshelf')
   
-  const chapters = await bookSourceManager.getChapters(book.sourceUrl || book.origin, book.tocUrl || book.bookUrl)
+  const chapters = preloadedChapters || await bookSourceManager.getChapters(book.sourceUrl || book.origin, book.tocUrl || book.bookUrl)
   if (!chapters.length) throw new Error('无法获取章节列表')
   
   const [htmlPath, coverPath] = [getPath(book.name, book.bookUrl, 'html'), getPath(book.name, book.bookUrl, 'jpg')]
@@ -54,7 +54,8 @@ export async function addOnlineBook(book: any) {
   
   await bookshelfManager.addBook({
     url: book.bookUrl, title: book.name, author: book.author || '未知作者', cover, format: 'online', path: htmlPath, size: 0,
-    source: { origin: book.sourceUrl || book.origin, originName: book.sourceName || book.originName, bookUrl: book.bookUrl, tocUrl: book.tocUrl || book.bookUrl, kind: book.kind, intro: book.intro, wordCount: book.wordCount, lastChapter: book.lastChapter }
+    source: { origin: book.sourceUrl || book.origin, originName: book.sourceName || book.originName, bookUrl: book.bookUrl, tocUrl: book.tocUrl || book.bookUrl, kind: book.kind, intro: book.intro, wordCount: book.wordCount, lastChapter: book.lastChapter },
+    tags: book.kind ? [book.kind] : []
   })
 }
 

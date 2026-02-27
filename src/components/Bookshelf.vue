@@ -57,17 +57,18 @@
               <div v-if="viewMode==='grid'" class="sr-grid-content">
                 <img v-if="getCoverUrl(item.data)" :src="getCoverUrl(item.data)" :alt="item.data.title">
                 <div v-else class="sr-text" :style="{background:getBookColor(item.data.title)}">{{item.data.title}}</div>
-                <span :class="['sr-tag',item.data.status]">{{STATUS_MAP[item.data.status]}}</span>
+                <span :class="['sr-tag-format',item.data.format==='online'?'online':item.data.format]">{{item.data.format==='online'?(item.data.source?.originName||'书源'):item.data.format.toUpperCase()}}</span>
                 <span v-if="item.data.rating" class="sr-tag sr-tag-rating">{{'★'.repeat(item.data.rating)}}</span>
-                <span class="sr-tag sr-tag-bl">{{item.data.format.toUpperCase()}}</span>
                 <button v-if="item.data.format==='online'" class="sr-tag sr-tag-br" @click.stop="refreshOnline(item.data)"><svg><use xlink:href="#iconRefresh"/></svg></button>
-                <div class="sr-grid-info">
+                <div :class="['sr-grid-info',item.data.status]">
+                  <span class="sr-status-bg">{{STATUS_MAP[item.data.status]}}</span>
                   <div class="sr-row">
                     <span class="sr-title">{{item.data.title}}</span>
                     <span class="sr-progress">{{getProgress(item.data)}}</span>
                   </div>
                   <span class="sr-author">{{item.data.author}}</span>
-                  <div v-if="item.data.tags.length" class="sr-tags">
+                  <div v-if="item.data.tags.length||(item.data.format==='online'&&item.data.source?.lastChapter)" class="sr-tags">
+                    <span v-if="item.data.format==='online'&&item.data.source?.lastChapter" class="sr-chip sr-chip-latest">{{item.data.source.lastChapter}}</span>
                     <span v-for="tag in item.data.tags" :key="tag" class="sr-chip" :style="{background:getBookColor(tag)}">{{tag}}</span>
                   </div>
                 </div>
@@ -87,7 +88,7 @@
                   <div class="sr-row">
                     <span class="sr-author">{{item.data.author}}</span>
                     <span :class="['sr-chip',item.data.status]">{{STATUS_MAP[item.data.status]}}</span>
-                    <span class="sr-chip sr-chip-format">{{item.data.format.toUpperCase()}}</span>
+                    <span class="sr-chip sr-chip-format">{{item.data.format==='online'?(item.data.source?.originName||'书源'):item.data.format.toUpperCase()}}</span>
                     <button v-if="item.data.format==='online'" class="sr-icon-sm" @click.stop="refreshOnline(item.data)"><svg><use xlink:href="#iconRefresh"/></svg></button>
                     <span v-if="item.data.source?.lastChapter" class="sr-chip sr-chip-latest">{{item.data.source.lastChapter}}</span>
                   </div>
@@ -416,7 +417,15 @@ const toggleGroup = (gid: string) => toggleArrayItem(editForm.value.groups, gid)
 const searchBindDoc = async () => {if (!bindSearch.value.trim()) {bindResults.value = []; return}; try {bindResults.value = await searchDocs(bindSearch.value.trim())} catch {bindResults.value = []}}
 const selectBindDoc = (d: any) => {const id = d.path?.split('/').pop()?.replace('.sy', '')||d.id; if (!id) return showMessage('文档ID无效', 2000, 'error'); editForm.value.bindDocId = id; editForm.value.bindDocName = d.hPath||d.content||'无标题'; bindSearch.value = ''; bindResults.value = [];}
 const unbindDoc = () => {editForm.value.bindDocId = ''; editForm.value.bindDocName = ''}
-const showPanel = (mode: 'detail'|'edit'|'group', book?: Book, group?: GroupConfig) => {panelMode.value = mode; if (book) {panelBook.value = book; if (mode === 'edit') handleEdit(book)} if (group) startEditGroup(group);}
+const showPanel = async (mode: 'detail'|'edit'|'group', book?: Book, group?: GroupConfig) => {
+  panelMode.value = mode; 
+  if (book) {
+    const db = await getDatabase();
+    panelBook.value = await db.getBook(book.url) || book;
+    if (mode === 'edit') handleEdit(panelBook.value);
+  } 
+  if (group) startEditGroup(group);
+}
 const closePanel = () => {panelMode.value = null; panelBook.value = null; editingBook.value = null; editingGroup.value = null}
 const startResize = (e: MouseEvent) => {
   const {clientX, offsetWidth = 800} = {clientX: e.clientX, offsetWidth: bookshelfEl.value?.offsetWidth}, w = panelWidth.value
@@ -473,24 +482,25 @@ $ease: cubic-bezier(.4,0,.2,1);
 .sr-confirm{display:flex;gap:6px;align-items:center;padding:4px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);box-shadow:0 2px 8px rgba(0,0,0,.2);z-index:11;border-radius:4px;position:absolute;right:4px;bottom:4px;button{padding:6px 12px;font-size:13px;line-height:1.4;border:1px solid var(--b3-border-color);background:var(--b3-theme-surface);color:var(--b3-theme-on-surface);border-radius:4px;cursor:pointer;transition:all .15s $ease;white-space:nowrap;&:hover{background:var(--b3-list-hover)}&.btn-delete{background:var(--b3-theme-error);color:white;border-color:var(--b3-theme-error);&:hover{opacity:.9}}}}
 .sr-batch-info{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--b3-theme-primary);cursor:pointer;input{cursor:pointer}}
 .sr-batch-actions{display:flex;gap:4px;button{display:flex;align-items:center;gap:4px;padding:4px 8px;border:none;background:transparent;border-radius:6px;font-size:12px;cursor:pointer;transition:all .15s $ease;svg{width:20px;height:20px}&:hover{background:rgba(var(--b3-theme-on-surface-rgb),.08)}&.danger{color:var(--b3-theme-error);&:hover{background:var(--b3-theme-error);color:white}}&.close{padding:4px}}}
-.sr-grid{display:grid;gap:12px}
-.sr-list{display:flex;flex-direction:column;gap:8px}
-.sr-compact{display:flex;flex-direction:column;gap:3px}
+.sr-grid{display:grid;gap:6px}
+.sr-list{display:flex;flex-direction:column;gap:4px}
+.sr-compact{display:flex;flex-direction:column;gap:1px}
 .sr-card{position:relative;cursor:pointer;border-radius:8px;border:2px solid var(--b3-border-color);box-shadow:0 1px 3px rgba(0,0,0,.08);transition:all .3s $ease;overflow:hidden;&:hover{transform:scale(1.05);box-shadow:0 6px 16px rgba(0,0,0,.15);border-color:var(--b3-theme-primary);z-index:10}&.selected{outline:2px solid var(--b3-theme-primary);outline-offset:2px}&.grid{aspect-ratio:2/3;background:var(--b3-theme-surface);.sr-grid-content{position:absolute;inset:0;img,.sr-text{position:absolute;inset:0}img{width:100%;height:100%;object-fit:cover}.sr-text{display:flex;align-items:center;justify-content:center;padding:8px;font-size:12px;font-weight:600;text-align:center;line-height:1.2;color:var(--b3-theme-on-surface);word-break:break-word}}&.sr-group .sr-group-preview{position:absolute;inset:0 0 56px 0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:2px;padding:2px;.sr-preview-item{position:relative;overflow:hidden;border-radius:4px;img{width:100%;height:100%;object-fit:cover}.sr-preview-text{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:4px;font-size:9px;font-weight:600;line-height:1.3;text-align:center;word-break:break-all;color:var(--b3-theme-on-surface)}.sr-preview-empty{width:100%;height:100%;background:linear-gradient(135deg,rgba(var(--b3-theme-primary-rgb),.08),rgba(var(--b3-theme-primary-rgb),.02));display:flex;align-items:center;justify-content:center;svg{width:20px;height:20px;opacity:.3}}}}}&.list{display:flex;align-items:center;gap:12px;padding:2px;background:var(--b3-theme-surface)}&.compact{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--b3-theme-surface);border-width:1px;&:hover{transform:scale(1.01);box-shadow:0 2px 6px rgba(0,0,0,.1)}.sr-info{flex-direction:row;align-items:center;gap:8px}}}
 .sr-cover{position:relative;flex-shrink:0;border-radius:6px;overflow:hidden;background:var(--b3-theme-background);width:48px;height:68px;img,.sr-text,.sr-icon{position:absolute;inset:0}img{width:100%;height:100%;object-fit:cover}.sr-text{display:flex;align-items:center;justify-content:center;font-weight:600;text-align:center;color:var(--b3-theme-on-surface);font-size:14px}.sr-icon{display:flex;align-items:center;justify-content:center;color:var(--b3-theme-primary);opacity:.6;svg{width:60%;height:60%}}.sr-cover-rating{position:absolute;top:2px;right:2px;padding:1px 3px;border-radius:4px;font-size:7px;font-weight:700;line-height:1;color:white;background:var(--b3-theme-primary);z-index:1}}
 .sr-icon{flex-shrink:0;width:20px;height:20px;color:var(--b3-theme-primary);opacity:.7;cursor:pointer;transition:opacity .15s;border:none;background:transparent;padding:0;svg{width:100%;height:100%}&:hover{opacity:1}}
 .sr-icon-sm{flex-shrink:0;width:16px;height:16px;color:var(--b3-theme-primary);opacity:.7;cursor:pointer;transition:opacity .15s;border:none;background:transparent;padding:0;svg{width:100%;height:100%}&:hover{opacity:1}}
 .sr-check{position:absolute;top:6px;left:6px;z-index:10;width:20px;height:20px;display:flex;align-items:center;justify-content:center;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:4px;box-shadow:0 2px 4px rgba(0,0,0,.1);input{cursor:pointer;width:16px;height:16px}}
-.sr-tag{position:absolute;top:6px;z-index:10;padding:4px 8px;border-radius:6px;font-size:9px;font-weight:700;line-height:1;color:white;&.unread{left:6px;background:#9ca3af}&.reading{left:6px;background:var(--b3-theme-primary)}&.finished{left:6px;background:#22c55e}&.sr-tag-rating{right:6px;background:var(--b3-theme-primary)}&.sr-tag-bl{left:6px;bottom:56px;top:auto;background:rgba(0,0,0,.7)}&.sr-tag-br{right:6px;bottom:56px;top:auto;width:28px;height:28px;padding:0;background:rgba(0,0,0,.7);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;svg{width:14px;height:14px}&:hover{background:var(--b3-theme-primary);transform:rotate(180deg)}}}
+.sr-tag{position:absolute;top:6px;z-index:10;padding:4px 8px;border-radius:6px;font-size:9px;font-weight:700;line-height:1;color:white;&.sr-tag-rating{right:6px;background:var(--b3-theme-primary)}&.sr-tag-br{right:6px;bottom:56px;top:auto;width:28px;height:28px;padding:0;background:rgba(0,0,0,.7);border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;svg{width:14px;height:14px}&:hover{background:var(--b3-theme-primary);transform:rotate(180deg)}}}
+.sr-tag-format{position:absolute;top:6px;left:6px;z-index:10;padding:4px 8px;border-radius:6px;font-size:9px;font-weight:700;line-height:1;color:white;&.epub{background:#3b82f6}&.pdf{background:#ef4444}&.mobi{background:#8b5cf6}&.azw3{background:#ec4899}&.azw{background:#f59e0b}&.fb2{background:#10b981}&.cbz{background:#06b6d4}&.txt{background:#6b7280}&.online{background:#14b8a6}}
 .sr-title,.sr-author,.sr-progress,.sr-count{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1;margin:0;padding:0}
-.sr-title{font-size:13px;font-weight:700;color:var(--b3-theme-on-surface);flex:1;min-width:0;padding-right:60px}
+.sr-title{font-size:13px;font-weight:700;color:var(--b3-theme-on-surface);flex:1;min-width:0}
 .sr-author{font-size:12px;color:var(--b3-theme-on-surface-variant)}
 .sr-progress,.sr-count{font-size:12px;color:var(--b3-theme-primary);font-weight:600;flex-shrink:0}
 .sr-chip{display:inline-block;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:500;white-space:nowrap;flex-shrink:0;color:#333;&.unread,&.reading,&.finished,&.sr-chip-rating{color:white}&.unread{background:#9ca3af}&.reading,&.sr-chip-rating{background:var(--b3-theme-primary)}&.finished{background:#22c55e}&.sr-chip-format{background:var(--b3-theme-surface-lighter);color:var(--b3-theme-on-surface-variant);font-weight:600}&.sr-chip-latest{background:transparent;color:var(--b3-theme-on-surface-variant);font-size:11px;overflow:hidden;text-overflow:ellipsis;max-width:300px;padding:0}}
 .sr-row{display:flex;align-items:center;gap:8px;width:100%}
-.sr-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;position:relative;padding-right:32px;.sr-progress{position:absolute;top:0;right:2px}}
-.sr-grid-info{position:absolute;bottom:0;left:0;right:0;background:var(--b3-theme-surface);border-top:1px solid var(--b3-border-color);padding:6px 8px;display:flex;flex-direction:column;gap:3px}
-.sr-tags{display:flex;gap:3px;overflow:hidden;width:100%;flex-wrap:nowrap}
+.sr-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;position:relative;padding-right:32px;.sr-progress{position:absolute;top:0;right:10px}}
+.sr-grid-info{position:absolute;bottom:0;left:0;right:0;background:var(--b3-theme-surface);border-top:1px solid var(--b3-border-color);padding:6px 8px;display:flex;flex-direction:column;gap:3px;overflow:hidden;.sr-status-bg{position:absolute;right:-4px;bottom:-8px;font-size:36px;font-weight:900;line-height:1;opacity:.24;pointer-events:none;white-space:nowrap;letter-spacing:-1px}&.unread .sr-status-bg{color:#9ca3af}&.reading .sr-status-bg{color:var(--b3-theme-primary)}&.finished .sr-status-bg{color:#22c55e}.sr-row,.sr-author,.sr-tags{position:relative}}
+.sr-tags{display:flex;gap:3px;overflow:hidden;width:100%;flex-wrap:nowrap;line-height:1;margin:0;padding:0}
 .sr-more{position:absolute;right:2px;top:50%;transform:translateY(-50%);width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:6px;cursor:pointer;transition:background .15s $ease;flex-shrink:0;svg{width:14px;height:14px}&:hover{background:rgba(var(--b3-theme-on-surface-rgb),.08)}}
 .slide-enter-from,.slide-leave-to{transform:translateY(-100%);opacity:0}
 .fade-enter-active,.fade-leave-active{transition:opacity .2s}

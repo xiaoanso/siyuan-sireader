@@ -2,123 +2,98 @@ import { ref } from 'vue'
 import type { Plugin } from 'siyuan'
 
 export function useStats(plugin: Plugin) {
-  const i18n = plugin.i18n as any
-  const stats = ref({
-    readingTime: 0,
-    todayReadingTime: 0,
-    sessionStartTime: Date.now(),
-  })
+  const stats = ref({ readingTime: 0, sessionStart: 0, currentBook: '', lastSaved: 0 })
 
-  const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600)
-    const m = Math.floor((seconds % 3600) / 60)
-    const s = seconds % 60
-    return h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`
+  const fmt = (s: number) => {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60)
+    return h > 0 ? `${h}h ${m}m` : `${m}m ${s % 60}s`
+  }
+
+  const fmtShort = (s: number) => {
+    const h = Math.floor(s / 3600)
+    return h >= 24 ? `${Math.floor(h / 24)}天` : h > 0 ? `${h}时` : `${Math.floor(s / 60)}分`
   }
 
   const load = async () => {
-    try {
-      const db = await (await import('@/core/database')).getDatabase()
-      const data = await db.getSetting('reader_stats')
-      if (data) stats.value = { ...stats.value, ...data }
-    } catch (e) {
-      console.error(`${i18n?.statsLoadError || '加载统计数据失败'}:`, e)
-    }
+    const db = await (await import('@/core/database')).getDatabase()
+    const data = await db.getSetting('reader_stats')
+    if (data) stats.value.readingTime = data.readingTime || 0
+    stats.value.sessionStart = 0
   }
 
-  const save = async () => {
-    try {
-      const db = await (await import('@/core/database')).getDatabase()
-      await db.saveSetting('reader_stats', stats.value)
-    } catch (e) {
-      console.error(`${i18n?.statsSaveError || '保存统计数据失败'}:`, e)
+  const save = async (duration: number) => {
+    const db = await (await import('@/core/database')).getDatabase()
+    stats.value.readingTime += duration
+    
+    const tasks = [db.saveSetting('reader_stats', { readingTime: stats.value.readingTime })]
+    
+    if (stats.value.currentBook) {
+      tasks.push(
+        db.saveDailyReading(stats.value.currentBook, duration),
+        (async () => {
+          const book = await db.getBook(stats.value.currentBook)
+          if (book) {
+            book.time = (book.time || 0) + duration
+            book.read = Date.now()
+            await db.saveBook(book)
+          }
+        })()
+      )
     }
+    
+    await Promise.all(tasks)
   }
 
-  let popup: HTMLElement | null = null
+  const saveIncrement = async () => {
+    if (!stats.value.lastSaved) return
+    const now = Date.now()
+    const duration = Math.floor((now - stats.value.lastSaved) / 1000)
+    if (duration < 1) return
+    await save(duration)
+    stats.value.lastSaved = now
+  }
 
-  const open = (event: MouseEvent) => {
-    // 关闭已存在的浮窗
-    if (popup) {
-      popup.remove()
-      popup = null
-      return
-    }
+  const startReading = (bookUrl: string) => {
+    const now = Date.now()
+    stats.value.sessionStart = now
+    stats.value.lastSaved = now
+    stats.value.currentBook = bookUrl
+  }
 
-    const currentSession = Math.floor((Date.now() - stats.value.sessionStartTime) / 1000)
-    
-    popup = document.createElement('div')
-    popup.style.cssText = `
-      position: fixed;
-      z-index: 9999;
-      background: var(--b3-theme-background);
-      border: 1px solid var(--b3-border-color);
-      border-radius: 8px;
-      padding: 12px 16px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      font-size: 12px;
-      line-height: 1.8;
-      min-width: 150px;
-    `
-    popup.innerHTML = `
-      <div style="font-weight: bold; margin-bottom: 6px; color: var(--b3-theme-on-background);">📊 ${i18n?.statsTitle || '阅读统计'}</div>
-      <div style="color: var(--b3-theme-on-background-light);">${i18n?.statsSession || '本次'}: ${formatTime(currentSession)}</div>
-      <div style="color: var(--b3-theme-on-background-light);">${i18n?.statsToday || '今日'}: ${formatTime(stats.value.todayReadingTime + currentSession)}</div>
-      <div style="color: var(--b3-theme-on-background-light);">${i18n?.statsTotal || '累计'}: ${formatTime(stats.value.readingTime)}</div>
-    `
-    document.body.appendChild(popup)
-
-    // 定位：按钮左上方
-    const target = event.currentTarget as HTMLElement
-    const rect = target.getBoundingClientRect()
-    popup.style.right = `${window.innerWidth - rect.right}px`
-    popup.style.bottom = `${window.innerHeight - rect.top + 8}px`
-    
-    // 点击外部关闭
-    setTimeout(() => {
-      document.addEventListener('click', function closePopup() {
-        if (popup) {
-          popup.remove()
-          popup = null
-        }
-        document.removeEventListener('click', closePopup)
-      })
-    }, 100)
+  const stopReading = async () => {
+    if (!stats.value.sessionStart) return
+    await saveIncrement()
+    stats.value.sessionStart = 0
+    stats.value.lastSaved = 0
+    stats.value.currentBook = ''
   }
 
   const init = () => {
     load()
     
-    const statusBar = document.createElement('div')
-    statusBar.className = 'toolbar__item'
-    statusBar.innerHTML = `
-      <svg class="toolbar__icon"><use xlink:href="#iconClock"></use></svg>
-      <span style="font-size: 12px; margin-left: 4px;" id="stats-time">0:00</span>
-    `
-    statusBar.title = i18n?.statsTooltip || '点击查看阅读统计'
-    statusBar.style.cursor = 'pointer'
-    statusBar.addEventListener('click', open)
-    
-    plugin.addStatusBar({ element: statusBar, position: 'right' })
+    const bar = document.createElement('div')
+    bar.className = 'toolbar__item b3-tooltips b3-tooltips__n'
+    bar.id = 'stats-btn'
+    bar.innerHTML = '<svg class="toolbar__icon"><use xlink:href="#iconClock"></use></svg>'
+    bar.setAttribute('aria-label', '点击查看阅读统计')
+    bar.style.cursor = 'pointer'
+    bar.addEventListener('click', () => window.dispatchEvent(new CustomEvent('stats:toggle')))
+    plugin.addStatusBar({ element: bar, position: 'right' })
 
-    // 定时更新
-    const timer = setInterval(() => {
-      const el = document.getElementById('stats-time')
-      if (el) {
-        const t = Math.floor((Date.now() - stats.value.sessionStartTime) / 1000)
-        el.textContent = formatTime(t)
-        
-        // 每分钟保存
-        if (t % 60 === 0) {
-          stats.value.readingTime += 60
-          stats.value.todayReadingTime += 60
-          save()
-        }
-      }
-    }, 1000)
+    const timer = setInterval(saveIncrement, 60000)
+    const beforeUnload = () => stopReading()
+    window.addEventListener('beforeunload', beforeUnload)
+    window.addEventListener('reader:open', ((e: CustomEvent) => startReading(e.detail?.bookUrl || '')) as any)
+    window.addEventListener('reader:close', stopReading as any)
 
-    return () => clearInterval(timer)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('beforeunload', beforeUnload)
+      window.removeEventListener('reader:open', () => {})
+      window.removeEventListener('reader:close', stopReading as any)
+      stopReading()
+    }
   }
 
-  return { init }
+  return { stats, fmt, fmtShort, init }
 }

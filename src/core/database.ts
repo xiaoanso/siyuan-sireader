@@ -36,7 +36,7 @@ export interface Book {
   syncDelete?: boolean; // 删除时同步
 }
 
-export type AnnotationType = 'highlight' | 'note' | 'bookmark' | 'vocab' | 'shape' | 'ink';
+export type AnnotationType = 'highlight' | 'note' | 'bookmark' | 'vocab' | 'shape' | 'ink' | 'daily_reading';
 
 export interface Annotation {
   id: string;         // 唯一ID
@@ -62,6 +62,10 @@ export interface Annotation {
   shapeType?: string; // 形状类型
   filled?: boolean;   // 是否填充
   paths?: any[];      // 墨迹路径
+  
+  // 每日阅读统计（type='daily_reading'时使用）
+  date?: string;      // 日期 YYYY-MM-DD
+  duration?: number;  // 阅读时长（秒）
 }
 
 // ==================== 数据库 ====================
@@ -315,8 +319,55 @@ export class ReaderDatabase {
 
     const updateR = this.db.exec("SELECT COUNT(*) FROM books WHERE json_extract(source, '$.updateCount') > 0");
     const withUpdate = updateR[0]?.values[0]?.[0] || 0;
+    
+    const annR = this.db.exec('SELECT COUNT(*) FROM annotations');
+    const annotationCount = annR[0]?.values[0]?.[0] || 0;
+    
+    const ratingR = this.db.exec('SELECT rating, COUNT(*) as cnt FROM books WHERE rating > 0 GROUP BY rating ORDER BY rating DESC');
+    const byRating: Record<number, number> = {};
+    ratingR[0]?.values.forEach((v: any) => { byRating[v[0]] = v[1]; });
 
-    return { byStatus, byFormat, withUpdate };
+    return { byStatus, byFormat, byRating, withUpdate, annotationCount };
+  }
+
+  // ==================== 每日阅读 ====================
+
+  async getTodayReading() {
+    await this.init();
+    const today = new Date().toISOString().split('T')[0];
+    const r = this.db.exec(`SELECT SUM(json_extract(data,'$.duration')) FROM annotations WHERE type='daily_reading' AND json_extract(data,'$.date')=?`, [today]);
+    return r[0]?.values[0]?.[0] || 0;
+  }
+
+  async getDailyReading(year: number, month?: number) {
+    await this.init();
+    const prefix = month ? `${year}-${String(month).padStart(2, '0')}` : `${year}`;
+    const r = this.db.exec(`SELECT book,json_extract(data,'$.date') d,json_extract(data,'$.duration') t FROM annotations WHERE type='daily_reading' AND d LIKE ? ORDER BY d,t DESC`, [`${prefix}%`]);
+    const daily: Record<string, { total: number; books: Array<{ url: string; duration: number }> }> = {};
+    r[0]?.values.forEach((v: any) => {
+      const date = v[1];
+      if (!daily[date]) daily[date] = { total: 0, books: [] };
+      daily[date].total += v[2];
+      daily[date].books.push({ url: v[0], duration: v[2] });
+    });
+    return daily;
+  }
+
+  async saveDailyReading(bookUrl: string, duration: number) {
+    if (!bookUrl || duration <= 0) return;
+    await this.init();
+    const date = new Date().toISOString().split('T')[0];
+    const id = `${bookUrl}_${date}`;
+    const r = this.db.exec('SELECT json_extract(data,"$.duration") FROM annotations WHERE id=?', [id]);
+    const now = Date.now();
+    const newDuration = (r[0]?.values[0]?.[0] || 0) + duration;
+    const data = JSON.stringify({ date, duration: newDuration });
+    
+    r[0]?.values[0] 
+      ? this.db.run('UPDATE annotations SET data=?,updated=? WHERE id=?', [data, now, id])
+      : this.db.run('INSERT INTO annotations VALUES(?,?,?,?,?,?,?,?,?,?,?,?)', [id, bookUrl, 'daily_reading', '', '', '', '', data, now, now, '', '']);
+    
+    await this.save();
   }
 
   async getGroupCount(gid: string) {

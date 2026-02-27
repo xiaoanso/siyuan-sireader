@@ -13,7 +13,7 @@ const genMarkdown=async(item:any,ctx:any):Promise<string>=>{
 export const copyMark=async(item:any,ctx:{bookUrl:string;bookInfo?:any;settings?:any;reader?:any;pdfViewer?:any;shapeCache?:Map<string,string>;showMsg:(msg:string,type?:string)=>void})=>{
   const{bookUrl,bookInfo,reader,pdfViewer,shapeCache,showMsg}=ctx
   const copy=(t:string,msg='已复制')=>navigator.clipboard.writeText(t).then(()=>showMsg(msg))
-  if(!bookUrl||bookUrl.startsWith('file://'))return copy(item.text||item.note||'','本地文件仅复制文本')
+  if(!bookUrl)return copy(item.text||item.note||'','仅复制文本')
   const isPdf=!!pdfViewer
   const page=item.page||(isPdf?pdfViewer.getCurrentPage():null),cfi=item.cfi||(isPdf&&page?`#page-${page}`:'')
   if(!cfi)return copy(item.text||item.note||'','仅复制文本')
