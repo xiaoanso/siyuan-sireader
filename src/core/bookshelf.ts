@@ -185,6 +185,21 @@ class BookshelfManager {
   batchUpdateRating = async (urls: string[], rating: number) => this.batch(urls, url => this.updateRating(url, rating))
   batchUpdateStatus = async (urls: string[], status: BookStatus) => this.batch(urls, url => this.updateStatus(url, status))
   
+  // ===== Assets PDF 同步 =====
+  async syncAssetsPDF() {
+    await this.init()
+    const GID='assets-pdf',gs=await this.getGroups()
+    if(!gs.find(g=>g.id===GID))await this.saveGroups([...gs,{id:GID,name:'Assets PDF',order:gs.length,type:'folder'}])
+    const r=await fetch('/api/file/readDir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:'/data/assets'})}),d=await r.json()
+    if(!r.ok||d.code!==0)throw new Error('读取失败')
+    const assets=new Set(d.data.filter((f:any)=>!f.isDir&&f.name.endsWith('.pdf')).map((f:any)=>`asset://assets/${f.name}`)),all=new Set((await this.getBooks()).map(b=>b.url)),grp=new Set((await this.getGroupBooks(GID)).map(b=>b.url))
+    let add=0,del=0
+    for(const u of assets){if(all.has(u)){grp.has(u)||await this.manageGroup(u,GID,'add');continue}try{const n=u.split('/').pop()!;await this.addAssetBook(`assets/${n}`,new File([await(await fetch(`/assets/${n}`)).blob()],n,{type:'application/pdf'}));await this.manageGroup(u,GID,'add');add++}catch(e){console.error('[同步]',u,e)}}
+    for(const b of await this.getGroupBooks(GID))assets.has(b.url)||await this.removeBook(b.url)&&del++
+    this.notify()
+    return{added:add,removed:del,total:assets.size}
+  }
+  
   private notify = () => typeof window !== 'undefined' && window.dispatchEvent(new Event('sireader:bookshelf-updated'));
   
   // ===== UI辅助 =====

@@ -1,0 +1,65 @@
+// TTS 语音管理 - 极简版
+export interface TTSVoice {
+  name: string
+  displayName: string
+  locale: string
+  gender: 'Male' | 'Female'
+  isLocal?: boolean
+}
+
+const TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
+const VOICES_URL = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=${TOKEN}`
+const CACHE_TTL = 24 * 60 * 60 * 1000
+
+let cache: { at: number; voices: TTSVoice[] } | null = null
+
+// 获取在线语音列表
+export async function loadOnlineVoices(): Promise<TTSVoice[]> {
+  if (cache && Date.now() - cache.at < CACHE_TTL) return cache.voices
+  try {
+    const res = await fetch(VOICES_URL)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    const voices: TTSVoice[] = data.map((v: any) => ({
+      name: v.ShortName || v.Name,
+      displayName: v.FriendlyName || v.DisplayName || v.ShortName,
+      locale: v.Locale,
+      gender: v.Gender === 'Male' ? 'Male' : 'Female',
+      isLocal: false
+    }))
+    cache = { at: Date.now(), voices }
+    return voices
+  } catch (error) {
+    return cache?.voices || []
+  }
+}
+
+// 获取本地语音列表
+export async function loadLocalVoices(): Promise<TTSVoice[]> {
+  if (!('speechSynthesis' in window)) return []
+  let voices = window.speechSynthesis.getVoices()
+  if (!voices.length) {
+    voices = await new Promise<SpeechSynthesisVoice[]>((resolve) => {
+      const handler = () => {
+        const v = window.speechSynthesis.getVoices()
+        if (v.length) {
+          window.speechSynthesis.removeEventListener('voiceschanged', handler)
+          resolve(v)
+        }
+      }
+      window.speechSynthesis.addEventListener('voiceschanged', handler)
+      setTimeout(() => {
+        window.speechSynthesis.removeEventListener('voiceschanged', handler)
+        resolve(window.speechSynthesis.getVoices())
+      }, 2000)
+    })
+  }
+  return voices.map(v => ({
+    name: v.name,
+    displayName: v.name,
+    locale: v.lang || '',
+    gender: 'Female' as const,
+    isLocal: true
+  }))
+}
+

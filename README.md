@@ -4,7 +4,7 @@
 <p style="color: rgba(255,255,255,0.9); margin: 0 0 1.5em; font-size: 1.1em;">Professional eBook Reader · Smart Annotation · Multi-format Support</p>
 <p style="color: rgba(255,255,255,0.85); margin: 0 0 1.5em; line-height: 1.6; font-size: 0.95em;">Transform SiYuan Notes into a professional eBook reader<br>Support EPUB/PDF/TXT/Online novels with smart annotation, multi-theme switching, dictionary lookup, AI translation, deck system, and more for an immersive reading experience</p>
 <p style="margin: 0 0 1em;">
-<img src="https://img.shields.io/badge/version-0.8.8-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
+<img src="https://img.shields.io/badge/version-0.8.9-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/SiYuan-3.0+-orange.svg" alt="SiYuan" style="display: inline-block; margin: 0 4px;">
 </p>
@@ -31,6 +31,15 @@
 - **Custom Themes** - Fully customizable text color, background, and images
 - **Reading Modes** - Single/double page, scroll/flip, left/right TOC
 - **Appearance Settings** - Font, size, spacing, margins, visual filters
+
+### 🔊 TTS Text-to-Speech
+- **Multi-voice Support** - Online voices (Edge TTS) and local voices (Browser TTS)
+- **Smart Playback** - Loop selected text, play from selected paragraph, play from current page
+- **Precise Highlighting** - PDF highlights current text precisely, EPUB auto-scrolls to current paragraph
+- **Pause/Resume** - Click to pause during playback, click again to resume
+- **Auto-stop on Navigation** - Automatically stops on page turn or jump to avoid position confusion
+- **Voice Management** - Favorite commonly used voices, switch between online/local voices
+- **Playback Settings** - Speed adjustment, auto page turn, text highlighting options
 
 ### 🖊️ Smart Annotation
 - **7 Colors** - Red🔴Orange🟠Yellow🟡Green🟢Pink🩷Blue🔵Purple🟣, 4 styles (highlight/underline/border/wavy)
@@ -73,6 +82,67 @@
 ---
 
 ## 📝 Latest Updates
+
+### v0.8.9 (2026.3.1)
+
+#### ✨ New Features
+
+**TTS Text-to-Speech System**
+- New TTS voice reading feature supporting EPUB and PDF formats
+- Support online voices (Edge TTS) and local voices (Browser TTS)
+- Smart text extraction: auto-recognize paragraphs, support reading from current position
+- PDF highlighting: precisely highlight current text during reading, auto page turn
+- EPUB auto-scrolling: automatically scroll to current paragraph during reading
+- Pause/resume: true pause and resume using AudioContext
+- Voice management: favorite commonly used voices, switch between online/local voices
+- Reading settings: speed adjustment, auto page turn, text highlighting options
+
+**TTS Smart Playback Scenarios**
+- **Loop Selected Text** - Select text → Click speak button in selection menu → Loop play selected content, auto-stop when selection cancelled
+- **Play from Selected Paragraph** - Select text → Click bottom play button → Play continuously from selected paragraph onwards
+- **Play from Current Page** - No selection → Click bottom play button → Play continuously from current page onwards
+- **Pause/Resume** - Click bottom play button during playback to pause, click again to resume
+- **Auto-stop on Navigation** - Automatically stops on page turn or jump to avoid position confusion
+- **New Position Playback** - After page turn, click play to start from new page; select new text to start from new position
+
+**Enhanced Annotation Copy**
+- New copy button: directly copy selected text without creating annotation
+- Optimized button layout: note, annotate, copy, dictionary four buttons
+- Auto-copy: automatically copy to clipboard after creating or saving annotation
+- Quick annotate: annotate button creates blue highlight and auto-copies link
+
+#### ⚙️ Improvements
+
+**Reading Statistics Optimization**
+- Optimized statistics duration display with one decimal precision
+- Optimized statistics page daily quote display
+
+**Bookshelf Enhancement**
+- Added group sync for Assets PDF, smart reference to SiYuan assets folder PDFs
+- Linked with "Open SiYuan PDF" setting, opens document and assets folder PDFs with SiYuan PDF when enabled
+
+**Selection Button Optimization**
+- Updated button icons: note uses edit icon, annotate uses annotation icon
+
+**Annotation Logic Optimization**
+- Unified annotation and copy logic, removed duplicate code
+- Optimized template replacement algorithm using placeholders to avoid keyword conflicts
+- Streamlined code structure for improved performance and maintainability
+
+#### 🐛 Bug Fixes
+
+**Annotation Template Fixes**
+- Fixed issue where book titles containing template fields (like "笔记", "截图") generated incorrect links
+- Fixed missing book title in annotation links
+- Fixed incorrect chapter name retrieval
+
+**TTS Bug Fixes**
+- Fixed old player not destroyed when adjusting settings causing overlapping playback
+- Fixed TTS still playing after closing book
+- Fixed paragraph skipping issue (WebSocket async message processing race condition)
+- Fixed PDF reading highlighting entire page instead of current paragraph
+
+---
 
 ### v0.8.8 (2026.2.27)
 
@@ -518,6 +588,30 @@
 - **Dictionary Sorting** - Customizable dictionary query order
 - **Offline Query** - Offline dictionaries work without network, fast query
 - **Audio Pronunciation** - Cambridge dictionary supports US/UK pronunciation
+
+### 🔊 TTS Text-to-Speech System
+Complete voice reading functionality with smart playback scenarios:
+
+**Voice Options:**
+- **Online Voices** - Edge TTS with 100+ voices in multiple languages
+- **Local Voices** - Browser built-in TTS (no network required)
+- **Voice Management** - Favorite commonly used voices for quick access
+- **Speed Control** - Adjustable playback speed (0.5x - 2.0x)
+
+**Smart Playback Scenarios:**
+- **Loop Selected Text** - Select text → Click speak button in selection menu → Loop play selected content, auto-stop when selection cancelled
+- **Play from Selected Paragraph** - Select text → Click bottom play button → Play continuously from selected paragraph onwards
+- **Play from Current Page** - No selection → Click bottom play button → Play continuously from current page onwards
+- **Pause/Resume** - Click play button during playback to pause, click again to resume
+- **Auto-stop on Navigation** - Automatically stops on page turn or jump to avoid position confusion
+- **New Position Playback** - After page turn, click play to start from new page; select new text to start from new position
+
+**Reading Features:**
+- **Precise Highlighting** - PDF highlights current text precisely with auto page turn
+- **Auto-scrolling** - EPUB automatically scrolls to current paragraph
+- **Text Extraction** - Smart paragraph recognition for EPUB and PDF
+- **Preload Mechanism** - Preload 3 paragraphs for seamless playback
+- **Settings** - Text highlighting toggle, auto page turn, playback speed
 
 ### 🔍 Book Source System
 Powerful rule parser:

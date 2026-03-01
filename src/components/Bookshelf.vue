@@ -191,12 +191,13 @@
 // 书架组件：grid/list/compact 三种视图，支持分组、筛选、排序、批量操作、编辑、文件导入
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { bookshelfManager, SORTS, STATUS_OPTIONS, STATUS_MAP, RATING_OPTIONS, FORMAT_OPTIONS, type SortType, type Book, type BookStatus, type BookFormat, type GroupConfig } from '@/core/bookshelf'
-import { showMessage, Menu } from 'siyuan'
+import { showMessage, Menu, openTab } from 'siyuan'
 import { isMobile } from '@/utils/mobile'
 import { searchDocs } from '@/composables/useSetting'
 import { getDatabase } from '@/core/database'
+import { usePlugin } from '@/main'
 
-const props = defineProps<{ i18n?: any; coverSize?: number }>()
+const props = defineProps<{ i18n?: any; coverSize?: number; openDocAssets?: boolean }>()
 const emit = defineEmits<{ read: [book: Book] }>()
 
 // 常量
@@ -324,6 +325,7 @@ const showGroupMenu = (e?: MouseEvent, g?: GroupConfig) => {const m=buildMenu(g 
 ] : [
   {icon:'iconAdd',label:'新建文件夹',click:()=>startEditGroup()},
   {icon:'iconStar',label:'新建智能分组',click:()=>startEditGroup(undefined,'smart')},
+  {icon:'iconPDF',label:'同步 Assets PDF',click:async()=>{const r=await bookshelfManager.syncAssetsPDF().catch(()=>null);await refresh();showMessage(r?`+${r.added} -${r.removed} =${r.total}`:'失败',1500,r?'info':'error')}},
   ...(groups.value.length?[{type:'separator'}]:[]),
   ...groups.value.map(gr=>({icon:gr.type==='smart'?'iconStar':'iconFolder',label:`${gr.name} (${groupCounts.value[gr.id]||0})`,click:()=>selectGroup(gr.id)}))
 ]); m.open({x:e?.clientX||0,y:e?.clientY||0})}
@@ -343,7 +345,7 @@ const updateBookField = async (book: Book, field: string, value: any, msg: strin
   await bookOps[field](book.url, value);
   await (field === 'group' ? refresh() : loadBooks()); showMessage(msg, 2000, 'info');
 }
-const readBook = async (book: Book) => {const {getBookWithFallback,findOpenedTab} = await import('@/utils/bookOpen');const full = await getBookWithFallback(bookshelfManager,book.url);if(!full)return showMessage('加载失败',3000,'error');const tab = findOpenedTab(full.title);if(tab)return tab.click();if(isMobile()){window.dispatchEvent(new CustomEvent('reader:open',{detail:{book:full}}))}else{emit('read',full)}}
+const readBook = async (book: Book) => {if(!props.openDocAssets&&book.format==='pdf'&&book.url.startsWith('asset://')){const plugin=usePlugin();openTab({app:(plugin as any).app,pdf:{path:book.url.replace('asset://','')},position:'right'});return}const {getBookWithFallback,findOpenedTab} = await import('@/utils/bookOpen');const full = await getBookWithFallback(bookshelfManager,book.url);if(!full)return showMessage('加载失败',3000,'error');const tab = findOpenedTab(full.title);if(tab)return tab.click();if(isMobile()){window.dispatchEvent(new CustomEvent('reader:open',{detail:{book:full}}))}else{emit('read',full)}}
 const removeBook = async (book: Book) => {const res = await bookshelfManager.removeBooks([book.url]); confirmDelete.value = null; await refresh(); showMessage(res.failed ? '删除失败' : '已移出', 2000, res.failed ? 'error' : 'info');}
 const showAddMenu = (e: MouseEvent) => buildMenu([{icon:'iconLink',label:'添加链接',click:()=>{panelMode.value='add';urlInput.value='';previewBookInfo.value=null}},{icon:'iconUpload',label:'选择文件',click:()=>fileInput.value?.click()}]).open({x:e.clientX,y:e.clientY})
 const handleFileUpload = async (e: Event) => {const files = Array.from((e.target as HTMLInputElement).files||[]); if (!files.length) return; const {success, failed} = await bookshelfManager.uploadBooks(files); await loadBooks(); showMessage(failed ? (success ? `成功${success}本，失败${failed}本` : '导入失败') : `导入${success}本`, 3000, failed && !success ? 'error' : 'info'); if (fileInput.value) fileInput.value.value = '';}

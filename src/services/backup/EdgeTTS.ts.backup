@@ -1,0 +1,505 @@
+import { NodeWebSocket } from './NodeWebSocket'
+import { ref } from 'vue'
+import { showMessage } from 'siyuan'
+
+declare const window: any
+const { randomBytes, createHash } = window.require('crypto')
+const stream = window.require('stream')
+
+const CHROMIUM_VERSION = '143.0.3650.75'
+const TRUSTED_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
+const WINDOWS_EPOCH = 11644473600n // Windows 时间戳起点
+const OUTPUT_FORMAT = 'webm-24khz-16bit-mono-opus'
+const BLOCK_TAGS = new Set(['article', 'aside', 'blockquote', 'div', 'dl', 'dt', 'dd', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'li', 'main', 'nav', 'ol', 'p', 'pre', 'section', 'tr']) // 块级元素标签
+
+// 生成 Edge TTS 认证令牌
+const generateToken = () => {
+  const ticks = BigInt(Math.floor(Date.now() / 1000 + Number(WINDOWS_EPOCH))) * 10000000n
+  return createHash('sha256').update(`${ticks - (ticks % 3000000000n)}${TRUSTED_TOKEN}`, 'ascii').digest('hex').toUpperCase()
+}
+
+// 组合 WebSocket URL
+const combineUrl = (url: string) => `${url}?TrustedClientToken=${TRUSTED_TOKEN}&Sec-MS-GEC=${generateToken()}&Sec-MS-GEC-Version=1-${CHROMIUM_VERSION}`
+
+// Buffer 转 ArrayBuffer
+const toArrayBuffer = (buf: Buffer) => {
+  const ab = new ArrayBuffer(buf.length)
+  new Uint8Array(ab).set(buf)
+  return ab
+}
+
+// Edge TTS 核心引擎
+class EdgeTTSCore {
+  private ws: any
+  private queue: any = {} // 音频数据队列
+  private end: any = {} // 结束标记
+  private wsPromise: any = null
+  private voice = ''
+
+  async init(voice: string) {
+    if (this.wsPromise && this.voice === voice) return this.wsPromise // 复用连接
+    if (this.ws) this.ws.close()
+    this.voice = voice
+    this.queue = {}
+    this.end = {}
+
+    this.wsPromise = new Promise((resolve, reject) => {
+      const msgQueue: any[] = []
+      let i = 0
+      
+      // 检查并发送音频数据（等待所有 Blob 异步处理完成）
+      const checkSend = (id: string, idx: number) => {
+        if (!this.end[id] || msgQueue.slice(0, idx + 1).some(m => !m || m.id === null)) return
+        msgQueue.slice(0, idx + 1).filter(m => m?.id === id && m.data).forEach(m => this.queue[id].push(m.data))
+        this.queue[id].push(null)
+      }
+
+      this.ws = new NodeWebSocket(combineUrl('wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'), {
+        host: 'speech.platform.bing.com',
+        origin: 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+        headers: {
+          'User-Agent': `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROMIUM_VERSION.split('.')[0]}.0.0.0 Safari/537.36 Edg/${CHROMIUM_VERSION.split('.')[0]}.0.0.0`,
+          'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold'
+        },
+        rejectUnauthorized: false
+      })
+
+      this.ws.connect()
+      this.ws.onmessage = (m: any) => {
+        if (typeof m.data === 'string') { // 文本消息
+          const id = /X-RequestId:(.*?)\r\n/.exec(Buffer.from(m.data).toString())?.[1]
+          if (id) {
+            msgQueue[i] = m.data.includes('Path:turn.end') ? (this.end[id] = i, { id, type: 'end' }) : { id, type: m.data.includes('Path:turn.start') || m.data.includes('Path:response') ? 'ignore' : undefined }
+            checkSend(id, i)
+          }
+        } else if (m.data instanceof Blob) { // 音频数据
+          const cur = i
+          msgQueue[cur] = { id: null } // 标记为处理中
+          m.data.arrayBuffer().then((buf: ArrayBuffer) => {
+            const data = Buffer.from(buf)
+            const id = /X-RequestId:(.*?)\r\n/.exec(data.toString())?.[1]
+            msgQueue[cur] = id && !(data[0] === 0x00 && data[1] === 0x67 && data[2] === 0x58) 
+              ? { id, data: Buffer.from(data.subarray(data.indexOf('Path:audio\r\n') + 12)) }
+              : { id, type: 'ignore' }
+            checkSend(id, this.end[id] || -1)
+          })
+        }
+        i++
+      }
+
+      this.ws.onclose = () => this.wsPromise = null
+      this.ws.onopen = () => {
+        this.ws.send(`Content-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{"context":{"synthesis":{"audio":{"outputFormat":"${OUTPUT_FORMAT}"}}}}`)
+        resolve(this.ws)
+      }
+      this.ws.onerror = reject
+    })
+
+    return this.wsPromise
+  }
+
+  // 文本转音频流
+  async toStream(text: string, rate = 1): Promise<Buffer> {
+    await this.init(this.voice)
+    const id = randomBytes(16).toString('hex')
+    const rateVal = Math.round((rate - 1) * 100)
+    const rateStr = `${rateVal >= 0 ? '+' : ''}${rateVal}%`
+    const locale = /([a-z]{2}-[A-Z]{2})/.exec(this.voice)?.[1] || 'zh-CN'
+    const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${locale}"><voice name="${this.voice}"><prosody rate="${rateStr}">${text}</prosody></voice></speak>`
+    
+    const readable = new stream.Readable({ read() {} })
+    this.queue[id] = readable
+    this.ws.send(`X-RequestId:${id}\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n${ssml}`)
+    
+    return new Promise((resolve, reject) => {
+      const buffers: Buffer[] = []
+      const timeout = setTimeout(() => reject(new Error('TTS timeout')), 30000)
+      const cleanup = () => clearTimeout(timeout)
+      
+      readable.on('data', (d: Buffer) => buffers.push(d))
+      readable.on('close', () => (cleanup(), buffers.length ? resolve(Buffer.concat(buffers)) : reject(new Error('No audio'))))
+      readable.on('error', (e: any) => (cleanup(), reject(e)))
+    })
+  }
+
+  setVoice(voice: string) { this.voice = voice }
+  close() { this.ws?.close(); this.wsPromise = null }
+}
+
+// 提取文档块级元素（段落）- 支持 EPUB 和 PDF
+function* getBlocks(doc: Document, startRange?: Range) {
+  // PDF 模式：从 textLayer 提取文本段落
+  const textLayers = doc.querySelectorAll('.textLayer')
+  if (textLayers.length > 0) {
+    for (const layer of Array.from(textLayers)) {
+      const spans = layer.querySelectorAll('span')
+      if (spans.length === 0) continue
+      
+      // 按段落分组（连续的 span 合并为一个段落）
+      let currentGroup: HTMLElement[] = []
+      let lastBottom = -1
+      
+      for (const span of Array.from(spans) as HTMLElement[]) {
+        const rect = span.getBoundingClientRect()
+        const text = span.textContent?.trim()
+        if (!text) continue
+        
+        // 如果垂直位置差距较大，说明是新段落
+        if (lastBottom > 0 && Math.abs(rect.top - lastBottom) > 10) {
+          if (currentGroup.length > 0) {
+            const range = doc.createRange()
+            range.setStartBefore(currentGroup[0])
+            range.setEndAfter(currentGroup[currentGroup.length - 1])
+            yield range
+          }
+          currentGroup = [span]
+        } else {
+          currentGroup.push(span)
+        }
+        lastBottom = rect.bottom
+      }
+      
+      // 处理最后一组
+      if (currentGroup.length > 0) {
+        const range = doc.createRange()
+        range.setStartBefore(currentGroup[0])
+        range.setEndAfter(currentGroup[currentGroup.length - 1])
+        yield range
+      }
+    }
+    return
+  }
+  
+  // EPUB 模式：提取块级元素
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT)
+  let last: Range | null = null
+  let startNode: Element | null = null
+  
+  if (startRange) { // 从指定位置开始
+    let node: Node | null = startRange.startContainer.nodeType === Node.TEXT_NODE ? startRange.startContainer.parentElement : startRange.startContainer
+    while (node && !BLOCK_TAGS.has((node as Element).tagName?.toLowerCase())) node = node.parentElement
+    if (node && BLOCK_TAGS.has((node as Element).tagName?.toLowerCase())) {
+      startNode = node as Element
+      walker.currentNode = doc.body
+      while (walker.nextNode() !== startNode);
+    }
+  }
+  
+  for (let node = startNode || walker.nextNode(); node; node = walker.nextNode()) {
+    if (BLOCK_TAGS.has((node as Element).tagName.toLowerCase())) {
+      if (last) {
+        last.setEndBefore(node)
+        if (last.toString().trim()) yield last
+      }
+      last = doc.createRange()
+      last.setStart(node, 0)
+    }
+  }
+  
+  if (last) {
+    last.setEndAfter(doc.body.lastChild || doc.body)
+    if (last.toString().trim()) yield last
+  }
+}
+
+// 文本迭代器（缓存已读取的段落）
+class TextIterator {
+  private arr: any[] = []
+  private iter: Iterator<Range>
+  private idx = -1
+
+  constructor(iter: Iterator<Range>) { this.iter = iter }
+
+  private getNext(targetIdx: number) {
+    if (this.arr[targetIdx]) return (this.idx = targetIdx, this.arr[targetIdx])
+    const { done, value } = this.iter.next()
+    if (!done) {
+      this.arr.push({ text: value.toString().trim(), range: value })
+      return (this.idx = targetIdx, this.arr[targetIdx])
+    }
+    return null
+  }
+
+  first() { return this.getNext(0) }
+  next() { return this.getNext(this.idx + 1) }
+}
+
+// TTS 播放器
+export class EdgeTTSPlayer {
+  private tts = new EdgeTTSCore()
+  private textIter: TextIterator
+  private renderer: any
+  private config: any
+  private audioCtx = new AudioContext()
+  private blocks: any[] = [] // 音频块缓存（预加载 3 个）
+  private stopped = false
+  private paused = false
+  private loadQueue = Promise.resolve()
+  private isLocal: boolean // 是否使用本地 TTS
+  private currentSource: any = null
+  private isPdf: boolean // 是否为 PDF 模式
+  private pdfViewer: any = null // PDF 查看器实例
+
+  constructor(doc: Document, renderer: any, config: any, startRange?: Range) {
+    this.isLocal = config.voice && window.speechSynthesis?.getVoices().some((v: any) => v.name === config.voice)
+    this.isPdf = doc.querySelectorAll('.textLayer').length > 0
+    this.tts.setVoice(config.voice)
+    this.textIter = new TextIterator(getBlocks(doc, startRange))
+    this.renderer = renderer
+    this.config = config
+    
+    // 获取 PDF 查看器实例
+    if (this.isPdf) {
+      const container = doc.querySelector('.viewer-container')
+      this.pdfViewer = (window as any).__pdfViewer || (container as any)?.__pdfViewer
+    }
+  }
+
+  // 填充缓存（预加载 3 个段落）
+  private fillCache() {
+    while (this.blocks.length < 3 && !this.stopped) {
+      const item = this.blocks.length ? this.textIter.next() : this.textIter.first()
+      if (!item) break
+
+      const block: any = { text: item.text, range: item.range, buffer: null, source: null, loading: !this.isLocal, loaded: this.isLocal, aborted: false }
+      this.blocks.push(block)
+
+      if (!this.isLocal) {
+        this.loadQueue = this.loadQueue.then(async () => {
+          if (this.stopped || block.aborted) return void (block.loading = false)
+          try {
+            const buf = await this.tts.toStream(item.text, this.config.rate || 1)
+            if (this.stopped || block.aborted) return void (block.loading = false)
+            block.buffer = await this.audioCtx.decodeAudioData(toArrayBuffer(buf))
+            block.loaded = true
+          } catch (e) {
+            if (!this.stopped && !block.aborted) console.error('[TTS] Load failed:', e)
+            block.loaded = false
+          } finally {
+            block.loading = false
+          }
+        }).catch(() => (block.loading = false, block.loaded = false))
+      }
+    }
+  }
+
+  // 播放单个段落
+  private async playBlock(block: any) {
+    while (block.loading && !this.stopped && !this.paused) await new Promise(r => setTimeout(r, 50))
+    if (this.stopped || this.paused || !block.loaded) return
+
+    // 高亮和滚动
+    this.config.highlightText && block.range && (this.isPdf ? this.highlightPdf(block) : this.renderer?.scrollToAnchor?.(block.range, true))
+
+    // 播放音频
+    return this.isLocal ? this.playLocal(block) : this.playOnline(block)
+  }
+
+  // PDF 高亮
+  private highlightPdf(block: any) {
+    this.clearPdfHighlight()
+    
+    const layer = this.getTextLayer(block.range)
+    if (!layer) return
+    
+    const spans = Array.from(layer.querySelectorAll('span')) as HTMLElement[]
+    const fullText = spans.map(s => s.textContent || '').join('').toLowerCase()
+    const matchPos = fullText.indexOf(block.text.toLowerCase())
+    
+    if (matchPos === -1) return
+    
+    // 计算 span 位置并高亮
+    let pos = 0
+    const matchEnd = matchPos + block.text.length
+    spans.forEach(span => {
+      const text = span.textContent || ''
+      const start = pos
+      const end = pos + text.length
+      pos = end
+      
+      if (matchEnd <= start || matchPos >= end) return
+      
+      const relStart = Math.max(0, matchPos - start)
+      const relEnd = Math.min(text.length, matchEnd - start)
+      if (relStart >= relEnd) return
+      
+      const frag = document.createDocumentFragment()
+      relStart > 0 && frag.appendChild(document.createTextNode(text.substring(0, relStart)))
+      
+      const mark = document.createElement('mark')
+      mark.className = 'tts-highlight'
+      mark.textContent = text.substring(relStart, relEnd)
+      frag.appendChild(mark)
+      
+      relEnd < text.length && frag.appendChild(document.createTextNode(text.substring(relEnd)))
+      span.textContent = ''
+      span.appendChild(frag)
+    })
+    
+    // 自动翻页
+    if (this.config.autoTurnPage && this.pdfViewer) {
+      const pageEl = layer.closest('[data-page]') as HTMLElement
+      const page = pageEl && parseInt(pageEl.dataset.page || '1')
+      const currentPage = this.pdfViewer.getCurrentPage?.() || 1
+      page && page !== currentPage && this.pdfViewer.goToPage?.(page)
+    }
+  }
+
+  // 获取 textLayer
+  private getTextLayer(range: Range) {
+    const container = range.commonAncestorContainer
+    return container.nodeType === Node.ELEMENT_NODE && (container as Element).classList.contains('textLayer')
+      ? container as Element
+      : (container as Node).parentElement?.closest('.textLayer')
+  }
+
+  // 本地 TTS 播放
+  private playLocal(block: any) {
+    return new Promise<void>((resolve) => {
+      if (this.stopped || this.paused) return resolve()
+      const utterance = new SpeechSynthesisUtterance(block.text)
+      const voice = window.speechSynthesis.getVoices().find((v: any) => v.name === this.config.voice)
+      if (voice) utterance.voice = voice
+      utterance.rate = this.config.rate || 1
+      this.currentSource = utterance
+      utterance.onend = utterance.onerror = () => (this.currentSource = null, resolve())
+      window.speechSynthesis.speak(utterance)
+    })
+  }
+
+  // 在线 TTS 播放
+  private playOnline(block: any) {
+    if (block.buffer && !block.source) {
+      const source = this.audioCtx.createBufferSource()
+      source.buffer = block.buffer
+      source.playbackRate.value = this.config.rate || 1
+      source.connect(this.audioCtx.destination)
+      block.source = source
+    }
+    
+    if (!block.source) return
+    
+    return new Promise<void>((resolve) => {
+      if (this.stopped || this.paused) return resolve()
+      this.currentSource = block.source
+      block.source.addEventListener('ended', () => (this.currentSource = null, resolve()), { once: true })
+      try { block.source.start(0) } catch (e) { console.error('[TTS] Start error:', e); this.currentSource = null; resolve() }
+    })
+  }
+
+  // 清除 PDF 高亮
+  private clearPdfHighlight() {
+    document.querySelectorAll('.textLayer mark.tts-highlight').forEach(el => el.replaceWith(...el.childNodes))
+  }
+
+  async play(fromCurrent = false) {
+    this.stopped = this.paused = false
+    
+    if (!fromCurrent) {
+      this.blocks = []
+      this.currentSource = null
+      this.fillCache()
+    }
+
+    while (!this.stopped && !this.paused) {
+      const block = this.blocks.shift()
+      if (!block) break
+
+      try {
+        await this.playBlock(block)
+        if (this.stopped || this.paused) break
+        if (!this.config.autoTurnPage) break
+        this.fillCache()
+      } catch (e) {
+        console.error('[TTS] Play error:', e)
+        if (!this.config.autoTurnPage) throw e
+      }
+    }
+  }
+
+  pause() {
+    this.paused = true
+    this.isLocal ? window.speechSynthesis.pause() : this.currentSource?.context?.suspend()
+  }
+
+  resume() {
+    if (!this.paused) return
+    this.paused = false
+    this.isLocal ? window.speechSynthesis.resume() : this.currentSource?.context?.resume()
+  }
+
+  stop() {
+    this.stopped = this.paused = false
+    this.blocks.forEach(b => (b.aborted = true, b.source?.stop()))
+    this.blocks = []
+    if (this.currentSource) {
+      this.isLocal ? window.speechSynthesis.cancel() : this.currentSource.stop()
+      this.currentSource = null
+    }
+    this.isPdf && this.clearPdfHighlight()
+    this.tts.close()
+  }
+}
+
+// TTS 控制器（管理播放状态）
+export class TTSController {
+  private player: EdgeTTSPlayer | null = null
+  private currentDoc: Document | null = null
+  public isActive = ref(false)
+  public paused = ref(false)
+
+  async toggle(getReader: () => any, config: any) {
+    if (!config?.enabled) return
+    if (this.isActive.value) return (this.paused.value = !this.paused.value, this.paused.value ? this.player?.pause() : this.player?.resume())
+    try {
+      const { doc, renderer } = this.getDocument(getReader)
+      if (!doc?.body) throw new Error('无法获取文档内容')
+      const visibleRange = renderer && this.getVisibleRange(renderer, doc)
+      if (!this.player || this.currentDoc !== doc) this.player = new EdgeTTSPlayer(doc, renderer, config, visibleRange), this.currentDoc = doc
+      this.isActive.value = true
+      await this.player.play()
+      this.reset()
+    } catch (error) {
+      this.reset()
+      console.error('[TTS]', error)
+      showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error')
+    }
+  }
+
+  // 获取文档
+  private getDocument(getReader: () => any) {
+    const view = getReader()?.getView?.()
+    let doc: Document | null = null, renderer: any = null
+    if (view?.renderer) doc = view.renderer.getContents?.()?.[0]?.doc, renderer = view.renderer
+    if (!doc?.body) doc = document, renderer = null, this.injectPdfStyle()
+    return { doc, renderer }
+  }
+
+  // 注入 PDF 样式
+  private injectPdfStyle() {
+    if (document.getElementById('tts-pdf-highlight-style')) return
+    const style = document.createElement('style')
+    style.id = 'tts-pdf-highlight-style'
+    style.textContent = 'mark.tts-highlight { background-color: rgba(255, 255, 0, 0.4); color: inherit; }'
+    document.head.appendChild(style)
+  }
+
+  // 获取可见范围
+  private getVisibleRange(renderer: any, doc: Document) {
+    try { return renderer.lastVisibleRange || doc.defaultView?.getSelection()?.getRangeAt(0) } catch (e) {}
+  }
+
+  sync(enabled: boolean) {
+    if (!enabled || this.isActive.value) this.destroy()
+  }
+
+  private reset() {
+    this.isActive.value = this.paused.value = false
+    this.player = this.currentDoc = null
+  }
+
+  destroy() {
+    this.player?.stop()
+    this.reset()
+  }
+}

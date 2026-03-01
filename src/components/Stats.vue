@@ -17,9 +17,9 @@
           <!-- 头部 -->
           <div class="header">
             <!-- 每日一句 -->
-            <div v-if="!quote.loading" class="quote-section">
-              <div class="quote-text">{{quote.content}}</div>
-              <div class="quote-note">{{quote.note}}</div>
+            <div class="quote-section">
+              <div class="quote-text" :style="{opacity:quoteVisible?1:0}">{{quote.content}}</div>
+              <div class="quote-note" :style="{opacity:quoteVisible?1:0}">{{quote.note}}</div>
             </div>
             <!-- 统计数据 -->
             <div class="stats-row">
@@ -150,7 +150,8 @@ const statsComposable=inject<any>('stats')
 const popupRef=ref<HTMLElement>(),showDetail=ref(false)
 const totalBooks=ref(0),finishedCount=ref(0),annotationCount=ref(0)
 const topBooks=ref<any[]>([]),allBooks=ref<any[]>([]),statusStats=ref<any[]>([]),ratings=ref<any[]>([]),formats=ref<any[]>([])
-const quote=ref({content:'',note:'',loading:true})
+const quote=ref({content:'The only way to do great work is to love what you do.',note:'—— Steve Jobs'})
+const quoteVisible=ref(true)
 const calView=ref<'year'|'month'>('year'),curYear=ref(new Date().getFullYear()),curMonth=ref(new Date().getMonth()+1)
 const dailyData=ref<Record<string,{total:number;books:Array<{url:string;duration:number}>}>>({})
 const now=ref(Date.now())
@@ -179,6 +180,7 @@ const totalTime=computed(()=>{
 // 复用useStats的格式化方法
 const fmt=statsComposable?.fmt||(s=>s+'s')
 const fmtShort=statsComposable?.fmtShort||(s=>s+'s')
+const fmtDecimal=(s:number)=>{const h=s/3600;return h>=24?`${(h/24).toFixed(1)}天`:h>=1?`${h.toFixed(1)}时`:`${(s/60).toFixed(1)}分`}
 
 const getBadge=(b:any)=>b.status==='finished'?'已读完':b.time>3600?'常读常新':b.progress>50?'阅读中':'最近阅读'
 const getColor=(t:string)=>bookshelfManager.getBookColor(t)
@@ -189,11 +191,11 @@ const formatTime=(s:number)=>{
 }
 
 const headers=computed(()=>{
-  const totalStr=fmtShort(totalTime.value)
-  const todayStr=fmtShort(todayTime.value)
+  const totalStr=fmtDecimal(totalTime.value)
+  const todayStr=fmtDecimal(todayTime.value)
   return[
-    {label:'积阅',value:totalStr.match(/\d+/)?.[0]||'0',unit:totalStr.replace(/\d+/,'')},
-    {label:'今阅',value:todayStr.match(/\d+/)?.[0]||'0',unit:todayStr.replace(/\d+/,'')},
+    {label:'积阅',value:totalStr.match(/[\d.]+/)?.[0]||'0',unit:totalStr.replace(/[\d.]+/,'')},
+    {label:'今阅',value:todayStr.match(/[\d.]+/)?.[0]||'0',unit:todayStr.replace(/[\d.]+/,'')},
     {label:'读完',value:finishedCount.value,unit:'本'},
     {label:'读过',value:totalBooks.value,unit:'本'},
     {label:'笔记',value:annotationCount.value,unit:'条'}
@@ -271,20 +273,20 @@ const navPeriod=(dir:number)=>{
 const loadDaily=async()=>dailyData.value=await(await getDatabase()).getDailyReading(curYear.value,calView.value==='month'?curMonth.value:undefined)
 
 const loadQuote=async()=>{
+  const quotes=[
+    {content:'Life is what happens when you\'re busy making other plans.',note:'—— John Lennon'},
+    {content:'The future belongs to those who believe in the beauty of their dreams.',note:'—— Eleanor Roosevelt'},
+    {content:'It is during our darkest moments that we must focus to see the light.',note:'—— Aristotle'},
+    {content:'The only impossible journey is the one you never begin.',note:'—— Tony Robbins'}
+  ]
+  let newQuote
   try{
     const res=await fetch('https://v1.hitokoto.cn/?c=i&encode=json'),data=await res.json()
-    quote.value={content:data.hitokoto||'',note:data.from?`—— ${data.from}`:'',loading:false}
+    newQuote={content:data.hitokoto||'',note:data.from?`—— ${data.from}`:''}
   }catch{
-    const quotes=[
-      {content:'The only way to do great work is to love what you do.',note:'—— Steve Jobs'},
-      {content:'Life is what happens when you\'re busy making other plans.',note:'—— John Lennon'},
-      {content:'The future belongs to those who believe in the beauty of their dreams.',note:'—— Eleanor Roosevelt'},
-      {content:'It is during our darkest moments that we must focus to see the light.',note:'—— Aristotle'},
-      {content:'The only impossible journey is the one you never begin.',note:'—— Tony Robbins'}
-    ]
-    quote.value={...quotes[Math.floor(Math.random()*quotes.length)],loading:false}
-  }
-}
+    newQuote=quotes[Math.floor(Math.random()*quotes.length)]}
+  quoteVisible.value=false
+  setTimeout(()=>{quote.value=newQuote;quoteVisible.value=true},300)}
 
 const load=async()=>{
   const db=await getDatabase(),[dbStats,books]=await Promise.all([db.getStats(),db.getBooks()])
@@ -379,8 +381,9 @@ onUnmounted(()=>document.removeEventListener('click',clickOut))
     margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--b3-border-color);
   }
   .quote-text{font-size:11px;line-height:1.5;color:var(--b3-theme-on-surface);margin-bottom:4px;
-    font-style:italic;word-wrap:break-word}
-  .quote-note{font-size:10px;color:var(--b3-theme-on-surface-variant);line-height:1.4;word-wrap:break-word}
+    font-style:italic;word-wrap:break-word;transition:opacity .5s ease}
+  .quote-note{font-size:10px;color:var(--b3-theme-on-surface-variant);line-height:1.4;word-wrap:break-word;
+    transition:opacity .5s ease}
   .stats-row{display:flex;justify-content:space-between}
   &-item{flex:1;display:flex;flex-direction:column;gap:2px;text-align:center;min-width:0}
   .label{font-size:12px;color:var(--b3-theme-on-surface-variant);font-weight:400;line-height:1.3}

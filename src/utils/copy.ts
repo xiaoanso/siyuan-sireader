@@ -1,23 +1,16 @@
 // ===== 标注复制与同步 =====
 
-// 生成 Markdown
-const genMarkdown=async(item:any,ctx:any):Promise<string>=>{
-  let md='',orig=navigator.clipboard.writeText
-  navigator.clipboard.writeText=async(t:string)=>{md=t;return Promise.resolve()}
-  await copyMark(item,{...ctx,showMsg:()=>{}})
-  navigator.clipboard.writeText=orig
-  return md
-}
-
-// 复制标注
+// 统一复制逻辑
 export const copyMark=async(item:any,ctx:{bookUrl:string;bookInfo?:any;settings?:any;reader?:any;pdfViewer?:any;shapeCache?:Map<string,string>;showMsg:(msg:string,type?:string)=>void})=>{
   const{bookUrl,bookInfo,reader,pdfViewer,shapeCache,showMsg}=ctx
   const copy=(t:string,msg='已复制')=>navigator.clipboard.writeText(t).then(()=>showMsg(msg))
-  if(!bookUrl)return copy(item.text||item.note||'','仅复制文本')
+  if(!bookUrl||bookUrl.startsWith('file://'))return copy(item.text||item.note||'','本地文件无法生成跳转链接，仅复制文本')
   const isPdf=!!pdfViewer
-  const page=item.page||(isPdf?pdfViewer.getCurrentPage():null),cfi=item.cfi||(isPdf&&page?`#page-${page}`:'')
+  const page=item.page||(isPdf?pdfViewer?.getCurrentPage():null),cfi=item.cfi||(isPdf&&page?`#page-${page}`:'')
   if(!cfi)return copy(item.text||item.note||'','仅复制文本')
-  const{formatBookLink}=await import('@/composables/useSetting'),{formatAuthor}=await import('@/core/MarkManager'),book=reader?.getBook?.()
+  const{formatBookLink}=await import('@/composables/useSetting'),{formatAuthor,getChapterName}=await import('@/core/MarkManager')
+  const book=isPdf?null:reader?.getBook?.(),toc=isPdf?pdfViewer?.getPDF?.()?.toc:book?.toc
+  const chapter=item.chapter||getChapterName({cfi,page,isPdf,toc,location:reader?.getLocation?.()})||'📒'
   let img=''
   if(item.shapeType&&isPdf){
     const hdKey=`${item.id}_${item.shapeType}_hd`
@@ -27,7 +20,16 @@ export const copyMark=async(item:any,ctx:{bookUrl:string;bookInfo?:any;settings?
     }else img=await generateShapeScreenshot(item,page,pdfViewer)
   }
   const settings=ctx.settings||(window as any).__sireader_settings
-  copy(formatBookLink(bookUrl,book?.metadata?.title||bookInfo?.name||'',formatAuthor(book?.metadata?.author||bookInfo?.author||''),item.chapter||'',cfi,item.text||'',settings?.linkFormat||'> [!NOTE] 📑 {{title}}\n> [{{chapter}}]({{url}}) {{text}}\n> {{image}}\n> {{note}}',item.note||'',img,item.id||''))
+  copy(formatBookLink(bookUrl,book?.metadata?.title||bookInfo?.title||bookInfo?.name||'',formatAuthor(book?.metadata?.author||bookInfo?.author||''),chapter,cfi,item.text||'',settings?.linkFormat||'> [!NOTE] 📑 {{title}}\n> [{{chapter}}]({{url}}) {{text}}\n> {{image}}\n> {{note}}',item.note||'',img,item.id||''))
+}
+
+// 生成 Markdown
+const genMarkdown=async(item:any,ctx:any):Promise<string>=>{
+  let md='',orig=navigator.clipboard.writeText
+  navigator.clipboard.writeText=async(t:string)=>{md=t;return Promise.resolve()}
+  await copyMark(item,{...ctx,showMsg:()=>{}})
+  navigator.clipboard.writeText=orig
+  return md
 }
 
 // 更新标注 blockId

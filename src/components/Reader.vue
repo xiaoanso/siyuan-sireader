@@ -40,20 +40,20 @@
       <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="openToc" :aria-label="i18n.toc||'目录'"><svg><use xlink:href="#iconList"/></svg></button>
       <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:hasBookmark}" @click.stop="toggleBookmark" :aria-label="hasBookmark?(i18n.removeBookmark||'删除书签'):(i18n.addBookmark||'添加书签')"><svg><use xlink:href="#iconBookmark"/></svg></button>
       <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:showSearch}" @click.stop="toggleSearch" :aria-label="i18n.search||'搜索'"><svg><use xlink:href="#iconSearch"/></svg></button>
+      <button v-if="!loading&&ttsEnabled" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying}" @click.stop="toggleTTS" :aria-label="ttsPlaying?(i18n.ttsPause||'暂停朗读'):(i18n.ttsPlay||'开始朗读')"><svg><use :xlink:href="ttsPlaying?'#iconPause':'#iconPlay'"/></svg></button>
       <button v-if="isMobile()" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleClose" aria-label="关闭"><svg><use xlink:href="#iconClose"/></svg></button>
     </div>
   </div>
   
   <!-- 统一标注弹窗 -->
-  <MarkPanel ref="markPanelRef" :manager="markManager" :pdf-viewer="pdfViewer" :reader="reader" :current-view="currentView" :i18n="i18n" @copy="handleCopyText" @dict="handleOpenDict" @copy-mark="handleCopyMark" />
+  <MarkPanel ref="markPanelRef" :manager="markManager" :pdf-viewer="pdfViewer" :reader="reader" :current-view="currentView" :i18n="i18n" :tts-controller="ttsController" :tts-config="currentSettings?.tts" @copy="(text,sel)=>handleCopy({text,cfi:sel?.cfi,page:sel?.page,section:sel?.section,rects:sel?.rects,textOffset:sel?.textOffset})" @dict="handleOpenDict" @copy-mark="handleCopy" />
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { showMessage } from 'siyuan'
 import type { Plugin } from 'siyuan'
 import type { ReaderSettings } from '@/composables/useSetting'
-import { PRESET_THEMES } from '@/composables/useSetting'
 import { openDict as openDictDialog } from '@/utils/dictionary'
 import { createReader, type FoliateReader, setActiveReader, clearActiveReader } from '@/core/epub'
 import type { FoliateView } from '@/core/epub/types'
@@ -67,6 +67,7 @@ import ReaderToc from './ReaderToc.vue'
 import { gotoPDF, gotoEPUB, restorePosition as restorePos, initJump } from '@/utils/jump'
 import { copyMark as copyMarkUtil } from '@/utils/copy'
 import { createKeyboardHandler, setupEpubKeyboard } from '@/utils/keyboard'
+import { TTSController } from '@/services/TTSPlayer'
 
 const props = defineProps<{ file?: File; plugin: Plugin; settings?: ReaderSettings; url?: string; blockId?: string; bookInfo?: any; onReaderReady?: (r: FoliateReader) => void; i18n?: any }>()
 
@@ -85,6 +86,7 @@ const handleSettingsUpdate = async (e: Event) => {
   ;(window as any).__sireader_settings = settings
   reader?.updateSettings?.(settings)
   pdfViewer.value && await pdfViewer.value.updateTheme(settings)
+  await syncTTS()
 }
 
 const containerRef = ref<HTMLElement>()
@@ -113,6 +115,13 @@ let reader: FoliateReader | null = null
 let pdfSource: ArrayBuffer | null = null
 let inkToolManager: InkToolManager | null = null
 let shapeToolManager: ShapeToolManager | null = null
+
+// TTS
+const ttsController = new TTSController()
+const ttsEnabled = computed(() => currentSettings.value?.tts?.enabled || false)
+const ttsPlaying = computed(() => ttsController.isActive.value && !ttsController.paused.value)
+const toggleTTS = () => ttsController.toggle(() => reader, currentSettings.value?.tts)
+const syncTTS = async () => ttsController.sync(currentSettings.value?.tts?.enabled || false)
 
 // Computed
 const marks=computed(()=>markManager.value)
@@ -150,6 +159,10 @@ const init=async()=>{
       const{PDFViewer,PDFSearch}=await import('@/core/pdf')
       const showAnn=(a:any)=>markPanelRef.value?.showAnnotationCard(a)
       const viewer=new PDFViewer({container:viewerContainerRef.value!,scale:1.5,onPageChange:onProgress,onAnnotationClick:showAnn})
+      
+      // 暴露 PDF 查看器实例给 TTS
+      ;(window as any).__pdfViewer = viewer
+      ;(viewerContainerRef.value as any).__pdfViewer = viewer
       props.settings&&viewer.applyTheme(props.settings)
       const searcher=new PDFSearch()
       const file=await loadFile()
@@ -200,9 +213,7 @@ const init=async()=>{
             return{x:x1,y:y1,w:x2-x1,h:y2-y1}
           })
           markPanelRef.value?.showMenu({text,location:{format:'pdf',page:pg,rects:rectsData}},rects[0].left+rects[0].width/2,rects[0].top)
-        }catch(err){
-          console.error('[PDF选择] 错误:', err)
-        }
+        }catch{}
       },100)
       viewerContainerRef.value!.addEventListener('mouseup',handleSel as any)
       viewerContainerRef.value!.addEventListener('keydown',handleKeydown)
@@ -244,10 +255,7 @@ const init=async()=>{
       markManager.value=createMarkManager({format:'epub',view:reader.getView(),plugin:props.plugin,bookUrl,bookName:props.bookInfo?.title||props.file?.name||'book',reader})
       await markManager.value.init()
       ;(reader.getView() as any).marks=markManager.value
-      
-      console.log('[Reader] 恢复进度')
       await bookshelfManager.restoreProgress(bookUrl,reader,null)
-      console.log('[Reader] 进度恢复完成')
       
       reader.on('relocate',()=>onProgress())
       setupEpubKeyboard(reader,handleKeydown,(doc,e)=>markPanelRef.value?.checkSelection(doc,e))
@@ -255,6 +263,8 @@ const init=async()=>{
       setActiveReader(currentView.value,reader,props.settings)
       props.onReaderReady?.(reader)
     }
+
+    await syncTTS()
     
     // 统一设置标注监听
     markPanelRef.value?.setupAnnotationListeners()
@@ -270,35 +280,11 @@ const init=async()=>{
 }
 
 
-// 复制文本处理
-const handleCopyText=async(text:string,selection:any)=>{
-  const copy=(t:string,msg='已复制')=>navigator.clipboard.writeText(t).then(()=>showMessage(msg,1000))
-  const bookUrl=(window as any).__currentBookUrl||props.bookInfo?.url||props.url||''
-  if(!bookUrl||bookUrl.startsWith('file://'))return copy(text,'本地文件无法生成跳转链接，仅复制文本')
-  if(!selection)return copy(text)
-  
-  const{formatBookLink}=await import('@/composables/useSetting')
-  const{formatAuthor,getChapterName}=await import('@/core/MarkManager')
-  const isPdf=isPdfMode.value
-  const book=isPdf?null:reader?.getBook()
-  const loc=isPdf?null:reader?.getLocation()
-  const toc=isPdf?pdfViewer.value?.getPDF?.()?.toc:book?.toc
-  const page=selection.page||(isPdf?pdfViewer.value?.getCurrentPage():loc?.page)
-  const cfi=selection.cfi||(isPdf&&page?`#page-${page}`:'')
-  const chapter=getChapterName({cfi:selection.cfi,page,isPdf,toc,location:loc})||'📒'
-  const link=formatBookLink(bookUrl,book?.metadata?.title||props.bookInfo?.title||'',formatAuthor(book?.metadata?.author||props.bookInfo?.author),chapter,cfi,text,props.settings?.linkFormat||'> [!NOTE] 📑 书名\n> [章节](链接) 文本')
-  copy(link)
+// 统一复制处理
+const handleCopy=(item:any)=>{
+  if(typeof item==='string'||!item.id&&item.text){const loc=isPdfMode.value?null:reader?.getLocation();item={text:item.text||item,cfi:item.cfi,page:item.page,chapter:loc?.tocItem?.label||loc?.tocItem?.title,id:''}}
+  copyMarkUtil(item,{bookUrl:(window as any).__currentBookUrl||props.bookInfo?.url||props.url||'',bookInfo:props.bookInfo,settings:props.settings,reader,pdfViewer:pdfViewer.value,showMsg:(msg:string)=>showMessage(msg,1000)})
 }
-
-// 复制标注处理
-const handleCopyMark=(mark:any)=>copyMarkUtil(mark,{
-  bookUrl:(window as any).__currentBookUrl||props.bookInfo?.url||props.url||'',
-  bookInfo:props.bookInfo,
-  settings:props.settings,
-  reader,
-  pdfViewer:pdfViewer.value,
-  showMsg:(msg:string)=>showMessage(msg,1000)
-})
 
 // 词典查询处理
 const handleOpenDict=(text:string,x:number,y:number,selection:any)=>{
@@ -307,18 +293,20 @@ const handleOpenDict=(text:string,x:number,y:number,selection:any)=>{
 
 // 导航
 const handlePrev=()=>{
+  ttsController.destroy()
   if(isPdfMode.value)return currentView.value?.nav?.prev?.()
   if(reader)return reader.prev()
   if(currentView.value?.prev)return currentView.value.prev()
   currentView.value?.goLeft?.()
 }
 const handleNext=()=>{
+  ttsController.destroy()
   if(isPdfMode.value)return currentView.value?.nav?.next?.()
   if(reader)return reader.next()
   if(currentView.value?.next)return currentView.value.next()
   currentView.value?.goRight?.()
 }
-const handlePageJump=()=>{const p=Math.max(1,Math.min(totalPages.value,pageInput.value||1));pageInput.value=p;pdfViewer.value?.goToPage(p)}
+const handlePageJump=()=>{ttsController.destroy();const p=Math.max(1,Math.min(totalPages.value,pageInput.value||1));pageInput.value=p;pdfViewer.value?.goToPage(p)}
 const updatePageInfo=()=>{if(!pdfViewer.value)return;totalPages.value=pdfViewer.value.getPageCount();pageInput.value=pdfViewer.value.getCurrentPage()}
 
 // 搜索
@@ -391,7 +379,7 @@ const handlePdfLastPage=()=>pdfViewer.value?.goToPage(pdfViewer.value.getPageCou
 const handlePdfPageUp=()=>handlePrev()
 const handlePdfPageDown=()=>handleNext()
 
-const handleGoto=(e:CustomEvent)=>{const{cfi,id}=e.detail;if(isPdfMode.value){if(cfi?.startsWith('#page-'))gotoPDF(parseInt(cfi.slice(6)),id,pdfViewer.value,markManager.value,shapeToolManager);else if(cfi&&/^\d+$/.test(cfi))gotoPDF(parseInt(cfi),id,pdfViewer.value,markManager.value,shapeToolManager)}else if(cfi)gotoEPUB(cfi,id,reader,markManager.value)}
+const handleGoto=(e:CustomEvent)=>{ttsController.destroy();const{cfi,id}=e.detail;if(isPdfMode.value){if(cfi?.startsWith('#page-'))gotoPDF(parseInt(cfi.slice(6)),id,pdfViewer.value,markManager.value,shapeToolManager);else if(cfi&&/^\d+$/.test(cfi))gotoPDF(parseInt(cfi),id,pdfViewer.value,markManager.value,shapeToolManager)}else if(cfi)gotoEPUB(cfi,id,reader,markManager.value)}
 
 // 快捷键
 const handleKeydown=createKeyboardHandler({handlePrev,handleNext,handlePdfFirstPage,handlePdfLastPage,handlePdfPageUp,handlePdfPageDown,handlePdfRotate,handlePdfZoomIn,handlePdfZoomOut,handlePdfZoomReset,handlePdfSearch,handlePrint},()=>!!pdfViewer.value)
@@ -408,7 +396,7 @@ const handleShapeCreated=(e:CustomEvent)=>{const{shape,x,y,edit}=e.detail;markPa
 
 onMounted(()=>{init();containerRef.value?.focus();events.forEach(([e,h])=>window.addEventListener(e,h as any));window.addEventListener('keydown',handleKeydown);window.addEventListener('unhandledrejection',suppressError);window.addEventListener('shape-created',handleShapeCreated as any);setupTabObserver();if(isMobile()&&containerRef.value){containerRef.value.addEventListener('touchstart',handleTouchStart);containerRef.value.addEventListener('touchend',handleTouchEnd)};const bookUrl=props.bookInfo?.url||props.url||(props.file?`file://${props.file.name}`:`book-${Date.now()}`);window.dispatchEvent(new CustomEvent('reader:open',{detail:{bookUrl}}))})
 
-onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));savePosition();clearActiveReader();await markManager.value?.destroy();try{reader?.destroy();currentView.value?.cleanup?.();currentView.value?.viewer?.destroy?.()}catch{};inkToolManager?.destroy?.();shapeToolManager?.destroy?.();setTimeout(()=>viewerContainerRef.value&&(viewerContainerRef.value.innerHTML=''),50);events.forEach(([e,h])=>window.removeEventListener(e,h as any));window.removeEventListener('keydown',handleKeydown);window.removeEventListener('unhandledrejection',suppressError);window.removeEventListener('shape-created',handleShapeCreated as any);containerRef.value&&(containerRef.value as any).__observer?.disconnect();if(isMobile()&&containerRef.value){containerRef.value.removeEventListener('touchstart',handleTouchStart);containerRef.value.removeEventListener('touchend',handleTouchEnd)}})
+onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));savePosition();clearActiveReader();await markManager.value?.destroy();try{reader?.destroy();currentView.value?.cleanup?.();currentView.value?.viewer?.destroy?.()}catch{};inkToolManager?.destroy?.();shapeToolManager?.destroy?.();ttsController.destroy();setTimeout(()=>viewerContainerRef.value&&(viewerContainerRef.value.innerHTML=''),50);events.forEach(([e,h])=>window.removeEventListener(e,h as any));window.removeEventListener('keydown',handleKeydown);window.removeEventListener('unhandledrejection',suppressError);window.removeEventListener('shape-created',handleShapeCreated as any);containerRef.value&&(containerRef.value as any).__observer?.disconnect();if(isMobile()&&containerRef.value){containerRef.value.removeEventListener('touchstart',handleTouchStart);containerRef.value.removeEventListener('touchend',handleTouchEnd)}})
 </script>
 
 <style scoped lang="scss">

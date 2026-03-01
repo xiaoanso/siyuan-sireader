@@ -5,8 +5,10 @@
     
     <!-- 选择菜单：一行三按钮 -->
     <div v-if="state.showMenu" class="mark-menu" :style="menuPosition" @click.stop>
-      <button @click="handleMark" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.mark||'标注'"><svg><use xlink:href="#iconMark"/></svg></button>
-      <button @click="handleCopy" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.copy||'复制'"><svg><use xlink:href="#iconCopy"/></svg></button>
+      <button @click="handleMark" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.note||'笔记'"><svg><use xlink:href="#lucide-square-pen"/></svg></button>
+      <button @click="handleCopy" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.mark||'标注'"><svg><use xlink:href="#iconMark"/></svg></button>
+      <button @click="handleCopyText" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.copy||'复制'"><svg><use xlink:href="#iconCopy"/></svg></button>
+      <button v-if="props.ttsConfig?.enabled" @click="handleSpeak" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.ttsPlay||'朗读'"><svg><use xlink:href="#iconPlay"/></svg></button>
       <button @click="handleDict" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.dict||'词典'"><svg><use xlink:href="#iconLanguage"/></svg></button>
     </div>
     
@@ -79,7 +81,7 @@ import { jump } from '@/utils/jump'
 
 interface MarkSelection { text: string; location: { format: 'pdf'|'epub'; cfi?: string; section?: number; page?: number; rects?: any[] } }
 
-const props = defineProps<{ manager: MarkManager|null; i18n?: Record<string,string>; pdfViewer?: any; reader?: any; currentView?: any }>()
+const props = defineProps<{ manager: MarkManager|null; i18n?: Record<string,string>; pdfViewer?: any; reader?: any; currentView?: any; ttsController?: any; ttsConfig?: any }>()
 const emit = defineEmits<{ 
   copy: [text: string, selection: any]; 
   dict: [text: string, x: number, y: number, selection: any]; 
@@ -130,6 +132,7 @@ const showCard = (mark: Mark, x: number, y: number, edit = false) => {
   if (edit) nextTick(() => noteRef.value?.focus())
 }
 const closeAll = () => {
+  props.ttsController?.cancelLoop()
   currentSelection = null
   Object.assign(state, { showMenu: false, showCard: false, isEditing: false, selection: null, currentMark: null })
 }
@@ -172,7 +175,10 @@ const checkSelection = (doc?: Document, e?: MouseEvent) => {
   
   const processSelection = (doc: Document, index?: number) => {
     const sel = doc.defaultView?.getSelection()
-    if (!sel || sel.isCollapsed || !sel.toString().trim()) return false
+    if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+      state.selection && (props.ttsController?.cancelLoop(), state.selection = null)
+      return false
+    }
     try {
       const range = sel.getRangeAt(0), rect = range.getBoundingClientRect()
       const { x, y } = getCoords(rect, doc)
@@ -234,7 +240,9 @@ defineExpose({ showMenu, showCard, closeAll, showShapeCard, showAnnotationCard, 
 
 // 选择菜单操作
 const handleMark=()=>{if(!state.selection)return;Object.assign(state,{currentMark:null,text:state.selection.text,note:'',isEditing:true,showMenu:false,showCard:true});nextTick(()=>noteRef.value?.focus())}
-const handleCopy=()=>{state.selection&&(emit('copy',state.selection.text,currentSelection),closeAll())}
+const handleCopy=async()=>{if(!state.selection||!props.manager)return;const pos=state.selection.location?.cfi||state.selection.location?.page||state.selection.location?.section;if(!pos)return;const loc=state.selection.location;const mark=await props.manager.addHighlight(pos,state.selection.text.trim(),'blue','',loc.rects,loc.textOffset);if(mark)emit('copyMark',mark);closeAll()}
+const handleCopyText=()=>{if(!state.selection)return;navigator.clipboard.writeText(state.selection.text).then(()=>showMessage(props.i18n?.copied||'已复制',1000));closeAll()}
+const handleSpeak=()=>{if(!state.selection||!props.ttsController)return;props.ttsController.speak(state.selection.text,props.ttsConfig);state.showMenu=false}
 const handleDict=()=>{state.selection&&(emit('dict',state.selection.text,state.x,state.y,currentSelection),closeAll())}
 
 // 卡片操作
@@ -244,31 +252,27 @@ const handleOpenBlock=()=>state.currentMark?.blockId&&openBlock(state.currentMar
 const handleShowFloat=(e:MouseEvent)=>state.currentMark?.blockId&&showFloat(state.currentMark.blockId,e.target as HTMLElement)
 const goToMark=()=>{state.currentMark&&(jump(state.currentMark,(window as any).__activeView,(window as any).__activeReader,props.manager),closeAll())}
 
-const handleSave = async () => {
-  if (!props.manager) return
-  try {
-    if (state.currentMark) { // 更新现有标注
-      const updates: any = { note: state.note.trim() || undefined, color: state.color }
-      if (state.currentMark.type === 'shape') Object.assign(updates, { shapeType: state.shapeType, filled: state.shapeFilled })
-      else Object.assign(updates, { text: state.text.trim(), style: state.style })
-      const { saveMarkEdit } = await import('@/utils/copy')
-      await saveMarkEdit(state.currentMark, updates, { marks: props.manager, bookUrl: (window as any).__currentBookUrl||'', isPdf: isPdf.value, reader: (window as any).__activeReader, pdfViewer: (window as any).__activeView?.viewer, shapeCache: new Map() })
-      showMessage(props.i18n?.saved||'已保存', 1000)
-      state.isEditing = false
-    } else if (state.selection) { // 创建新标注
-      const pos = state.selection.location?.cfi || state.selection.location?.page || state.selection.location?.section
-      if (!pos) return showMessage('无法获取位置信息', 2000, 'error')
-      const loc = state.selection.location
-      const args = [pos, state.text.trim(), state.color, state.style, loc.rects, loc.textOffset]
-      if (state.note.trim()) await props.manager.addNote(pos, state.note.trim(), ...args.slice(1))
-      else await props.manager.addHighlight(...args)
-      showMessage(props.i18n?.created||'已创建', 1000)
+const handleSave=async()=>{
+  if(!props.manager)return
+  try{
+    if(state.currentMark){
+      const updates:any={note:state.note.trim()||undefined,color:state.color}
+      if(state.currentMark.type==='shape')Object.assign(updates,{shapeType:state.shapeType,filled:state.shapeFilled})
+      else Object.assign(updates,{text:state.text.trim(),style:state.style})
+      const{saveMarkEdit}=await import('@/utils/copy')
+      await saveMarkEdit(state.currentMark,updates,{marks:props.manager,bookUrl:(window as any).__currentBookUrl||'',isPdf:isPdf.value,reader:(window as any).__activeReader,pdfViewer:(window as any).__activeView?.viewer,shapeCache:new Map()})
+      showMessage(props.i18n?.saved||'已保存',1000)
+      state.isEditing=false
+      handleCopyMark()
+    }else if(state.selection){
+      const pos=state.selection.location?.cfi||state.selection.location?.page||state.selection.location?.section
+      if(!pos)return showMessage('无法获取位置信息',2000,'error')
+      const loc=state.selection.location,args=[pos,state.text.trim(),state.color,state.style,loc.rects,loc.textOffset]
+      const mark=state.note.trim()?await props.manager.addNote(pos,state.note.trim(),...args.slice(1)):await props.manager.addHighlight(...args)
+      if(mark)emit('copyMark',mark)
       closeAll()
     }
-  } catch (e) {
-    console.error('[MarkPanel] Save:', e)
-    showMessage(props.i18n?.saveError||'保存失败', 2000, 'error')
-  }
+  }catch(e){showMessage(props.i18n?.saveError||'保存失败',2000,'error')}
 }
 
 const handleDelete = async () => {
@@ -276,7 +280,6 @@ const handleDelete = async () => {
   try {
     await props.manager.deleteMark(state.currentMark)?(showMessage(props.i18n?.deleted||'已删除',1000),closeAll()):showMessage('删除失败：未找到标注',2000,'error')
   } catch (e) {
-    console.error('[MarkPanel] Delete:', e)
     showMessage(props.i18n?.deleteError||'删除失败', 2000, 'error')
   }
 }
