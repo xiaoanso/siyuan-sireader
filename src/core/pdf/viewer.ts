@@ -116,6 +116,15 @@ export class PDFViewer {
     const w = this.container.querySelector(`[data-page="${n}"]`) as HTMLElement
     if (!w || this.rendered.has(n)) return
     this.rendered.add(n)
+    
+    // 添加思源兼容属性
+    if (!w.hasAttribute('data-page-number')) {
+      w.setAttribute('data-page-number', String(n))
+    }
+    if (!w.classList.contains('page')) {
+      w.classList.add('page')
+    }
+    
     let p = this.pages.get(n)
     if (!p && this.pdf) { p = markRaw(await this.pdf.getPage(n)); this.pages.set(n, p) }
     if (!p) return

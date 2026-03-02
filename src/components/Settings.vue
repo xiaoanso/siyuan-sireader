@@ -35,7 +35,9 @@ const loadTTS = async () => {
   loadingTTS.value = true
   try {
     const {loadOnlineVoices,loadLocalVoices} = await import('@/services/TTSEngine')
-    ttsVoices.value = [...await loadOnlineVoices(),...await loadLocalVoices()]
+    const [local,online] = await Promise.allSettled([loadLocalVoices(),loadOnlineVoices()])
+    ttsVoices.value = [...(local.status==='fulfilled'?local.value:[]),...(online.status==='fulfilled'?online.value:[])]
+    if (!ttsVoices.value.length) showMessage(props.i18n.loadVoicesFailed||'加载失败',3000,'error')
   } catch (e:any) {
     showMessage(e.message||props.i18n.loadVoicesFailed||'加载失败',3000,'error')
   } finally {
@@ -53,7 +55,7 @@ const toggleFav = (voice:any) => {
   save()
 }
 const isFav = (name:string) => (settings.value.tts?.favoriteVoices||[]).some(v => v.name===name)
-const myVoices = computed(() => [...ttsVoices.value.filter(v => v.isLocal),...(settings.value.tts?.favoriteVoices||[])])
+const myVoices = computed(() => [...ttsVoices.value.filter(v => v.isLocal),...(settings.value.tts?.favoriteVoices||[]).filter(v => !v.isLocal)])
 const onlineVoices = computed(() => ttsVoices.value.filter(v => !v.isLocal))
 watch(() => props.modelValue,v => settings.value=v,{immediate:true})
 
@@ -335,12 +337,12 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                           <div v-for="v in myVoices" :key="v.name" class="ds-list-item ds-list-item-simple" :class="{active:settings.tts.voice===v.name}" @click.stop="selectVoice(v.name)">
                             <div class="ds-list-label">
                               <div>{{v.displayName}}</div>
-                              <small>{{v.isLocal?'本地':v.locale}}</small>
+                              <small>{{v.isLocal?'🎤 本地':v.locale}}</small>
                             </div>
-                            <button @click.stop="toggleFav(v)" class="ds-list-btn ds-list-btn-del">×</button>
+                            <button v-if="!v.isLocal" @click.stop="toggleFav(v)" class="ds-list-btn ds-list-btn-del">×</button>
                           </div>
                         </div>
-                        <div v-else class="sr-empty">{{i18n.ttsNoFavorites||'暂无收藏，请从在线语音中添加'}}</div>
+                        <div v-else class="sr-empty">{{i18n.ttsNoFavorites||'暂无，请点击下方加载'}}</div>
                       </div>
                     </Transition>
                   </div>

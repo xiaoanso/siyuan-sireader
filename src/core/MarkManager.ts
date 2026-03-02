@@ -5,7 +5,7 @@ import type{Plugin}from'siyuan'
 import{Overlayer}from'foliate-js/overlayer.js'
 import{getDatabase}from'./database'
 import type{Annotation}from'./database'
-import{getHighlightCoordsByRange as pdfGetCoords}from'./pdf/PdfAnnotationHelper'
+import{getPdfSelectionRects}from'./pdf/annotation'
 
 type Format='pdf'|'epub'
 type HighlightColor='yellow'|'red'|'green'|'blue'|'purple'|'orange'|'pink'
@@ -62,6 +62,7 @@ export class MarkManager{
   private bookUrl:string
   private marks:Mark[]=[]
   private marksMap=new Map<string,Mark>()
+  private undoStack:Mark[]=[]
   private saveTimer:any
   private onAnnotationClick?:(mark:Mark)=>void
   private pdfViewer:any
@@ -329,15 +330,10 @@ export class MarkManager{
     })
   }
 
-  /** PDF选择优化 */
+  /** PDF选择优化 - 使用思源笔记实现 */
   getPdfSelectionRects():any[]|null{
     if(this.format!=='pdf'||!this.pdfViewer)return null
-    const sel=window.getSelection()
-    if(!sel?.rangeCount||!sel.getRangeAt(0).toString().trim())return null
-    try{
-      const ann=pdfGetCoords(this.pdfViewer,sel.getRangeAt(0),'#ffeb3b')
-      return ann?.flatMap(a=>a.coords.map(c=>({x:c[0],y:c[1],w:c[2]-c[0],h:c[3]-c[1]})))||null
-    }catch{return null}
+    return getPdfSelectionRects(this.pdfViewer)
   }
 
 
@@ -345,6 +341,8 @@ export class MarkManager{
 
   async addHighlight(loc:string|number,text:string,color:HighlightColor,style:MarkStyle='highlight',rects?:any[],textOffset?:number):Promise<Mark>{
     const m=this.add({type:'highlight',[typeof loc==='string'?'cfi':this.format==='pdf'?'page':'section']:loc,text:text.substring(0,200),color,style,rects,textOffset})
+    this.undoStack.push({...m})
+    if(this.undoStack.length>10)this.undoStack.shift()
     if(this.format==='pdf')this.renderPdf(m.page!)
     else if(m.cfi)await this.view?.addAnnotation?.({value:m.cfi,color:m.color,note:m.note}).catch(()=>{})
     this.save()
@@ -355,6 +353,8 @@ export class MarkManager{
 
   async addNote(loc:string|number,note:string,text:string,color:HighlightColor='blue',style:MarkStyle='outline',rects?:any[],textOffset?:number):Promise<Mark>{
     const m=this.add({type:'note',[typeof loc==='string'?'cfi':this.format==='pdf'?'page':'section']:loc,text:text.substring(0,200),note,color,style,rects,textOffset})
+    this.undoStack.push({...m})
+    if(this.undoStack.length>10)this.undoStack.shift()
     if(this.format==='pdf')this.renderPdf(m.page!)
     else if(m.cfi)await this.view?.addAnnotation?.({value:m.cfi,color:m.color,note:m.note}).catch(()=>{})
     this.save()
@@ -451,6 +451,8 @@ export class MarkManager{
     const existing=this.marks.find(m=>m.type==='bookmark'&&(m.cfi===useLoc||m.page===useLoc||m.section===useLoc))
     if(existing)throw new Error('已有书签')
     const m=this.add({type:'bookmark',format:this.format,[typeof useLoc==='string'?'cfi':this.format==='pdf'?'page':'section']:useLoc,title:title||l?.tocItem?.label||l?.label||`第${(useLoc||0)+1}章`,progress:Math.round((l?.fraction||0)*100)})
+    this.undoStack.push({...m})
+    if(this.undoStack.length>10)this.undoStack.shift()
     this.save()
     window.dispatchEvent(new Event('sireader:marks-updated'))
     return m
@@ -479,6 +481,14 @@ export class MarkManager{
   getAnnotations=(color?:HighlightColor)=>{const m=this.marks.filter(m=>m.type==='highlight'||m.type==='note');return color?m.filter(m=>m.color===color):m}
   getNotes=()=>this.marks.filter(m=>m.type==='note')
   getAll=()=>[...this.marks]
+  undo=async()=>{
+    const m=this.undoStack.pop()
+    if(m){await this.deleteMark(m.id);return}
+    const ink=this.getManager('ink')
+    if(ink?.undo?.())return
+    const shape=this.getManager('shape')
+    if(shape&&this.pdfViewer){const p=this.pdfViewer.getCurrentPage();if(p)await shape.undo(p)}
+  }
   getInkAnnotations=()=>this.getManager('ink')?.toJSON?.()||[]
   getShapeAnnotations=()=>this.getManager('shape')?.toJSON?.()||[]
   

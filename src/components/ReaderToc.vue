@@ -298,22 +298,21 @@ const cleanupToc=()=>{
 
 const addBookmarks=()=>{
   if(!tocRef.value||!marks.value)return
+  bookmarkObs?.disconnect()
   const bks=data.value.bookmarks
   bookmarkObs=new IntersectionObserver(es=>es.forEach(e=>{
     if(!e.isIntersecting)return
-    const p=e.target.parentElement,h=e.target.getAttribute('href'),l=e.target.textContent?.trim()||''
-    if(!p||p.querySelector('.toc-bookmark-btn')||!h)return
-    const has=bks.some((b:any)=>b.title===l),btn=Object.assign(document.createElement('button'),{
-      className:'toc-bookmark-btn b3-tooltips b3-tooltips__w',
-      innerHTML:'<svg style="width:14px;height:14px"><use xlink:href="#iconBookmark"/></svg>',
-      onclick:(e:Event)=>{e.stopPropagation();e.preventDefault();toggleBookmark(btn,h,l)}
-    })
+    const a=e.target as HTMLElement,h=a.getAttribute('href'),l=a.textContent?.trim()
+    if(!h||!l||a.querySelector('.toc-bookmark-btn'))return
+    const has=bks.some((b:any)=>b.title===l),btn=document.createElement('button')
+    btn.className='toc-bookmark-btn b3-tooltips b3-tooltips__w'
+    btn.innerHTML='<svg style="width:14px;height:14px"><use xlink:href="#iconBookmark"/></svg>'
     btn.setAttribute('aria-label',has?'移除书签':'添加书签')
-    has&&(btn.style.opacity='1',btn.classList.add('has-bookmark'))
-    p.appendChild(btn)
-    bookmarkObs?.unobserve(e.target)
+    btn.onclick=e=>{e.stopPropagation();e.preventDefault();toggleBookmark(btn,h,l)}
+    if(has){btn.style.opacity='1';btn.classList.add('has-bookmark')}
+    a.style.position='relative';a.appendChild(btn);bookmarkObs?.unobserve(a)
   }),{root:tocRef.value,rootMargin:'100px'})
-  tocRef.value.querySelectorAll('a[href]').forEach(l=>bookmarkObs?.observe(l))
+  tocRef.value.querySelectorAll('a[href]').forEach(a=>bookmarkObs?.observe(a))
 }
 
 const toggleBookmark=async(btn:HTMLButtonElement,href:string,label:string)=>{
@@ -438,26 +437,22 @@ onUnmounted(()=>{cleanupToc();thumbObs?.disconnect();window.removeEventListener(
   :deep([aria-expanded="false"]>svg){transform:rotate(-90deg)}
   :deep([role="group"]){display:none}
   :deep([aria-expanded="true"]+[role="group"]){display:block}
-  :deep(.toc-bookmark-btn){position:absolute;right:12px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;margin:0;border:none!important;background:transparent!important;outline:none!important;box-shadow:none!important;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);border-radius:50%;
-    svg{width:14px;height:14px;pointer-events:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.1));color:var(--b3-theme-on-surface);transition:all .3s cubic-bezier(.4,0,.2,1)}
-    &:hover{opacity:1!important;transform:translateY(-50%) scale(1.2) rotate(10deg);background:rgba(244,67,54,.15)!important}
-    &:active{transform:translateY(-50%) scale(.9) rotate(-5deg)}
-    &.has-bookmark{opacity:1!important;background:rgba(244,67,54,.08)!important;
-      svg{color:var(--b3-theme-error)}
-      &:hover{background:rgba(244,67,54,.18)!important}}}
-  :deep(li:hover .toc-bookmark-btn){opacity:.5!important}}
+  :deep(.toc-bookmark-btn){position:absolute;right:12px;top:50%;width:24px;height:24px;padding:0;border:none;background:transparent;cursor:pointer;opacity:0;transform:translateY(-50%);transition:opacity .2s,transform .2s;
+    svg{width:14px;height:14px;color:var(--b3-theme-on-surface);transition:color .2s}
+    &:hover{transform:translateY(-50%) rotate(15deg);
+      svg{color:var(--b3-theme-error)}}
+    &.has-bookmark{opacity:1;svg{color:var(--b3-theme-error)}}}
+  :deep(a:hover .toc-bookmark-btn),
+  :deep(span[role="treeitem"]:hover .toc-bookmark-btn){opacity:1}}
 .sr-list{padding:8px}
 .expand-enter-active,.expand-leave-active{transition:all .3s ease}
 .expand-enter-from,.expand-leave-to{max-height:0;opacity:0;margin-top:0;padding-top:0;padding-bottom:0}
 .expand-enter-to,.expand-leave-from{max-height:400px;opacity:1}
-// 书签项复用目录链接样式
 .sr-bookmark-item{display:block;padding:10px 48px 10px 12px;margin:2px 4px;color:var(--b3-theme-on-background);border-radius:6px;cursor:pointer;transition:all .25s cubic-bezier(.4,0,.2,1);border-left:3px solid transparent;position:relative;
-  &:hover{background:var(--b3-list-hover);transform:translateX(2px);box-shadow:0 1px 3px rgba(0,0,0,.06);.sr-action-btn{opacity:.5}}}
-// 统一操作按钮样式（书签删除、目录书签）
-.sr-action-btn{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;margin:0;border:none!important;background:transparent!important;outline:none!important;box-shadow:none!important;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;opacity:0;transition:all .3s cubic-bezier(.4,0,.2,1);border-radius:50%;
-  svg{width:14px;height:14px;pointer-events:none;filter:drop-shadow(0 1px 2px rgba(0,0,0,.1));color:var(--b3-theme-error)}
-  &:hover{opacity:1!important;transform:translateY(-50%) scale(1.2) rotate(-10deg);background:rgba(244,67,54,.15)!important}
-  &:active{transform:translateY(-50%) scale(.9)}}
+  &:hover{background:var(--b3-list-hover);transform:translateX(2px);box-shadow:0 1px 3px rgba(0,0,0,.06);.sr-action-btn{opacity:1}}}
+.sr-action-btn{position:absolute;right:12px;top:50%;width:24px;height:24px;padding:0;border:none;background:transparent;cursor:pointer;opacity:0;transform:translateY(-50%);transition:opacity .2s,transform .2s;
+  svg{width:14px;height:14px;color:var(--b3-theme-error);transition:color .2s}
+  &:hover{transform:translateY(-50%) rotate(-15deg)}}
 
 // 统一标注卡片样式
 .sr-card{position:relative;padding:12px;margin-bottom:8px;background:var(--b3-theme-surface);border-radius:6px;border:1px solid var(--b3-border-color);transition:background .15s;cursor:pointer;
@@ -493,8 +488,4 @@ onUnmounted(()=>{cleanupToc();thumbObs?.disconnect();window.removeEventListener(
   &:hover{background:var(--b3-theme-background-light);.sr-btns{opacity:1}}}
 .sr-preview{width:100%;height:auto;border-radius:4px;background:var(--b3-theme-background);display:block;opacity:.85;cursor:pointer}
 .sr-group-preview{height:80px;margin:6px 0}
-
-
-
-
 </style>

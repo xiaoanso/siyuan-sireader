@@ -305,6 +305,8 @@
   "fixed": "Fixed",
   "bookshelfCoverSize": "Bookshelf Cover Size",
   "bookshelfCoverSizeDesc": "Adjust the display size of bookshelf covers (80-160px)",
+  "toolbarOpacity": "Toolbar Opacity",
+  "toolbarOpacityDesc": "Adjust the opacity of the bottom toolbar when not hovered (0-100%)",
   "openDocAssets": "Open SiYuan PDF",
   "openDocAssetsDesc": "When enabled, PDFs in documents and assets folder will be opened with SiYuan PDF viewer",
   "interfaceLayout": "Interface Layout",

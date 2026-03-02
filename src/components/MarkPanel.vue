@@ -6,11 +6,15 @@
     <!-- 选择菜单：一行三按钮 -->
     <div v-if="state.showMenu" class="mark-menu" :style="menuPosition" @click.stop>
       <button @click="handleMark" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.note||'笔记'"><svg><use xlink:href="#lucide-square-pen"/></svg></button>
-      <button @click="handleCopy" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.mark||'标注'"><svg><use xlink:href="#iconMark"/></svg></button>
+      <button @click="()=>handleCopy()" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.mark||'标注'"><svg><use xlink:href="#iconMark"/></svg></button>
       <button @click="handleCopyText" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.copy||'复制'"><svg><use xlink:href="#iconCopy"/></svg></button>
       <button v-if="props.ttsConfig?.enabled" @click="handleSpeak" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.ttsPlay||'朗读'"><svg><use xlink:href="#iconPlay"/></svg></button>
       <button @click="handleDict" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.dict||'词典'"><svg><use xlink:href="#iconLanguage"/></svg></button>
+      <button @click="handleTranslate" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.translate||'翻译'"><svg><use xlink:href="#iconTranslate"/></svg></button>
     </div>
+    
+    <!-- 翻译弹窗 -->
+    <Translate :show="state.showTranslate" :text="state.selection?.text||''" :x="state.x" :y="state.y" @close="state.showTranslate=false"/>
     
     <!-- 标注卡片 -->
     <div v-if="state.showCard" v-motion :initial="{opacity:0,y:5}" :enter="{opacity:1,y:0}" class="sr-card" :style="cardPosition" @click.stop>
@@ -78,10 +82,11 @@ import type { MarkManager, Mark, HighlightColor } from '@/core/MarkManager'
 import { COLORS, STYLES, getColorMap } from '@/core/MarkManager'
 import { openBlock, showFloat, hideFloat } from '@/utils/copy'
 import { jump } from '@/utils/jump'
+import Translate from './Translate.vue'
 
 interface MarkSelection { text: string; location: { format: 'pdf'|'epub'; cfi?: string; section?: number; page?: number; rects?: any[] } }
 
-const props = defineProps<{ manager: MarkManager|null; i18n?: Record<string,string>; pdfViewer?: any; reader?: any; currentView?: any; ttsController?: any; ttsConfig?: any }>()
+const props = defineProps<{ manager: MarkManager|null; i18n?: Record<string,string>; pdfViewer?: any; reader?: any; currentView?: any; ttsController?: any; ttsConfig?: any; quickMarkMode?: boolean; quickMarkColor?: HighlightColor; quickMarkStyle?: 'highlight'|'underline'|'outline'|'dotted'|'dashed'|'double'|'squiggly' }>()
 const emit = defineEmits<{ 
   copy: [text: string, selection: any]; 
   dict: [text: string, x: number, y: number, selection: any]; 
@@ -96,8 +101,9 @@ const SHAPES = [
 
 const colors = getColorMap()
 const noteRef = ref<HTMLTextAreaElement>()
+let quickMarkCooldown = false
 const state = reactive({
-  showMenu: false, showCard: false, isEditing: false, x: 0, y: 0,
+  showMenu: false, showCard: false, showTranslate: false, isEditing: false, x: 0, y: 0,
   selection: null as MarkSelection|null, currentMark: null as Mark|null,
   text: '', note: '', color: 'yellow' as HighlightColor,
   style: 'highlight' as 'highlight'|'underline'|'outline'|'dotted'|'dashed'|'double'|'squiggly',
@@ -110,18 +116,20 @@ let currentSelection: { text: string; cfi?: string; section?: number; page?: num
 // 计算属性
 const currentColor = computed(() => colors[state.color] || '#ffeb3b')
 const isPdf = computed(() => (state.selection?.location.format || state.currentMark?.format) === 'pdf')
-const menuPosition = computed(() => ({ left: `${state.x}px`, top: `${state.y}px`, transform: 'translate(-50%,-100%) translateY(-8px)' }))
-const cardPosition = computed(() => { // 边缘检测
-  const w = 340, h = state.isEditing ? 420 : 180, p = 10
-  const x = Math.max(w/2+p, Math.min(state.x, innerWidth-w/2-p))
-  const y = state.y+h+p*2 > innerHeight ? Math.max(p*2, state.y-h-p) : state.y+p
-  return { left: `${x}px`, top: `${y}px`, transform: 'translate(-50%,0)' }
-})
+const getBounds=()=>{const r=document.querySelector('.reader-container')?.getBoundingClientRect();return r?{left:r.left+16,right:r.right-16,top:r.top+16,bottom:r.bottom-16}:{left:16,right:innerWidth-16,top:16,bottom:innerHeight-16}}
+const clampPos=(x:number,y:number,w:number,h:number)=>{const{left:l,right:r,top:t,bottom:b}=getBounds(),p=10;return{x:Math.max(l+w/2+p,Math.min(x,r-w/2-p)),y:y+h+p*2>b?Math.max(t+p*2,y-h-p):y+p}}
+const menuPosition=computed(()=>{const{x,y}=clampPos(state.x,state.y,240,50);return{left:`${x}px`,top:`${y}px`,transform:'translate(-50%,0)'}})
+const cardPosition=computed(()=>{const{x,y}=clampPos(state.x,state.y,340,state.isEditing?420:180);return{left:`${x}px`,top:`${y}px`,transform:'translate(-50%,0)'}})
 
 // 显示菜单/卡片
-const showMenu = (sel: MarkSelection, x: number, y: number) => {
+const showMenu = async(sel: MarkSelection, x: number, y: number) => {
   currentSelection = { text: sel.text, cfi: sel.location.cfi, section: sel.location.section, page: sel.location.page, rects: sel.location.rects, textOffset: (sel.location as any).textOffset }
-  Object.assign(state, { selection: sel, x, y, showMenu: true, showCard: false })
+  Object.assign(state, { selection: sel, x, y })
+  if(props.quickMarkMode){
+    await handleCopy(props.quickMarkColor,props.quickMarkStyle)
+    return
+  }
+  Object.assign(state, { showMenu: true, showCard: false })
 }
 const showCard = (mark: Mark, x: number, y: number, edit = false) => {
   Object.assign(state, {
@@ -134,11 +142,12 @@ const showCard = (mark: Mark, x: number, y: number, edit = false) => {
 const closeAll = () => {
   props.ttsController?.cancelLoop()
   currentSelection = null
-  Object.assign(state, { showMenu: false, showCard: false, isEditing: false, selection: null, currentMark: null })
+  Object.assign(state, { showMenu: false, showCard: false, showTranslate: false, isEditing: false, selection: null, currentMark: null })
 }
 
 // 形状标注点击处理（PDF）
 const showShapeCard = (shape: any, pdfViewer: any) => {
+  if(quickMarkCooldown)return
   const el = document.querySelector(`.pdf-shape-layer[data-page="${shape.page}"]`)
   if (!el || !pdfViewer) return
   const r = el.getBoundingClientRect()
@@ -155,6 +164,7 @@ const showShapeCard = (shape: any, pdfViewer: any) => {
 
 // PDF 文本标注点击处理
 const showAnnotationCard = (annotation: any) => {
+  if(quickMarkCooldown)return
   const el = document.querySelector(`[data-id="${annotation.id}"]`)
   if (!el) return
   const r = el.getBoundingClientRect()
@@ -204,6 +214,7 @@ const checkSelection = (doc?: Document, e?: MouseEvent) => {
 const setupAnnotationListeners = () => {
   if (!props.reader || !props.manager) return
   props.reader.getView().addEventListener('show-annotation', ((e: CustomEvent) => {
+    if(quickMarkCooldown)return
     const { value, range } = e.detail
     const mark = props.manager?.getAll().find(m => m.cfi === value)
     if (!mark) return
@@ -240,10 +251,11 @@ defineExpose({ showMenu, showCard, closeAll, showShapeCard, showAnnotationCard, 
 
 // 选择菜单操作
 const handleMark=()=>{if(!state.selection)return;Object.assign(state,{currentMark:null,text:state.selection.text,note:'',isEditing:true,showMenu:false,showCard:true});nextTick(()=>noteRef.value?.focus())}
-const handleCopy=async()=>{if(!state.selection||!props.manager)return;const pos=state.selection.location?.cfi||state.selection.location?.page||state.selection.location?.section;if(!pos)return;const loc=state.selection.location;const mark=await props.manager.addHighlight(pos,state.selection.text.trim(),'blue','',loc.rects,loc.textOffset);if(mark)emit('copyMark',mark);closeAll()}
+const handleCopy=async(color?:HighlightColor,style?:MarkStyle)=>{if(!state.selection||!props.manager)return;const pos=state.selection.location?.cfi||state.selection.location?.page||state.selection.location?.section;if(!pos)return;const loc=state.selection.location;const mark=await props.manager.addHighlight(pos,state.selection.text.trim(),color||'blue',style||'highlight',loc.rects,loc.textOffset);if(mark)emit('copyMark',mark);if(props.quickMarkMode){quickMarkCooldown=true;setTimeout(()=>quickMarkCooldown=false,300);window.getSelection()?.removeAllRanges()}else closeAll()}
 const handleCopyText=()=>{if(!state.selection)return;navigator.clipboard.writeText(state.selection.text).then(()=>showMessage(props.i18n?.copied||'已复制',1000));closeAll()}
 const handleSpeak=()=>{if(!state.selection||!props.ttsController)return;props.ttsController.speak(state.selection.text,props.ttsConfig);state.showMenu=false}
-const handleDict=()=>{state.selection&&(emit('dict',state.selection.text,state.x,state.y,currentSelection),closeAll())}
+const handleDict=async()=>{if(!state.selection)return;const{openDict}=await import('@/utils/dictionary');openDict(state.selection.text,state.x,state.y,{text:state.selection.text,cfi:state.selection.location?.cfi,section:state.selection.location?.section,page:state.selection.location?.page,rects:state.selection.location?.rects});state.showMenu=false}
+const handleTranslate=()=>{state.showMenu=false;state.showTranslate=true}
 
 // 卡片操作
 const handleEdit=()=>{state.isEditing=true;nextTick(()=>noteRef.value?.focus())}
@@ -299,10 +311,10 @@ const handleImport = async () => {
 .mark-menu{position:fixed;z-index:950;display:flex;gap:4px;padding:6px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);button{width:32px;height:32px;padding:0;border:none;background:transparent;border-radius:6px;cursor:pointer;transition:all .15s;color:var(--b3-theme-on-surface);display:flex;align-items:center;justify-content:center;svg{width:16px;height:16px}&:hover{background:var(--b3-list-hover);color:var(--b3-theme-primary)}}}
 .sr-card{position:fixed;z-index:950;width:340px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1)}
 .sr-main{padding:12px;border-left:4px solid;border-radius:8px}
-.sr-title{font-size:13px;font-weight:500;line-height:1.6;color:var(--b3-theme-on-surface);margin-bottom:8px;cursor:pointer;&[contenteditable]{font-size:15px;font-weight:600}}
-.sr-note{font-size:12px;color:var(--b3-theme-on-surface-variant);line-height:1.5;margin-bottom:8px;cursor:text}
+.sr-title{font-size:14px;font-weight:500;line-height:1.6;color:var(--b3-theme-on-surface);margin-bottom:8px;cursor:pointer;&[contenteditable]{font-size:14px;font-weight:600}}
+.sr-note{font-size:14px;color:var(--b3-theme-on-surface);line-height:1.6;margin-bottom:8px;cursor:text}
 .sr-btns{display:flex;gap:8px;button{width:32px;height:32px;padding:0;border:none;background:transparent;border:1px solid var(--b3-border-color);border-radius:4px;cursor:pointer;transition:all .15s;color:var(--b3-theme-on-surface);display:flex;align-items:center;justify-content:center;svg{width:14px;height:14px}&:hover{background:var(--b3-list-hover);border-color:var(--b3-theme-primary);color:var(--b3-theme-primary)}}}
-.sr-note-input{width:100%;min-height:60px;padding:8px;border:1px solid var(--b3-border-color);border-radius:4px;font-size:12px;line-height:1.5;resize:vertical;background:var(--b3-theme-background);color:var(--b3-theme-on-surface-variant);margin-bottom:8px;&:focus{outline:1px solid var(--b3-theme-primary);border-color:var(--b3-theme-primary)}}
+.sr-note-input{width:100%;min-height:60px;padding:8px;border:1px solid var(--b3-border-color);border-radius:4px;font-size:14px;line-height:1.6;resize:vertical;background:var(--b3-theme-background);color:var(--b3-theme-on-surface);margin-bottom:8px;&:focus{outline:none;border-color:var(--b3-theme-primary)}}
 .sr-options{margin-bottom:12px}
 .sr-colors{display:flex;gap:6px;margin-bottom:8px}
 .sr-color-btn{width:28px;height:28px;border:2px solid transparent;border-radius:50%;cursor:pointer;transition:all .15s;padding:0;&.active{border-color:var(--b3-theme-on-surface);transform:scale(1.1);box-shadow:0 2px 8px rgba(0,0,0,.2)}&:hover{transform:scale(1.05)}}

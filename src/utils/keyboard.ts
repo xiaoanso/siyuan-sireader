@@ -2,6 +2,7 @@
 export interface KeyboardHandlers {
   handlePrev: () => void
   handleNext: () => void
+  handleUndo?: () => void
   handlePdfFirstPage?: () => void
   handlePdfLastPage?: () => void
   handlePdfPageUp?: () => void
@@ -20,6 +21,9 @@ export const createKeyboardHandler = (handlers: KeyboardHandlers, isPdfMode: () 
     if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
     
     const k = e.key, c = e.ctrlKey || e.metaKey
+    
+    // 通用快捷键
+    if (c && k === 'z') return handlers.handleUndo?.(), e.preventDefault()
     
     // 通用导航
     if (['ArrowLeft', 'ArrowUp'].includes(k) || k === ' ' && e.shiftKey) return handlers.handlePrev(), e.preventDefault()

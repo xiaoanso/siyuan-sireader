@@ -5,6 +5,7 @@
 // PDF查看器和搜索
 export { PDFViewer } from './viewer'
 export { PDFSearch } from './search'
+export { SiyuanPDFViewer } from './siyuan-viewer'
 
 // PDF元数据
 export { getMetadata } from './metadata'
@@ -21,21 +22,14 @@ export { createShapeToolManager } from './shape'
 export type { InkToolManager } from './ink'
 export type { ShapeToolManager } from './shape'
 
-// PDF标注优化（思源逻辑）
-export {
-  getTextNode,
-  mergeRects,
-  hasClosestByClassName,
-  getHighlightCoordsByRange,
-  getHighlightCoordsByRect,
-  renderHighlight,
-  clearHighlight,
-  createAnnotationFromSelection,
-  isSelectionInPdfViewer,
-  scrollToAnnotation,
-  highlightAnnotation,
-  type PdfRect,
-  type PdfAnnotation,
-  type PdfPageInfo
-} from './PdfAnnotationHelper'
+// PDF标注类型定义
+export interface PdfAnnotation {
+  id: string
+  index: number
+  coords: number[][]
+  color: string
+  content: string
+  type: 'text' | 'border'
+  mode: 'text' | 'rect'
+}
 

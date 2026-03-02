@@ -1,7 +1,7 @@
 // TTS 播放器：播放控制 + 高亮 + UI 交互
 import { ref } from 'vue'
 import { showMessage } from 'siyuan'
-import { EdgeTTSCore, toArrayBuffer } from './TTSEngine'
+import { EdgeTTSCore, toArrayBuffer, loadLocalVoices } from './TTSEngine'
 import { extractBlocks, TextIterator } from './TTSExtractor'
 
 declare const window: any
@@ -23,7 +23,7 @@ export class EdgeTTSPlayer {
   private pdfViewer: any = null
 
   constructor(doc: Document, renderer: any, config: any, startRange?: Range) {
-    this.isLocal = config.voice && window.speechSynthesis?.getVoices().some((v: any) => v.name === config.voice)
+    this.isLocal = false
     this.isPdf = doc.querySelectorAll('.textLayer').length > 0
     this.tts.setVoice(config.voice)
     this.textIter = new TextIterator(extractBlocks(doc, startRange))
@@ -33,6 +33,14 @@ export class EdgeTTSPlayer {
       const container = doc.querySelector('.viewer-container')
       this.pdfViewer = (window as any).__pdfViewer || (container as any)?.__pdfViewer
     }
+    // 异步检查是否为本地语音
+    this.checkLocalVoice(config.voice)
+  }
+
+  private async checkLocalVoice(voiceName: string) {
+    if (!voiceName) return
+    const locals = await loadLocalVoices()
+    this.isLocal = locals.some(v => v.name === voiceName)
   }
 
   private fillCache() {

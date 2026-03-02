@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="reader-container" tabindex="0">
+  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity':props.settings?.toolbarOpacity/100||.3}">
     <div v-if="loading" class="reader-loading"><div class="spinner"></div><div>{{ error || '加载中...' }}</div></div>
     
     <!-- 遮罩：捕获外部点击关闭弹窗 -->
@@ -29,6 +29,21 @@
       </div>
     </Transition>
     
+    <!-- 快速标注面板 -->
+    <Transition name="search-slide">
+      <div v-if="showQuickMark&&!loading" class="reader-panel" @click.stop>
+        <div class="sr-colors">
+          <button v-for="(c,i) in COLORS" :key="c.color" class="sr-color-btn" :class="{active:quickMarkColor===i}" :style="{background:c.bg}" @click="quickMarkColor=i"/>
+        </div>
+        <span class="panel-divider"/>
+        <div class="sr-styles">
+          <button v-for="s in STYLES.filter(s=>!s.pdfOnly||isPdfMode)" :key="s.type" class="sr-style-btn" :class="{active:quickMarkStyle===s.type}" @click="quickMarkStyle=s.type">
+            <span class="sr-style-icon" :data-type="s.type">{{s.text}}</span>
+          </button>
+        </div>
+      </div>
+    </Transition>
+    
     <!-- 底部控制栏 - 始终显示 -->
     <div class="reader-toolbar">
       <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handlePrev" :aria-label="i18n.prevChapter||'上一章'"><svg><use xlink:href="#iconLeft"/></svg></button>
@@ -40,13 +55,17 @@
       <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="openToc" :aria-label="i18n.toc||'目录'"><svg><use xlink:href="#iconList"/></svg></button>
       <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:hasBookmark}" @click.stop="toggleBookmark" :aria-label="hasBookmark?(i18n.removeBookmark||'删除书签'):(i18n.addBookmark||'添加书签')"><svg><use xlink:href="#iconBookmark"/></svg></button>
       <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:showSearch}" @click.stop="toggleSearch" :aria-label="i18n.search||'搜索'"><svg><use xlink:href="#iconSearch"/></svg></button>
+      <button v-if="!loading" class="toolbar-btn toolbar-mark-btn b3-tooltips b3-tooltips__n" :class="{active:quickMarkMode}" @click.stop="toggleQuickMark" :aria-label="quickMarkMode?'退出快速标注':'快速标注'">
+        <svg><use xlink:href="#iconMark"/></svg>
+        <span class="mark-color-indicator" :style="{background:COLORS[quickMarkColor].bg}"></span>
+      </button>
       <button v-if="!loading&&ttsEnabled" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying}" @click.stop="toggleTTS" :aria-label="ttsPlaying?(i18n.ttsPause||'暂停朗读'):(i18n.ttsPlay||'开始朗读')"><svg><use :xlink:href="ttsPlaying?'#iconPause':'#iconPlay'"/></svg></button>
       <button v-if="isMobile()" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleClose" aria-label="关闭"><svg><use xlink:href="#iconClose"/></svg></button>
     </div>
   </div>
   
   <!-- 统一标注弹窗 -->
-  <MarkPanel ref="markPanelRef" :manager="markManager" :pdf-viewer="pdfViewer" :reader="reader" :current-view="currentView" :i18n="i18n" :tts-controller="ttsController" :tts-config="currentSettings?.tts" @copy="(text,sel)=>handleCopy({text,cfi:sel?.cfi,page:sel?.page,section:sel?.section,rects:sel?.rects,textOffset:sel?.textOffset})" @dict="handleOpenDict" @copy-mark="handleCopy" />
+  <MarkPanel ref="markPanelRef" :manager="markManager" :pdf-viewer="pdfViewer" :reader="reader" :current-view="currentView" :i18n="i18n" :tts-controller="ttsController" :tts-config="currentSettings?.tts" :quick-mark-mode="quickMarkMode" :quick-mark-color="COLORS[quickMarkColor].color" :quick-mark-style="quickMarkStyle" @copy="(text,sel)=>handleCopy({text,cfi:sel?.cfi,page:sel?.page,section:sel?.section,rects:sel?.rects,textOffset:sel?.textOffset})" @dict="handleOpenDict" @copy-mark="handleCopy" />
 </template>
 
 <script setup lang="ts">
@@ -57,9 +76,10 @@ import type { ReaderSettings } from '@/composables/useSetting'
 import { openDict as openDictDialog } from '@/utils/dictionary'
 import { createReader, type FoliateReader, setActiveReader, clearActiveReader } from '@/core/epub'
 import type { FoliateView } from '@/core/epub/types'
-import { createMarkManager, type MarkManager } from '@/core/MarkManager'
+import { COLORS, STYLES, createMarkManager, type MarkManager } from '@/core/MarkManager'
 import { createInkToolManager, type InkToolManager } from '@/core/pdf/ink'
 import { createShapeToolManager, type ShapeToolManager } from '@/core/pdf/shape'
+import { handlePdfSelection } from '@/core/pdf/annotation'
 import { saveMobilePosition, getMobilePosition, isMobile } from '@/utils/mobile'
 import PdfToolbar from './PdfToolbar.vue'
 import MarkPanel from './MarkPanel.vue'
@@ -107,6 +127,10 @@ const pageInput = ref(1)
 const totalPages = ref(0)
 const showSearch = ref(false)
 const showToc = ref(false)
+const showQuickMark = ref(false)
+const quickMarkMode = ref(false)
+const quickMarkColor = ref(0)
+const quickMarkStyle = ref<'highlight'|'underline'|'outline'|'dotted'|'dashed'|'double'|'squiggly'>('highlight')
 const tocMode = ref<'toc' | 'bookmark' | 'mark' | 'deck'>('toc')
 const searchQuery = ref('')
 const searchResults = ref<any[]>([])
@@ -193,30 +217,41 @@ const init=async()=>{
       ;(markManager.value as any).shapeManager=shapeToolManager
       updatePageInfo()
       setActiveReader(currentView.value,null,props.settings)
-      const handleSel=(e:MouseEvent)=>setTimeout(()=>{
-        const t=e.target as HTMLElement
-        if(t.closest('.mark-card,.mark-selection-menu,[data-note-marker],.pdf-highlight'))return
-        const sel=window.getSelection()
-        if(!sel||sel.isCollapsed||!sel.toString().trim())return
-        try{
-          const range=sel.getRangeAt(0),rects=Array.from(range.getClientRects())
-          if(!rects.length)return
-          const pg=viewer.getCurrentPage(),pageEl=document.querySelector(`[data-page="${pg}"]`)
-          if(!pageEl)return
-          const page=viewer.getPages().get(pg)
-          if(!page)return
-          const pr=pageEl.getBoundingClientRect(),viewport=page.getViewport({scale:viewer.getScale(),rotation:viewer.getRotation()})
-          const text=sel.toString().trim()
-          let rectsData=markManager.value?.getPdfSelectionRects()||rects.map(r=>{
-            const[x1,y1]=viewport.convertToPdfPoint(r.left-pr.left,r.top-pr.top)
-            const[x2,y2]=viewport.convertToPdfPoint(r.right-pr.left,r.bottom-pr.top)
-            return{x:x1,y:y1,w:x2-x1,h:y2-y1}
-          })
-          markPanelRef.value?.showMenu({text,location:{format:'pdf',page:pg,rects:rectsData}},rects[0].left+rects[0].width/2,rects[0].top)
-        }catch{}
-      },100)
-      viewerContainerRef.value!.addEventListener('mouseup',handleSel as any)
-      viewerContainerRef.value!.addEventListener('keydown',handleKeydown)
+      
+      // 使用思源的方式：click事件处理选择
+      const handleSel = () => {
+        setTimeout(() => {
+          const selection = window.getSelection()
+          if (!selection || selection.rangeCount === 0) return
+          
+          const range = selection.getRangeAt(0)
+          if (range.toString() === '') return
+          
+          // 检查是否在PDF viewer内
+          const commonAncestor = range.commonAncestorContainer
+          const pdfViewer = (commonAncestor.nodeType === 1 ? commonAncestor : commonAncestor.parentElement)?.closest('.pdfViewer')
+          if (!pdfViewer) return
+          
+          // 检查是否点击了标注或菜单
+          const target = document.elementFromPoint(window.lastMouseX || 0, window.lastMouseY || 0) as HTMLElement
+          if (target?.closest('.mark-card,.mark-selection-menu,[data-note-marker],.pdf-highlight')) return
+          
+          // 处理选择
+          handlePdfSelection(viewer, markManager.value, (data, x, y) => markPanelRef.value?.showMenu(data, x, y))
+        }, 100)
+      }
+      
+      // 记录鼠标位置（用于检测点击目标）
+      ;(window as any).lastMouseX = 0
+      ;(window as any).lastMouseY = 0
+      viewerContainerRef.value!.addEventListener('mousemove', (e: MouseEvent) => {
+        (window as any).lastMouseX = e.clientX
+        ;(window as any).lastMouseY = e.clientY
+      })
+      
+      // 使用click事件而不是mouseup，与思源保持一致
+      viewerContainerRef.value!.addEventListener('click', handleSel)
+      viewerContainerRef.value!.addEventListener('keydown', handleKeydown)
       // 监听canvas层创建完成，自动渲染标注
       const handleLayerReady=(e:CustomEvent)=>{
         const p=e.detail.page
@@ -229,7 +264,7 @@ const init=async()=>{
       const origOnChange=viewer.onChange
       viewer.onChange=(p:number)=>{origOnChange?.(p);setTimeout(()=>handleLayerReady({detail:{page:p}}as any),50)}
       currentView.value.cleanup=()=>{
-        viewerContainerRef.value?.removeEventListener('mouseup',handleSel)
+        viewerContainerRef.value?.removeEventListener('click',handleSel)
         viewerContainerRef.value?.removeEventListener('keydown',handleKeydown)
         window.removeEventListener('pdf:layer-ready',handleLayerReady as any)
       }
@@ -312,6 +347,7 @@ const updatePageInfo=()=>{if(!pdfViewer.value)return;totalPages.value=pdfViewer.
 // 搜索
 const searchInputRef=ref<HTMLInputElement>()
 const toggleSearch=()=>{showSearch.value=!showSearch.value;showSearch.value&&setTimeout(()=>searchInputRef.value?.focus(),100)}
+const toggleQuickMark=()=>{showQuickMark.value=!showQuickMark.value;quickMarkMode.value=showQuickMark.value}
 const handleSearch=async()=>{
   if(!searchQuery.value.trim())return
   if(isPdfMode.value&&pdfSearcher.value){
@@ -382,7 +418,8 @@ const handlePdfPageDown=()=>handleNext()
 const handleGoto=(e:CustomEvent)=>{ttsController.destroy();const{cfi,id}=e.detail;if(isPdfMode.value){if(cfi?.startsWith('#page-'))gotoPDF(parseInt(cfi.slice(6)),id,pdfViewer.value,markManager.value,shapeToolManager);else if(cfi&&/^\d+$/.test(cfi))gotoPDF(parseInt(cfi),id,pdfViewer.value,markManager.value,shapeToolManager)}else if(cfi)gotoEPUB(cfi,id,reader,markManager.value)}
 
 // 快捷键
-const handleKeydown=createKeyboardHandler({handlePrev,handleNext,handlePdfFirstPage,handlePdfLastPage,handlePdfPageUp,handlePdfPageDown,handlePdfRotate,handlePdfZoomIn,handlePdfZoomOut,handlePdfZoomReset,handlePdfSearch,handlePrint},()=>!!pdfViewer.value)
+const handleUndo=()=>markManager.value?.undo()
+const handleKeydown=createKeyboardHandler({handlePrev,handleNext,handleUndo,handlePdfFirstPage,handlePdfLastPage,handlePdfPageUp,handlePdfPageDown,handlePdfRotate,handlePdfZoomIn,handlePdfZoomOut,handlePdfZoomReset,handlePdfSearch,handlePrint},()=>!!pdfViewer.value)
 
 // 生命周期
 const events=[['sireaderSettingsUpdated',handleSettingsUpdate],['sireader:goto',handleGoto],['sireader:toggleBookmark',toggleBookmark],['sireader:prevPage',handlePrev],['sireader:nextPage',handleNext],['sireader:pdfZoomIn',handlePdfZoomIn],['sireader:pdfZoomOut',handlePdfZoomOut],['sireader:pdfZoomReset',handlePdfZoomReset],['sireader:pdfRotate',handlePdfRotate],['sireader:pdfSearch',handlePdfSearch],['sireader:pdfPrint',handlePrint],['sireader:pdfFirstPage',handlePdfFirstPage],['sireader:pdfLastPage',handlePdfLastPage],['sireader:pdfPageUp',handlePdfPageUp],['sireader:pdfPageDown',handlePdfPageDown]]as const
@@ -408,13 +445,19 @@ onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));save
 .reader-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--b3-theme-on-background);z-index:10;pointer-events:none}
 .spinner{width:48px;height:48px;border:4px solid var(--b3-theme-primary-lighter);border-top-color:var(--b3-theme-primary);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.reader-toolbar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:3px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;z-index:1001;opacity:.3;transition:opacity .2s;&:hover{opacity:1}}
+.reader-toolbar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:3px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;z-index:1001;opacity:var(--toolbar-opacity,.3);transition:opacity .2s;&:hover{opacity:1}}
 .toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;svg{width:14px;height:14px}&:hover{background:var(--b3-list-hover)}}
+.toolbar-mark-btn{position:relative;.mark-color-indicator{position:absolute;right:2px;bottom:2px;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--b3-theme-surface);box-shadow:0 0 0 .5px var(--b3-border-color)}}
 .toolbar-page-nav{display:flex;align-items:center;gap:3px;padding:0 4px;font-size:11px;color:var(--b3-theme-on-surface)}
 .toolbar-page-input{width:36px;height:22px;padding:0 3px;border:none;background:var(--b3-theme-background-light);color:var(--b3-theme-on-surface);font-size:11px;text-align:center;border-radius:3px;transition:background .15s;&:focus{outline:none;background:var(--b3-theme-background)}&::-webkit-inner-spin-button,&::-webkit-outer-spin-button{display:none}}
 .toolbar-page-total{opacity:.7}
 .toolbar-btn.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary)}
-.reader-search{position:absolute;bottom:56px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:3px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;z-index:1000}
+.reader-search,.reader-panel{position:absolute;bottom:56px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:4px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;z-index:1000;opacity:var(--toolbar-opacity,.3);transition:opacity .2s;&:hover{opacity:1}}
+.panel-divider{width:1px;height:20px;background:var(--b3-border-color)}
+.sr-colors,.sr-styles{display:flex;gap:3px}
+.sr-color-btn{width:24px;height:24px;border:2px solid transparent;border-radius:50%;cursor:pointer;transition:all .15s;padding:0;&.active{border-color:var(--b3-theme-on-surface);transform:scale(1.1)}&:hover{transform:scale(1.05)}}
+.sr-style-btn{width:28px;height:24px;display:flex;align-items:center;justify-content:center;border:1px solid var(--b3-border-color);background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;color:var(--b3-theme-on-surface);&.active{background:var(--b3-theme-primary-lightest);border-color:var(--b3-theme-primary);color:var(--b3-theme-primary)}&:hover{background:var(--b3-list-hover)}}
+.sr-style-icon{font-size:12px;font-weight:600;&[data-type="underline"]{text-decoration:underline}&[data-type="outline"]{border:1px solid currentColor;padding:0 2px}&[data-type="dotted"]{border-bottom:2px dotted currentColor}&[data-type="dashed"]{border-bottom:2px dashed currentColor}&[data-type="double"]{border-bottom:3px double currentColor}&[data-type="squiggly"]{text-decoration:underline wavy}}
 .search-input{width:160px;height:22px;padding:0 6px;border:none;background:var(--b3-theme-background-light);color:var(--b3-theme-on-surface);font-size:11px;border-radius:3px;transition:background .15s;&:focus{outline:none;background:var(--b3-theme-background)}}
 .search-count{font-size:11px;color:var(--b3-theme-on-surface-variant);min-width:40px;text-align:center;opacity:.7}
 .search-slide-enter-active,.search-slide-leave-active{transition:all .2s}
@@ -425,10 +468,53 @@ onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));save
 </style>
 
 <style>
-/* PDF 文本层 */
-.textLayer{position:absolute;inset:0;line-height:1}
-.textLayer span{color:transparent;cursor:text}
+/* 思源PDF原生样式 */
+.pdf__outer {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+#mainContainer {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
+#viewerContainer {
+  width: 100%;
+  height: 100%;
+}
+
+.pdfViewer {
+  padding: 20px;
+}
+
+.page {
+  position: relative;
+  margin: 0 auto 20px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  background: #fff;
+}
+
+/* PDF 文本层 - 思源原生 */
+.textLayer{position:absolute;inset:0;line-height:1;overflow:hidden}
+.textLayer span{color:transparent;cursor:text;position:absolute;white-space:pre;transform-origin:0 0}
 .textLayer::selection{background:#0064ff4d}
+
+/* 思源防漂移机制：endOfContent元素 */
+.textLayer .endOfContent{
+  position:absolute;
+  width:100%;
+  height:1px;
+  pointer-events:none;
+}
+
+/* 选择状态 */
+.textLayer.selecting .endOfContent{
+  pointer-events:auto;
+}
 
 /* PDF 搜索高亮 */
 .textLayer mark.pdf-search-hl{background:#ff06;border-radius:2px}
@@ -448,5 +534,14 @@ onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));save
 @keyframes flash-shape{
   0%,100%{opacity:1;filter:drop-shadow(0 0 0 transparent)}
   50%{opacity:.4;filter:drop-shadow(0 0 20px rgba(255,0,0,.8))}
+}
+
+/* 暗色主题 */
+.pdf__outer--dark .page {
+  background: #2b2b2b;
+}
+
+.pdf__outer--dark .textLayer span {
+  color: transparent;
 }
 </style>
