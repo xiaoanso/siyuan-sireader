@@ -99,22 +99,17 @@ function applyCustomCSS(view: FoliateView, s: ReaderSettings) {
     }
   `
   
-  // 3. 字体强制应用：覆盖所有文本元素（解决部分书籍字体不生效的问题）
+  // 3. 字体和字号强制应用：覆盖所有文本元素（解决部分书籍字体和字号不生效的问题）
   const fontForceStyles = `
-    *{font-family:${font}!important}
-    body,p,div,span,a,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,pre,code{
-      font-family:${font}!important;
-    }
+    *{font-family:${font}!important;font-size:inherit!important}
+    body,p,div,span,a,li,td,th,blockquote,pre,code{font-family:${font}!important}
+    h1,h2,h3,h4,h5,h6{font-family:${font}!important;font-size:inherit!important}
   `
   
   // 4. 段落排版样式
   const paragraphStyles = `
-    p,li,blockquote,dd{
-      line-height:${p.lineHeight}!important;
-      text-align:start;
-      text-indent:${p.textIndent}em!important;
-      margin-bottom:${p.paragraphSpacing}em!important;
-    }
+    p,li,blockquote,dd{line-height:${p.lineHeight}!important;text-align:start;text-indent:${p.textIndent}em!important;margin-bottom:${p.paragraphSpacing}em!important}
+    p,div,span,li,td,th{font-size:inherit!important}
   `
   
   // 5. 对齐方式样式
@@ -143,17 +138,7 @@ function applyCustomCSS(view: FoliateView, s: ReaderSettings) {
   `
   
   // 组合所有样式
-  const styles = [
-    namespace,
-    fontFace,
-    baseStyles,
-    fontForceStyles,
-    paragraphStyles,
-    alignStyles,
-    codeStyles,
-    footnoteHideStyles
-  ].join('')
-  
+  const styles = [namespace,fontFace,baseStyles,fontForceStyles,paragraphStyles,alignStyles,codeStyles,footnoteHideStyles].join('')
   view.renderer?.setStyles?.(styles)
 }
 

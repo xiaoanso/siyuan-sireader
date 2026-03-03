@@ -1,16 +1,25 @@
 <template>
   <Teleport to="body">
     <!-- 遮罩：捕获外部点击 -->
-    <div v-if="state.showMenu||state.showCard" class="mark-overlay" @click="closeAll"/>
+    <div v-if="state.showMenu||state.showCard||state.showSendMenu" class="mark-overlay" @click="closeAll"/>
     
     <!-- 选择菜单：一行三按钮 -->
     <div v-if="state.showMenu" class="mark-menu" :style="menuPosition" @click.stop>
       <button @click="handleMark" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.note||'笔记'"><svg><use xlink:href="#lucide-square-pen"/></svg></button>
       <button @click="()=>handleCopy()" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.mark||'标注'"><svg><use xlink:href="#iconMark"/></svg></button>
+      <button @click="toggleSendMenu" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.sendTo||'发送到'"><svg><use xlink:href="#lucide-send"/></svg></button>
       <button @click="handleCopyText" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.copy||'复制'"><svg><use xlink:href="#iconCopy"/></svg></button>
       <button v-if="props.ttsConfig?.enabled" @click="handleSpeak" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.ttsPlay||'朗读'"><svg><use xlink:href="#iconPlay"/></svg></button>
       <button @click="handleDict" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.dict||'词典'"><svg><use xlink:href="#iconLanguage"/></svg></button>
       <button @click="handleTranslate" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.translate||'翻译'"><svg><use xlink:href="#iconTranslate"/></svg></button>
+    </div>
+    
+    <!-- 发送到文档菜单 -->
+    <div v-if="state.showSendMenu" class="mark-menu send-menu" :style="sendMenuPosition" @click.stop>
+      <button v-for="doc in quickDocs" :key="doc.id" @click="()=>handleSendToDoc(doc.id)" class="send-item">{{doc.name}}</button>
+      <input v-model="sendSearch" @input="searchSendDocs" :placeholder="i18n?.searchDocPlaceholder||'搜索文档...'" class="b3-text-field send-input"/>
+      <div v-if="!sendDocs.length" class="send-empty">{{sendSearch?'无结果':'输入关键字搜索'}}</div>
+      <button v-for="doc in sendDocs" :key="doc.id" @click="()=>handleSendToDoc(doc.path?.split('/').pop()?.replace('.sy','')||doc.id)" class="send-item">{{doc.hPath||doc.content||'无标题'}}</button>
     </div>
     
     <!-- 翻译弹窗 -->
@@ -103,12 +112,14 @@ const colors = getColorMap()
 const noteRef = ref<HTMLTextAreaElement>()
 let quickMarkCooldown = false
 const state = reactive({
-  showMenu: false, showCard: false, showTranslate: false, isEditing: false, x: 0, y: 0,
+  showMenu: false, showCard: false, showTranslate: false, showSendMenu: false, isEditing: false, x: 0, y: 0,
   selection: null as MarkSelection|null, currentMark: null as Mark|null,
   text: '', note: '', color: 'yellow' as HighlightColor,
   style: 'highlight' as 'highlight'|'underline'|'outline'|'dotted'|'dashed'|'double'|'squiggly',
   shapeType: 'rect' as 'rect'|'circle'|'triangle', shapeFilled: false
 })
+const sendSearch = ref('')
+const sendDocs = ref<any[]>([])
 
 // 当前选择状态（用于复制链接）
 let currentSelection: { text: string; cfi?: string; section?: number; page?: number; rects?: any[]; textOffset?: number } | null = null
@@ -116,10 +127,13 @@ let currentSelection: { text: string; cfi?: string; section?: number; page?: num
 // 计算属性
 const currentColor = computed(() => colors[state.color] || '#ffeb3b')
 const isPdf = computed(() => (state.selection?.location.format || state.currentMark?.format) === 'pdf')
+const quickDocs = computed(() => (window as any).__sireader_settings?.quickSendDocs || [])
 const getBounds=()=>{const r=document.querySelector('.reader-container')?.getBoundingClientRect();return r?{left:r.left+16,right:r.right-16,top:r.top+16,bottom:r.bottom-16}:{left:16,right:innerWidth-16,top:16,bottom:innerHeight-16}}
 const clampPos=(x:number,y:number,w:number,h:number)=>{const{left:l,right:r,top:t,bottom:b}=getBounds(),p=10;return{x:Math.max(l+w/2+p,Math.min(x,r-w/2-p)),y:y+h+p*2>b?Math.max(t+p*2,y-h-p):y+p}}
 const menuPosition=computed(()=>{const{x,y}=clampPos(state.x,state.y,240,50);return{left:`${x}px`,top:`${y}px`,transform:'translate(-50%,0)'}})
 const cardPosition=computed(()=>{const{x,y}=clampPos(state.x,state.y,340,state.isEditing?420:180);return{left:`${x}px`,top:`${y}px`,transform:'translate(-50%,0)'}})
+const sendMenuPosition=computed(()=>{const qh=quickDocs.value.length*40;const sh=sendDocs.value.length?Math.min(sendDocs.value.length,5)*40:60;const h=qh+sh+40;const{x,y}=clampPos(state.x,state.y+60,280,h);return{left:`${x}px`,top:`${y}px`,transform:'translate(-50%,0)'}})
+
 
 // 显示菜单/卡片
 const showMenu = async(sel: MarkSelection, x: number, y: number) => {
@@ -129,7 +143,7 @@ const showMenu = async(sel: MarkSelection, x: number, y: number) => {
     await handleCopy(props.quickMarkColor,props.quickMarkStyle)
     return
   }
-  Object.assign(state, { showMenu: true, showCard: false })
+  Object.assign(state, { showMenu: true, showCard: false, showSendMenu: false })
 }
 const showCard = (mark: Mark, x: number, y: number, edit = false) => {
   Object.assign(state, {
@@ -142,7 +156,9 @@ const showCard = (mark: Mark, x: number, y: number, edit = false) => {
 const closeAll = () => {
   props.ttsController?.cancelLoop()
   currentSelection = null
-  Object.assign(state, { showMenu: false, showCard: false, showTranslate: false, isEditing: false, selection: null, currentMark: null })
+  sendSearch.value = ''
+  sendDocs.value = []
+  Object.assign(state, { showMenu: false, showCard: false, showTranslate: false, showSendMenu: false, isEditing: false, selection: null, currentMark: null })
 }
 
 // 形状标注点击处理（PDF）
@@ -252,6 +268,10 @@ defineExpose({ showMenu, showCard, closeAll, showShapeCard, showAnnotationCard, 
 // 选择菜单操作
 const handleMark=()=>{if(!state.selection)return;Object.assign(state,{currentMark:null,text:state.selection.text,note:'',isEditing:true,showMenu:false,showCard:true});nextTick(()=>noteRef.value?.focus())}
 const handleCopy=async(color?:HighlightColor,style?:MarkStyle)=>{if(!state.selection||!props.manager)return;const pos=state.selection.location?.cfi||state.selection.location?.page||state.selection.location?.section;if(!pos)return;const loc=state.selection.location;const mark=await props.manager.addHighlight(pos,state.selection.text.trim(),color||'blue',style||'highlight',loc.rects,loc.textOffset);if(mark)emit('copyMark',mark);if(props.quickMarkMode){quickMarkCooldown=true;setTimeout(()=>quickMarkCooldown=false,300);window.getSelection()?.removeAllRanges()}else closeAll()}
+const toggleSendMenu=()=>{state.showSendMenu=!state.showSendMenu;state.showSendMenu&&(sendSearch.value='',sendDocs.value=[])}
+const searchSendDocs=async()=>{const k=sendSearch.value.trim();if(!k)return sendDocs.value=[];try{sendDocs.value=await(await import('@/composables/useSetting')).searchDocs(k)}catch{sendDocs.value=[]}}
+const createMark=async()=>{if(!state.selection||!props.manager)return null;const pos=state.selection.location?.cfi||state.selection.location?.page||state.selection.location?.section;if(!pos)return null;return await props.manager.addHighlight(pos,state.selection.text.trim(),props.quickMarkColor||'blue',props.quickMarkStyle||'highlight',state.selection.location.rects,state.selection.location.textOffset)}
+const handleSendToDoc=async(docId:string)=>{if(!docId)return;const mark=await createMark();if(mark)await(await import('@/utils/copy')).sendMarkToDoc(mark,docId,{bookUrl:(window as any).__currentBookUrl||'',isPdf:isPdf.value,showMsg:(m:string,t?:string)=>showMessage(m,t==='error'?2000:1500,t as any),i18n:props.i18n,marks:props.manager});closeAll()}
 const handleCopyText=()=>{if(!state.selection)return;navigator.clipboard.writeText(state.selection.text).then(()=>showMessage(props.i18n?.copied||'已复制',1000));closeAll()}
 const handleSpeak=()=>{if(!state.selection||!props.ttsController)return;props.ttsController.speak(state.selection.text,props.ttsConfig);state.showMenu=false}
 const handleDict=async()=>{if(!state.selection)return;const{openDict}=await import('@/utils/dictionary');openDict(state.selection.text,state.x,state.y,{text:state.selection.text,cfi:state.selection.location?.cfi,section:state.selection.location?.section,page:state.selection.location?.page,rects:state.selection.location?.rects});state.showMenu=false}
@@ -309,6 +329,10 @@ const handleImport = async () => {
 @use './deck/deck.scss';
 .mark-overlay{position:fixed;inset:0;z-index:949;background:transparent}
 .mark-menu{position:fixed;z-index:950;display:flex;gap:4px;padding:6px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);button{width:32px;height:32px;padding:0;border:none;background:transparent;border-radius:6px;cursor:pointer;transition:all .15s;color:var(--b3-theme-on-surface);display:flex;align-items:center;justify-content:center;svg{width:16px;height:16px}&:hover{background:var(--b3-list-hover);color:var(--b3-theme-primary)}}}
+.send-menu{flex-direction:column;width:280px;max-height:400px;overflow-y:auto;button{width:100%;height:auto;padding:8px;justify-content:flex-start;border-radius:0;border-bottom:1px solid var(--b3-border-color);font-size:12px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;&:last-child{border-bottom:none}}}
+.send-input{margin:8px;width:calc(100% - 16px)}
+.send-empty{padding:16px 8px;text-align:center;color:var(--b3-theme-on-surface-variant);font-size:12px;opacity:.6}
+.send-item{&:hover{background:var(--b3-list-hover)}}
 .sr-card{position:fixed;z-index:950;width:340px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.1)}
 .sr-main{padding:12px;border-left:4px solid;border-radius:8px}
 .sr-title{font-size:14px;font-weight:500;line-height:1.6;color:var(--b3-theme-on-surface);margin-bottom:8px;cursor:pointer;&[contenteditable]{font-size:14px;font-weight:600}}

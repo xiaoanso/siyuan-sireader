@@ -37,7 +37,7 @@
         </div>
         <span class="panel-divider"/>
         <div class="sr-styles">
-          <button v-for="s in STYLES.filter(s=>!s.pdfOnly||isPdfMode)" :key="s.type" class="sr-style-btn" :class="{active:quickMarkStyle===s.type}" @click="quickMarkStyle=s.type">
+          <button v-for="s in STYLES.filter(s=>(!s.pdfOnly||isPdfMode)&&(!s.epubOnly||!isPdfMode))" :key="s.type" class="sr-style-btn" :class="{active:quickMarkStyle===s.type}" @click="quickMarkStyle=s.type">
             <span class="sr-style-icon" :data-type="s.type">{{s.text}}</span>
           </button>
         </div>
@@ -79,7 +79,7 @@ import type { FoliateView } from '@/core/epub/types'
 import { COLORS, STYLES, createMarkManager, type MarkManager } from '@/core/MarkManager'
 import { createInkToolManager, type InkToolManager } from '@/core/pdf/ink'
 import { createShapeToolManager, type ShapeToolManager } from '@/core/pdf/shape'
-import { handlePdfSelection } from '@/core/pdf/annotation'
+import { initPdfAnnotationEvents, initPdfAnnotationRender } from '@/core/pdf/annotation'
 import { saveMobilePosition, getMobilePosition, isMobile } from '@/utils/mobile'
 import PdfToolbar from './PdfToolbar.vue'
 import MarkPanel from './MarkPanel.vue'
@@ -218,55 +218,15 @@ const init=async()=>{
       updatePageInfo()
       setActiveReader(currentView.value,null,props.settings)
       
-      // 使用思源的方式：click事件处理选择
-      const handleSel = () => {
-        setTimeout(() => {
-          const selection = window.getSelection()
-          if (!selection || selection.rangeCount === 0) return
-          
-          const range = selection.getRangeAt(0)
-          if (range.toString() === '') return
-          
-          // 检查是否在PDF viewer内
-          const commonAncestor = range.commonAncestorContainer
-          const pdfViewer = (commonAncestor.nodeType === 1 ? commonAncestor : commonAncestor.parentElement)?.closest('.pdfViewer')
-          if (!pdfViewer) return
-          
-          // 检查是否点击了标注或菜单
-          const target = document.elementFromPoint(window.lastMouseX || 0, window.lastMouseY || 0) as HTMLElement
-          if (target?.closest('.mark-card,.mark-selection-menu,[data-note-marker],.pdf-highlight')) return
-          
-          // 处理选择
-          handlePdfSelection(viewer, markManager.value, (data, x, y) => markPanelRef.value?.showMenu(data, x, y))
-        }, 100)
-      }
+      // 初始化PDF标注（事件+渲染）
+      const cleanupEvents = initPdfAnnotationEvents(viewerContainerRef.value!,viewer,markManager.value,(data,x,y)=>markPanelRef.value?.showMenu(data,x,y))
+      const cleanupRender = initPdfAnnotationRender(viewer,markManager.value,inkToolManager,shapeToolManager)
       
-      // 记录鼠标位置（用于检测点击目标）
-      ;(window as any).lastMouseX = 0
-      ;(window as any).lastMouseY = 0
-      viewerContainerRef.value!.addEventListener('mousemove', (e: MouseEvent) => {
-        (window as any).lastMouseX = e.clientX
-        ;(window as any).lastMouseY = e.clientY
-      })
-      
-      // 使用click事件而不是mouseup，与思源保持一致
-      viewerContainerRef.value!.addEventListener('click', handleSel)
-      viewerContainerRef.value!.addEventListener('keydown', handleKeydown)
-      // 监听canvas层创建完成，自动渲染标注
-      const handleLayerReady=(e:CustomEvent)=>{
-        const p=e.detail.page
-        markManager.value?.renderPdf(p)
-        shapeToolManager?.render(p)
-        inkToolManager?.render(p)
-      }
-      window.addEventListener('pdf:layer-ready',handleLayerReady as any)
-      // 监听页面切换
-      const origOnChange=viewer.onChange
-      viewer.onChange=(p:number)=>{origOnChange?.(p);setTimeout(()=>handleLayerReady({detail:{page:p}}as any),50)}
+      viewerContainerRef.value!.addEventListener('keydown',handleKeydown)
       currentView.value.cleanup=()=>{
-        viewerContainerRef.value?.removeEventListener('click',handleSel)
+        cleanupEvents()
+        cleanupRender()
         viewerContainerRef.value?.removeEventListener('keydown',handleKeydown)
-        window.removeEventListener('pdf:layer-ready',handleLayerReady as any)
       }
     }else{
       reader=createReader({container:viewerContainerRef.value!,settings:props.settings!,plugin:props.plugin})
@@ -437,9 +397,9 @@ onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));save
 </script>
 
 <style scoped lang="scss">
-.reader-container{position:relative;width:100%;height:100%;outline:none;user-select:text;-webkit-user-select:text;isolation:isolate;display:flex;flex-direction:column}
+.reader-container{position:relative;width:100%;height:100%;outline:none;user-select:text;-webkit-user-select:text;isolation:isolate;display:flex;flex-direction:column;background:var(--b3-theme-background)}
 .reader-overlay{position:fixed;inset:0;z-index:999;background:transparent}
-.viewer-container{flex:1;position:relative;overflow:auto;
+.viewer-container{flex:1;position:relative;overflow:auto;background:var(--b3-theme-background);
   &.has-fixed-toolbar{padding-top:40px}
 }
 .reader-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--b3-theme-on-background);z-index:10;pointer-events:none}
@@ -468,80 +428,29 @@ onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));save
 </style>
 
 <style>
-/* 思源PDF原生样式 */
-.pdf__outer {
-  width: 100%;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-}
-
-#mainContainer {
-  width: 100%;
-  height: 100%;
-  overflow: auto;
-}
-
-#viewerContainer {
-  width: 100%;
-  height: 100%;
-}
-
-.pdfViewer {
-  padding: 20px;
-}
-
-.page {
-  position: relative;
-  margin: 0 auto 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-  background: #fff;
-}
-
-/* PDF 文本层 - 思源原生 */
-.textLayer{position:absolute;inset:0;line-height:1;overflow:hidden}
-.textLayer span{color:transparent;cursor:text;position:absolute;white-space:pre;transform-origin:0 0}
+/* PDF 文本层选择优化 */
+.textLayer{position:absolute;inset:0;line-height:1;overflow:clip;opacity:1;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:0}
+.textLayer span{color:transparent;cursor:text;position:absolute;white-space:pre;transform-origin:0% 0%;z-index:1}
 .textLayer::selection{background:#0064ff4d}
-
-/* 思源防漂移机制：endOfContent元素 */
-.textLayer .endOfContent{
-  position:absolute;
-  width:100%;
-  height:1px;
-  pointer-events:none;
-}
-
-/* 选择状态 */
-.textLayer.selecting .endOfContent{
-  pointer-events:auto;
-}
+.textLayer.selecting{cursor:text}
+.endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:0;cursor:default;user-select:none}
+.textLayer.selecting .endOfContent{top:0}
 
 /* PDF 搜索高亮 */
 .textLayer mark.pdf-search-hl{background:#ff06;border-radius:2px}
 .textLayer mark.pdf-search-current{background:#ff9800;color:#fff;box-shadow:0 0 0 2px #ff9800}
 
-/* 标注样式 */
-.pdf-highlight,.pdf-underline,.pdf-outline,.pdf-dotted,.pdf-dashed,.pdf-double{pointer-events:auto!important}
-.pdf-underline,.pdf-outline,.pdf-dotted,.pdf-dashed,.pdf-double{background:transparent!important}
+/* PDF 标注渲染 */
+.pdf__rects{position:absolute;inset:0;pointer-events:none;z-index:2;user-select:none}
+.pdf__rect{cursor:pointer;pointer-events:auto;user-select:none}
+.pdf__rect>div{box-sizing:border-box;position:absolute;z-index:1;opacity:0.3;user-select:none;pointer-events:none}
+.pdf__rect>div:first-child{border-bottom-left-radius:4px;border-top-left-radius:4px}
+.pdf__rect>div:last-child{border-top-right-radius:4px;border-bottom-right-radius:4px}
 
-/* 闪烁动画 - 2次闪烁 */
-.pdf-highlight--flash,.epub-highlight--flash{animation:flash 1.2s ease-in-out 1}
-.pdf-shape--flash{animation:flash-shape 1.2s ease-in-out 1}
+/* 标注闪烁动画 */
+.pdf-highlight--flash{animation:flash 1.2s ease-in-out 1}
 @keyframes flash{
-  0%,100%{opacity:1;transform:scale(1);box-shadow:0 0 0 transparent}
-  50%{opacity:.3;transform:scale(1.1);box-shadow:0 0 20px currentColor}
-}
-@keyframes flash-shape{
-  0%,100%{opacity:1;filter:drop-shadow(0 0 0 transparent)}
-  50%{opacity:.4;filter:drop-shadow(0 0 20px rgba(255,0,0,.8))}
-}
-
-/* 暗色主题 */
-.pdf__outer--dark .page {
-  background: #2b2b2b;
-}
-
-.pdf__outer--dark .textLayer span {
-  color: transparent;
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:.3;transform:scale(1.05)}
 }
 </style>

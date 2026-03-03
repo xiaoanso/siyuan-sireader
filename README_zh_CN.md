@@ -4,7 +4,7 @@
 <p style="color: rgba(255,255,255,0.9); margin: 0 0 1.5em; font-size: 1.1em;">专业电子书阅读 · 智能标注 · 多格式支持</p>
 <p style="color: rgba(255,255,255,0.85); margin: 0 0 1.5em; line-height: 1.6; font-size: 0.95em;">让思源笔记变身专业电子书阅读器，支持 EPUB/PDF/TXT/在线小说多格式阅读<br>提供智能标注、多主题切换、词典查询、AI 翻译、卡包系统等功能，打造沉浸式阅读体验</p>
 <p style="margin: 0 0 1em;">
-<img src="https://img.shields.io/badge/version-0.8.9-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
+<img src="https://img.shields.io/badge/version-0.8.10-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/SiYuan-3.0+-orange.svg" alt="SiYuan" style="display: inline-block; margin: 0 4px;">
 </p>
@@ -82,6 +82,49 @@
 ---
 
 ## 📝 最新更新
+
+### v0.8.10 - 元宵版 (2026.3.3)
+
+> 🏮 **元宵佳节，花好月圆！祝大家元宵节快乐，阖家团圆，万事如意！**
+
+#### ✨ 新增功能
+
+**发送到功能**
+- 选中文本工具栏新增"发送到"按钮，可快速将标注发送到指定文档
+- 设置中可配置快捷发送文档列表，支持拖拽排序
+- 支持搜索文档并添加到快捷列表
+
+**翻译功能**
+- 新增翻译功能，支持 Azure、Google、Yandex 三种翻译服务
+- 选中文本后可直接调用翻译功能
+
+#### ⚙️ 优化改进
+
+**阅读体验优化**
+- 优化弹窗在阅读界面的定位，不会超出阅读界面并与边缘留出合适间距
+- 新增阅读工具栏透明度调节功能（0-100%）
+- 新增快速标注功能，点击工具栏选中颜色和样式后选中文字即可标注
+- 新增撤回标注功能（Ctrl+Z）
+
+**界面优化**
+- 优化目录显示，修复重复显示标签图标的问题
+
+#### 🐛 问题修复
+
+**TTS 修复**
+- 尝试修复 Linux 设备上 TTS 无法加载的问题
+
+**PDF 修复**
+- 修复 PDF 文本选择漂移的问题
+- 修复 PDF 背景无法完全应用的问题
+
+**EPUB 修复**
+- 修复部分 EPUB 字号设置不生效的问题
+
+**其他修复**
+- 修复本地文件生成跳转链接的复制限制
+
+---
 
 ### v0.8.9 (2026.3.1)
 

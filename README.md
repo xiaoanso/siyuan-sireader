@@ -4,7 +4,7 @@
 <p style="color: rgba(255,255,255,0.9); margin: 0 0 1.5em; font-size: 1.1em;">Professional eBook Reader · Smart Annotation · Multi-format Support</p>
 <p style="color: rgba(255,255,255,0.85); margin: 0 0 1.5em; line-height: 1.6; font-size: 0.95em;">Transform SiYuan Notes into a professional eBook reader<br>Support EPUB/PDF/TXT/Online novels with smart annotation, multi-theme switching, dictionary lookup, AI translation, deck system, and more for an immersive reading experience</p>
 <p style="margin: 0 0 1em;">
-<img src="https://img.shields.io/badge/version-0.8.9-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
+<img src="https://img.shields.io/badge/version-0.8.10-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" style="display: inline-block; margin: 0 4px;">
 <img src="https://img.shields.io/badge/SiYuan-3.0+-orange.svg" alt="SiYuan" style="display: inline-block; margin: 0 4px;">
 </p>
@@ -82,6 +82,49 @@
 ---
 
 ## 📝 Latest Updates
+
+### v0.8.10 - Lantern Festival Edition (2026.3.3)
+
+> 🏮 **Happy Lantern Festival! Wishing you a joyful celebration filled with happiness, reunion, and prosperity!**
+
+#### ✨ New Features
+
+**Send To Feature**
+- New "Send To" button in text selection toolbar for quick annotation sending to specified documents
+- Configure quick send document list in settings with drag-and-drop sorting
+- Search and add documents to quick list
+
+**Translation Feature**
+- New translation feature supporting Azure, Google, and Yandex translation services
+- Direct translation after text selection
+
+#### ⚙️ Improvements
+
+**Reading Experience**
+- Optimized popup positioning in reading interface, stays within bounds with proper margins
+- New toolbar opacity adjustment (0-100%)
+- New quick annotation feature: select color and style in toolbar, then select text to annotate
+- New undo annotation feature (Ctrl+Z)
+
+**Interface**
+- Optimized TOC display, fixed duplicate tag icon issue
+
+#### 🐛 Bug Fixes
+
+**TTS Fixes**
+- Attempted fix for TTS loading issues on Linux devices
+
+**PDF Fixes**
+- Fixed PDF text selection drift issue
+- Fixed PDF background not fully applied issue
+
+**EPUB Fixes**
+- Fixed font size setting not working for some EPUB books
+
+**Other Fixes**
+- Fixed copy restriction for local file jump links
+
+---
 
 ### v0.8.9 (2026.3.1)
 

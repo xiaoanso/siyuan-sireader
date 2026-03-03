@@ -1,509 +1,353 @@
-/**
- * PDF标注核心 - 完全复制思源笔记anno.ts的实现
- */
-
-export interface PdfRect {
-  left: number
-  top: number
-  right: number
-  bottom: number
-}
-
-export interface PdfAnnotation {
-  id: string
-  index: number  // 页码索引
-  coords: number[][]  // PDF坐标数组 [x1, y1, x2, y2]
-  color: string
-  content: string
-  type: 'text' | 'border'
-  mode: 'text' | 'rect'
-}
-
-export interface PdfPageInfo {
-  index: number
-  positions: number[][]
-}
-
-/**
- * hasClosestByClassName - 思源原始实现
- */
-export const hasClosestByClassName = (element: Node | null, className: string): HTMLElement | null => {
-  let cur = element?.nodeType === 1 ? element as HTMLElement : (element as any)?.parentElement
-  while (cur) {
-    if (cur.classList?.contains(className)) return cur
+// 查找包含指定class的最近父元素
+const closest = (el: Node | null, cls: string): HTMLElement | null => {
+  let cur = el?.nodeType === 1 ? el as HTMLElement : (el as any)?.parentElement
+  while (cur?.classList) {
+    if (cur.classList.contains(cls)) return cur
     cur = cur.parentElement
   }
   return null
 }
 
-/**
- * getTextNode - 思源原始实现
- * 查找页面中的文本节点（首个或末尾）
- */
-export function getTextNode(element: HTMLElement, isFirst: boolean): Element | null {
-  const spans = element.querySelectorAll('span[role="presentation"]') || element.querySelectorAll('span')
-  let i = isFirst ? 0 : spans.length - 1
-  const step = isFirst ? 1 : -1
-  while (spans[i] && !(spans[i].textContent?.trim())) i += step
-  return spans[i] || null
+// 获取textLayer首/尾有内容的文本节点（跨页选择用）
+const getTextNode = (el: HTMLElement, first: boolean) => {
+  const spans = el.querySelectorAll('span[role="presentation"]')
+  let i = first ? 0 : spans.length - 1
+  while (spans[i] && !spans[i].textContent) i += first ? 1 : -1
+  return spans[i]
 }
 
-/**
- * mergeRects - 思源原始实现
- * 合并同一行的矩形（关键算法，防止漂移）
- */
-export function mergeRects(range: Range): PdfRect[] {
-  console.log('[PDF Debug] ========== mergeRects 开始 ==========')
-  const rects = range.getClientRects()
-  console.log('[PDF Debug] 原始矩形数量:', rects.length)
-  
-  const merged: PdfRect[] = []
+// 合并同行矩形（过滤空矩形，合并相邻矩形）
+const mergeRects = (range: Range) => {
+  const merged: { left: number; top: number; right: number; bottom: number }[] = []
   let lastTop: number | undefined
-  
-  Array.from(rects).forEach((r, i) => {
-    console.log(`[PDF Debug] 原始矩形${i + 1}:`, {
-      left: r.left.toFixed(2),
-      top: r.top.toFixed(2),
-      right: r.right.toFixed(2),
-      bottom: r.bottom.toFixed(2),
-      width: r.width.toFixed(2),
-      height: r.height.toFixed(2)
-    })
-    
-    if (r.height === 0 || r.width === 0) {
-      console.log(`[PDF Debug] ⚠️ 跳过空矩形${i + 1}`)
-      return
-    }
-    
-    // 关键逻辑：同一行（top差距<4px）则扩展右边界，否则新建矩形
-    const topDiff = typeof lastTop === 'undefined' ? Infinity : Math.abs(lastTop - r.top)
-    console.log(`[PDF Debug] 矩形${i + 1} top差距: ${topDiff.toFixed(2)}px (阈值: 4px)`)
-    
-    if (topDiff > 4) {
+  Array.from(range.getClientRects()).forEach(r => {
+    if (!r.height || !r.width) return
+    if (lastTop === undefined || Math.abs(lastTop - r.top) > 4) {
       merged.push({ left: r.left, top: r.top, right: r.right, bottom: r.bottom })
       lastTop = r.top
-      console.log(`[PDF Debug] ✓ 新行，创建矩形${merged.length}`)
-    } else {
-      const oldRight = merged[merged.length - 1].right
-      merged[merged.length - 1].right = r.right
-      console.log(`[PDF Debug] ✓ 同行，扩展矩形${merged.length}右边界: ${oldRight.toFixed(2)} → ${r.right.toFixed(2)}`)
-    }
+    } else merged[merged.length - 1].right = r.right
   })
-  
-  console.log('[PDF Debug] 合并后矩形数量:', merged.length)
-  merged.forEach((m, i) => {
-    console.log(`[PDF Debug] 合并矩形${i + 1}:`, {
-      left: m.left.toFixed(2),
-      top: m.top.toFixed(2),
-      right: m.right.toFixed(2),
-      bottom: m.bottom.toFixed(2),
-      width: (m.right - m.left).toFixed(2),
-      height: (m.bottom - m.top).toFixed(2)
-    })
-  })
-  console.log('[PDF Debug] ========== mergeRects 结束 ==========')
   return merged
 }
 
-/**
- * getHighlightCoordsByRange - 思源原始实现
- * 从Range获取高亮坐标 - 支持跨页选择
- */
-export function getHighlightCoordsByRange(
-  viewer: any,
-  range: Range,
-  color: string
-): PdfAnnotation[] | null {
-  console.log('[PDF Debug] ========== getHighlightCoordsByRange 开始 ==========')
-  console.log('[PDF Debug] Range详情:', {
-    startContainer: range.startContainer.nodeName,
-    startOffset: range.startOffset,
-    endContainer: range.endContainer.nodeName,
-    endOffset: range.endOffset,
-    collapsed: range.collapsed,
-    text: range.toString().substring(0, 100)
-  })
-  
-  // 检查Range的边界元素
-  const startElement = range.startContainer.nodeType === 1 
-    ? range.startContainer as HTMLElement 
-    : range.startContainer.parentElement
-  const endElement = range.endContainer.nodeType === 1 
-    ? range.endContainer as HTMLElement 
-    : range.endContainer.parentElement
-  
-  console.log('[PDF Debug] 起始元素:', {
-    tagName: startElement?.tagName,
-    className: startElement?.className,
-    textContent: startElement?.textContent?.substring(0, 30)
-  })
-  console.log('[PDF Debug] 结束元素:', {
-    tagName: endElement?.tagName,
-    className: endElement?.className,
-    textContent: endElement?.textContent?.substring(0, 30)
-  })
-  
-  if (!viewer?.getPages) {
-    console.log('[PDF Debug] ❌ viewer无效')
-    return null
+// TextLayer选择优化器：动态插入endOfContent元素作为"墙"限制选择范围，防止空白区域扩选
+class TextLayerOptimizer {
+  private static layers = new Map<HTMLElement, HTMLElement>()
+  private static ctrl: AbortController | null = null
+  private static prev: Range | null = null
+  private static down = false
+
+  static add(layer: HTMLElement) {
+    const end = document.createElement('div')
+    end.className = 'endOfContent'
+    layer.appendChild(end)
+    layer.addEventListener('mousedown', () => layer.classList.add('selecting'))
+    this.layers.set(layer, end)
+    this.enable()
   }
 
-  // 获取起始页和结束页
-  const startPageElement = hasClosestByClassName(range.startContainer, 'pdf-page')
-  const endPageElement = hasClosestByClassName(range.endContainer, 'pdf-page')
-  
-  if (!startPageElement || !endPageElement) {
-    console.log('[PDF Debug] ❌ 找不到页面元素')
-    console.log('[PDF Debug] startContainer路径:', getElementPath(range.startContainer))
-    console.log('[PDF Debug] endContainer路径:', getElementPath(range.endContainer))
-    return null
+  static remove(layer: HTMLElement) {
+    this.layers.delete(layer)
+    if (!this.layers.size) {
+      this.ctrl?.abort()
+      this.ctrl = null
+    }
   }
 
-  const startIndex = parseInt(startPageElement.getAttribute('data-page') || '1') - 1
-  const endIndex = parseInt(endPageElement.getAttribute('data-page') || '1') - 1
-  
-  console.log('[PDF Debug] 起始页:', startIndex + 1, '结束页:', endIndex + 1)
-  console.log('[PDF Debug] 起始页元素:', startPageElement.className)
-  console.log('[PDF Debug] 结束页元素:', endPageElement.className)
-  
-  // 检查是否选择了非文本层的内容
-  const startInTextLayer = hasClosestByClassName(range.startContainer, 'textLayer')
-  const endInTextLayer = hasClosestByClassName(range.endContainer, 'textLayer')
-  console.log('[PDF Debug] 起始在文本层:', !!startInTextLayer)
-  console.log('[PDF Debug] 结束在文本层:', !!endInTextLayer)
-  
-  if (!startInTextLayer || !endInTextLayer) {
-    console.log('[PDF Debug] ⚠️ 警告：选择范围超出文本层！')
+  private static reset(end: HTMLElement, layer: HTMLElement) {
+    layer.appendChild(end)
+    end.style.width = end.style.height = ''
+    layer.classList.remove('selecting')
   }
-  
-  // 检测异常选择：如果getClientRects()返回的矩形数量异常多（>6个），可能是拖到空白区域导致的
-  const clientRects = range.getClientRects()
-  if (clientRects.length > 6) {
-    console.log('[PDF Debug] ⚠️ 检测到异常多的矩形:', clientRects.length)
-    console.log('[PDF Debug] 这可能是拖到空白区域导致的过度选择')
-    
-    // 尝试修正：只保留前2行的选择
-    try {
-      const newRange = document.createRange()
-      newRange.setStart(range.startContainer, range.startOffset)
-      
-      // 找到第2个换行位置
-      const text = range.toString()
-      const lines = text.split('\n').filter(l => l.trim())
-      
-      if (lines.length > 2) {
-        console.log('[PDF Debug] 尝试截断到前2行...')
-        const targetLength = lines[0].length + lines[1].length + 2 // +2 for newlines
-        
-        // 遍历文本节点，找到目标位置
-        const walker = document.createTreeWalker(
-          range.commonAncestorContainer,
-          NodeFilter.SHOW_TEXT,
-          null
-        )
-        
-        let currentLength = 0
-        let targetNode: Node | null = null
-        let targetOffset = 0
-        
-        let node: Node | null
-        while (node = walker.nextNode()) {
-          if (!range.intersectsNode(node)) continue
-          
-          const nodeText = node.textContent || ''
-          if (currentLength + nodeText.length >= targetLength) {
-            targetNode = node
-            targetOffset = targetLength - currentLength
-            break
-          }
-          currentLength += nodeText.length
-        }
-        
-        if (targetNode) {
-          newRange.setEnd(targetNode, targetOffset)
-          console.log('[PDF Debug] ✓ 成功截断选择范围')
-          console.log('[PDF Debug] 原始文本长度:', text.length, '截断后:', newRange.toString().length)
-          
-          // 替换当前选择
-          const sel = window.getSelection()
-          if (sel) {
-            sel.removeAllRanges()
-            sel.addRange(newRange)
-            
-            // 使用修正后的range继续处理
-            return getHighlightCoordsByRange(viewer, newRange, color)
-          }
+
+  private static enable() {
+    if (this.ctrl) return
+    this.ctrl = new AbortController()
+    const { signal } = this.ctrl
+    const resetAll = () => this.layers.forEach((e, l) => this.reset(e, l))
+
+    document.addEventListener('pointerdown', () => this.down = true, { signal })
+    document.addEventListener('pointerup', () => { this.down = false; resetAll() }, { signal })
+    window.addEventListener('blur', () => { this.down = false; resetAll() }, { signal })
+    document.addEventListener('keyup', () => !this.down && resetAll(), { signal })
+
+    document.addEventListener('selectionchange', () => {
+      const sel = document.getSelection()
+      if (!sel?.rangeCount) return resetAll()
+
+      // 收集活动的textLayer
+      const active = new Set<HTMLElement>()
+      for (let i = 0; i < sel.rangeCount; i++) {
+        const r = sel.getRangeAt(i)
+        for (const l of this.layers.keys()) {
+          if (!active.has(l) && r.intersectsNode(l)) active.add(l)
         }
       }
-    } catch (err) {
-      console.log('[PDF Debug] 修正失败:', err)
-    }
-  }
 
-  // 处理换行符和连字符（思源优化）
-  const rc = range.cloneContents()
-  Array.from(rc.children).forEach(item => {
-    if (item.tagName === 'BR' && item.previousElementSibling && item.nextElementSibling) {
-      const prev = item.previousElementSibling.textContent || ''
-      const next = item.nextElementSibling.textContent || ''
-      if (/^[A-Za-z]$/.test(prev.slice(-2, -1)) && /^[A-Za-z]$/.test(next[0])) {
-        if (prev.endsWith('-')) {
-          item.previousElementSibling.textContent = prev.slice(0, -1)
-        } else {
-          item.insertAdjacentText('afterend', ' ')
-        }
+      // 更新textLayer状态
+      for (const [l, e] of this.layers) {
+        active.has(l) ? l.classList.add('selecting') : this.reset(e, l)
       }
-    }
-  })
 
-  const content = rc.textContent?.replace(/[\x00]|\n/g, '') || ''
-  console.log('[PDF Debug] 选中文本:', content.substring(0, 100))
+      // Firefox不需要此优化
+      if (this.layers.size && getComputedStyle(this.layers.keys().next().value).getPropertyValue('-moz-user-select') === 'none') return
 
-  // 获取页面信息
-  const pages = viewer.getPages()
-  const startPage = pages?.get(startIndex + 1)
-  const startCanvas = startPageElement.querySelector('canvas')
-  
-  if (!pages || !startPage || !startCanvas) {
-    console.log('[PDF Debug] ❌ 无法获取页面对象或canvas')
-    return null
-  }
-
-  const startPageRect = startCanvas.getBoundingClientRect()
-  const startViewport = startPage.getViewport({ scale: viewer.getScale(), rotation: 0 })
-  
-  console.log('[PDF Debug] 起始页canvas位置:', {
-    x: startPageRect.x.toFixed(2),
-    y: startPageRect.y.toFixed(2),
-    width: startPageRect.width.toFixed(2),
-    height: startPageRect.height.toFixed(2)
-  })
-
-  const cloneRange = range.cloneRange()
-
-  // 跨页处理：截断起始页到页尾
-  if (startIndex !== endIndex) {
-    const textLayer = startPageElement.querySelector('.textLayer') as HTMLElement
-    const lastNode = textLayer && getTextNode(textLayer, false)
-    if (lastNode) {
-      range.setEndAfter(lastNode)
-      console.log('[PDF Debug] 跨页选择，调整起始页结束位置')
-    }
-  }
-
-  // 处理起始页
-  console.log('[PDF Debug] 处理起始页矩形...')
-  const startSelected: number[][] = []
-  mergeRects(range).forEach((r, i) => {
-    const relX1 = r.left - startPageRect.x
-    const relY1 = r.top - startPageRect.y
-    const relX2 = r.right - startPageRect.x
-    const relY2 = r.bottom - startPageRect.y
-    
-    console.log(`[PDF Debug] 矩形${i + 1} 相对坐标:`, {
-      relX1: relX1.toFixed(2),
-      relY1: relY1.toFixed(2),
-      relX2: relX2.toFixed(2),
-      relY2: relY2.toFixed(2)
-    })
-    
-    const pdfCoords = startViewport.convertToPdfPoint(relX1, relY1)
-      .concat(startViewport.convertToPdfPoint(relX2, relY2))
-    
-    console.log(`[PDF Debug] 矩形${i + 1} PDF坐标:`, pdfCoords.map(v => v.toFixed(2)))
-    startSelected.push(pdfCoords)
-  })
-
-  // 处理结束页
-  const endSelected: number[][] = []
-  if (startIndex !== endIndex) {
-    console.log('[PDF Debug] 处理结束页矩形...')
-    const endPage = pages.get(endIndex + 1)
-    const endCanvas = endPageElement.querySelector('canvas')
-    
-    if (!endPage || !endCanvas) {
-      console.log('[PDF Debug] ❌ 无法获取结束页对象或canvas')
-      return null
-    }
-
-    const endPageRect = endCanvas.getBoundingClientRect()
-    const endViewport = endPage.getViewport({ scale: viewer.getScale(), rotation: 0 })
-
-    // 从页首开始
-    const textLayer = endPageElement.querySelector('.textLayer') as HTMLElement
-    const firstNode = textLayer && getTextNode(textLayer, true)
-    if (firstNode) cloneRange.setStart(firstNode, 0)
-
-    mergeRects(cloneRange).forEach(r => {
-      endSelected.push(
-        endViewport.convertToPdfPoint(r.left - endPageRect.x, r.top - endPageRect.y)
-          .concat(endViewport.convertToPdfPoint(r.right - endPageRect.x, r.bottom - endPageRect.y))
+      const range = sel.getRangeAt(0)
+      // 判断选择方向：END_TO_END或START_TO_END相等→向上选择，否则→向下选择
+      const modStart = this.prev && (
+        range.compareBoundaryPoints(Range.END_TO_END, this.prev) === 0 ||
+        range.compareBoundaryPoints(Range.START_TO_END, this.prev) === 0
       )
-    })
-    
-    console.log('[PDF Debug] 结束页矩形数量:', endSelected.length)
-  }
 
-  // 生成结果
-  const id = generateId()
-  const results: PdfAnnotation[] = []
-  
-  if (startSelected.length) {
-    results.push({
-      id,
-      index: startIndex,
-      coords: startSelected,
-      color,
-      content,
-      type: 'text',
-      mode: 'text'
-    })
-  }
-  
-  if (endSelected.length) {
-    results.push({
-      id,
-      index: endIndex,
-      coords: endSelected,
-      color,
-      content,
-      type: 'text',
-      mode: 'text'
-    })
-  }
-
-  console.log('[PDF Debug] ========== 最终结果 ==========')
-  console.log('[PDF Debug] 总矩形数:', startSelected.length + endSelected.length)
-  console.log('[PDF Debug] 结果:', results)
-  console.log('[PDF Debug] =====================================')
-
-  return results.length ? results : null
-}
-
-/**
- * getPdfSelectionRects - 供MarkManager调用
- */
-export const getPdfSelectionRects = (pdfViewer: any): any[] | null => {
-  const sel = window.getSelection()
-  if (!sel?.rangeCount || !sel.getRangeAt(0).toString().trim()) return null
-
-  try {
-    const range = sel.getRangeAt(0)
-    const results = getHighlightCoordsByRange(pdfViewer, range, '#ffeb3b')
-    if (!results) return null
-    
-    // 转换坐标格式
-    return results.flatMap((r: any) =>
-      r.coords.map((c: number[]) => ({
-        x: c[0],
-        y: c[1],
-        w: c[2] - c[0],
-        h: c[3] - c[1]
-      }))
-    )
-  } catch (e) {
-    console.error('[PDF Annotation] Error:', e)
-    return null
+      if (active.size === 1) {
+        // 单页选择：根据方向选择锚点
+        let anchor = modStart ? range.startContainer : range.endContainer
+        const offset = modStart ? range.startOffset : range.endOffset
+        if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode as Node
+        const layer = (anchor as HTMLElement).parentElement?.closest('.textLayer') as HTMLElement
+        const end = this.layers.get(layer)
+        if (end && layer) {
+          end.style.width = layer.style.width
+          end.style.height = layer.style.height
+          // 向上：锚点前插入；向下：offset=0时用previousSibling.nextSibling避免跳到下一个span
+          const pos = modStart ? anchor as Node : 
+            (offset === 0 && (anchor as Node).previousSibling) ? 
+              (anchor as Node).previousSibling!.nextSibling : (anchor as Node).nextSibling
+          ;(anchor as HTMLElement).parentElement?.insertBefore(end, pos)
+        }
+      } else {
+        // 跨页选择：分别处理起始页、结束页、中间页
+        for (const layer of active) {
+          const end = this.layers.get(layer)
+          if (!end) continue
+          end.style.width = layer.style.width
+          end.style.height = layer.style.height
+          const isStart = range.startContainer.nodeType === Node.TEXT_NODE && 
+            (range.startContainer.parentNode as HTMLElement)?.closest('.textLayer') === layer
+          const isEnd = range.endContainer.nodeType === Node.TEXT_NODE && 
+            (range.endContainer.parentNode as HTMLElement)?.closest('.textLayer') === layer
+          if (isStart && modStart) {
+            // 起始页且向上选择
+            let a = range.startContainer
+            if (a.nodeType === Node.TEXT_NODE) a = a.parentNode as Node
+            ;(a as HTMLElement).parentElement?.insertBefore(end, a)
+          } else if (isEnd && !modStart) {
+            // 结束页且向下选择
+            let a = range.endContainer
+            if (a.nodeType === Node.TEXT_NODE) a = a.parentNode as Node
+            const pos = (range.endOffset === 0 && (a as Node).previousSibling) ? 
+              (a as Node).previousSibling!.nextSibling : (a as Node).nextSibling
+            ;(a as HTMLElement).parentElement?.insertBefore(end, pos)
+          } else {
+            // 中间页或非活动端：插入到最后
+            const spans = layer.querySelectorAll('span[role="presentation"]')
+            if (spans.length) spans[spans.length - 1].parentElement?.insertBefore(end, spans[spans.length - 1].nextSibling)
+          }
+        }
+      }
+      this.prev = range.cloneRange()
+    }, { signal })
   }
 }
 
-/**
- * handlePdfSelection - 处理选择事件
- */
-export const handlePdfSelection = (
-  viewer: any,
-  markManager: any,
-  showMenu: (data: any, x: number, y: number) => void
-) => {
-  const sel = window.getSelection()
-  if (!sel || sel.isCollapsed || !sel.toString().trim()) return
+// 获取PDF选择坐标（转换为PDF坐标系统）
+export const getPdfSelectionRects = (viewer: any): any[] | null => {
+  const range = window.getSelection()?.getRangeAt(0)
+  if (!range?.toString().trim()) return null
+  
+  const startEl = closest(range.startContainer, 'pdf-page')
+  const endEl = closest(range.endContainer, 'pdf-page')
+  if (!startEl || !endEl) return null
+  
+  const startIdx = parseInt(startEl.getAttribute('data-page') || '1') - 1
+  const endIdx = parseInt(endEl.getAttribute('data-page') || '1') - 1
+  const pages = viewer.getPages()
+  const startPage = pages?.get(startIdx + 1)
+  if (!startPage) return null
+  
+  const startCanvas = startEl.querySelector('canvas')
+  if (!startCanvas) return null
+  const startRect = startCanvas.getBoundingClientRect()
+  const startVp = startPage.getViewport({ scale: viewer.getScale(), rotation: viewer.getRotation() })
+  const clone = range.cloneRange()
+  
+  // 跨页选择：调整起始页range到最后一个文本节点
+  if (startIdx !== endIdx) {
+    const layer = startEl.querySelector('.textLayer') as HTMLElement
+    const last = layer && getTextNode(layer, false)
+    if (last) range.setEndAfter(last)
+  }
 
-  try {
-    const range = sel.getRangeAt(0)
-    
-    console.log('[PDF Selection] ========== 开始处理选择 ==========')
-    console.log('[PDF Selection] 选中文本:', sel.toString().substring(0, 50))
-    
-    // 检查是否在PDF容器内
-    if (!hasClosestByClassName(range.commonAncestorContainer, 'viewer-container') &&
-        !hasClosestByClassName(range.commonAncestorContainer, 'pdf-page') &&
-        !hasClosestByClassName(range.commonAncestorContainer, 'page')) {
-      console.log('[PDF Selection] ❌ 不在PDF容器内')
-      return
+  // 收集起始页坐标
+  const coords: number[][] = []
+  mergeRects(range).forEach(r => coords.push(
+    startVp.convertToPdfPoint(r.left - startRect.x, r.top - startRect.y)
+      .concat(startVp.convertToPdfPoint(r.right - startRect.x, r.bottom - startRect.y))
+  ))
+
+  // 跨页选择：收集结束页坐标
+  if (startIdx !== endIdx) {
+    const endPage = pages?.get(endIdx + 1)
+    const endCanvas = endPage && endEl.querySelector('canvas')
+    if (endCanvas) {
+      const endRect = endCanvas.getBoundingClientRect()
+      const endVp = endPage.getViewport({ scale: viewer.getScale(), rotation: viewer.getRotation() })
+      const layer = endEl.querySelector('.textLayer') as HTMLElement
+      const first = layer && getTextNode(layer, true)
+      if (first) clone.setStart(first, 0)
+      mergeRects(clone).forEach(r => coords.push(
+        endVp.convertToPdfPoint(r.left - endRect.x, r.top - endRect.y)
+          .concat(endVp.convertToPdfPoint(r.right - endRect.x, r.bottom - endRect.y))
+      ))
     }
+  }
+
+  return coords.length ? coords.map(c => ({ x: c[0], y: c[1], w: c[2] - c[0], h: c[3] - c[1] })) : null
+}
+
+// 渲染PDF标注高亮
+export const showHighlight = (sel: { index: number; coords: number[][]; id: string; color: string; type?: string }, viewer: any) => {
+  const page = viewer.getPages()?.get(sel.index + 1)
+  if (!page) return null
+  const el = document.querySelector(`[data-page="${sel.index + 1}"]`) as HTMLElement
+  const layer = el?.querySelector('.textLayer') as HTMLElement
+  if (!layer) return null
+  
+  const vp = page.getViewport({ scale: viewer.getScale(), rotation: viewer.getRotation() })
+  let rects = layer.querySelector('.pdf__rects')
+  if (!rects) {
+    layer.insertAdjacentHTML('beforeend', '<div class="pdf__rects"></div>')
+    rects = layer.querySelector('.pdf__rects')
+  }
+  
+  let html = `<div class="pdf__rect" data-node-id="${sel.id}">`
+  sel.coords.forEach(rect => {
+    const b = vp.convertToViewportRectangle(rect)
+    const w = Math.abs(b[0] - b[2])
+    if (w <= 0) return
+    const style = sel.type === 'border' ? 
+      `border: 2px solid ${sel.color};` : 
+      `border: 2px solid ${sel.color};background-color: ${sel.color};`
+    html += `<div style="${style}left:${Math.min(b[0], b[2])}px;top:${Math.min(b[1], b[3])}px;width:${w}px;height:${Math.abs(b[1] - b[3])}px"></div>`
+  })
+  rects.insertAdjacentHTML('beforeend', html + '</div>')
+  return rects.lastElementChild
+}
+
+let isTextDown = false
+
+// 跟踪鼠标按下位置（判断是否在文本上按下）
+export const trackMouseDown = (e: MouseEvent) => {
+  isTextDown = !!document.elementFromPoint(e.clientX, e.clientY)?.closest('span[role="presentation"]')
+}
+
+// 修正PDF选择：如果不是在文本上按下则清除选择
+export const correctPdfSelectionOnMouseUp = (): boolean => {
+  const sel = window.getSelection()
+  if (!sel?.rangeCount || sel.isCollapsed) return false
+  if (!isTextDown) { sel.removeAllRanges(); return true }
+  return false
+}
+
+// 处理PDF文本选择，显示标注菜单
+export const handlePdfSelection = (viewer: any, mgr: any, show: (d: any, x: number, y: number) => void) => {
+  const sel = window.getSelection()
+  if (!sel?.toString().trim()) return
+  
+  try {
+    const range = sel.getRangeAt(0)
+    if (!closest(range.commonAncestorContainer, 'viewer-container') && 
+        !closest(range.commonAncestorContainer, 'pdf-page')) return
     
     const rects = Array.from(range.getClientRects())
-    if (!rects.length) {
-      console.log('[PDF Selection] ❌ 没有矩形')
-      return
-    }
+    if (!rects.length) return
     
-    const pageEl = hasClosestByClassName(range.startContainer, 'pdf-page') || 
-                   hasClosestByClassName(range.startContainer, 'page')
-    if (!pageEl) {
-      console.log('[PDF Selection] ❌ 找不到页面元素')
-      return
-    }
+    const el = closest(range.startContainer, 'pdf-page')
+    if (!el) return
     
-    const pg = parseInt(pageEl.getAttribute('data-page') || pageEl.getAttribute('data-page-number') || '1')
-    console.log('[PDF Selection] ✓ 页码:', pg)
-    
+    const pg = parseInt(el.getAttribute('data-page') || '1')
     const page = viewer.getPages().get(pg)
-    if (!page) {
-      console.log('[PDF Selection] ❌ 无法获取页面对象')
-      return
-    }
+    if (!page) return
     
-    const text = sel.toString().trim()
-    let rectsData = markManager?.getPdfSelectionRects()
-    
-    console.log('[PDF Selection] 从MarkManager获取的矩形:', rectsData)
-    
-    if (!rectsData) {
-      console.log('[PDF Selection] 使用fallback方法计算矩形')
-      const pr = pageEl.getBoundingClientRect()
+    // 优先使用markManager的坐标计算（更准确）
+    let data = mgr?.getPdfSelectionRects()
+    if (!data) {
+      const pr = el.getBoundingClientRect()
       const vp = page.getViewport({ scale: viewer.getScale(), rotation: viewer.getRotation() })
-      rectsData = rects.map(r => {
+      data = rects.map(r => {
         const [x1, y1] = vp.convertToPdfPoint(r.left - pr.left, r.top - pr.top)
         const [x2, y2] = vp.convertToPdfPoint(r.right - pr.left, r.bottom - pr.top)
         return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 }
       })
     }
     
-    console.log('[PDF Selection] ========== 显示菜单 ==========')
-    showMenu(
-      { text, location: { format: 'pdf', page: pg, rects: rectsData } },
+    show(
+      { text: sel.toString().trim(), location: { format: 'pdf', page: pg, rects: data } },
       rects[0].left + rects[0].width / 2,
       rects[0].top
     )
   } catch (e) {
-    console.error('[PDF Selection] Error:', e)
+    console.error('[PDF] Selection error:', e)
   }
 }
 
-function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-}
-
-/**
- * 获取元素的DOM路径（用于调试）
- */
-function getElementPath(node: Node): string {
-  const path: string[] = []
-  let current: Node | null = node
-  
-  while (current && current !== document.body) {
-    if (current.nodeType === Node.ELEMENT_NODE) {
-      const el = current as HTMLElement
-      let selector = el.tagName.toLowerCase()
-      if (el.id) selector += `#${el.id}`
-      if (el.className) selector += `.${el.className.split(' ').join('.')}`
-      path.unshift(selector)
-    } else if (current.nodeType === Node.TEXT_NODE) {
-      path.unshift(`#text("${current.textContent?.substring(0, 20)}...")`)
-    }
-    current = current.parentNode
+// 初始化PDF标注事件监听（鼠标按下/抬起）
+export const initPdfAnnotationEvents = (
+  container: HTMLElement,
+  viewer: any,
+  mgr: any,
+  showMenu: (d: any, x: number, y: number) => void
+) => {
+  const handleMouseDown = (e: MouseEvent) => trackMouseDown(e)
+  const handleMouseUp = (e: MouseEvent) => {
+    setTimeout(() => {
+      const t = e.target as HTMLElement
+      // 忽略点击在标注卡片、菜单、标记上的情况
+      if (t.closest('.mark-card,.mark-selection-menu,[data-note-marker],.pdf-highlight')) return
+      correctPdfSelectionOnMouseUp()
+      handlePdfSelection(viewer, mgr, showMenu)
+    }, 100)
   }
   
-  return path.join(' > ')
+  container.addEventListener('mousedown', handleMouseDown)
+  container.addEventListener('mouseup', handleMouseUp)
+  
+  return () => {
+    container.removeEventListener('mousedown', handleMouseDown)
+    container.removeEventListener('mouseup', handleMouseUp)
+  }
 }
+
+// 初始化PDF标注渲染（统一管理layer-ready事件和页面切换）
+export const initPdfAnnotationRender = (
+  viewer: any,
+  mgr: any,
+  inkMgr?: any,
+  shapeMgr?: any
+) => {
+  const handleLayerReady = (e: CustomEvent) => {
+    const page = e.detail.page
+    mgr?.renderPdf(page)
+    shapeMgr?.render(page)
+    inkMgr?.render(page)
+  }
+  
+  window.addEventListener('pdf:layer-ready', handleLayerReady as any)
+  
+  // 监听页面切换，延迟渲染确保DOM准备好
+  const origOnChange = viewer.onChange
+  viewer.onChange = (page: number) => {
+    origOnChange?.(page)
+    setTimeout(() => handleLayerReady({ detail: { page } } as any), 50)
+  }
+  
+  return () => {
+    window.removeEventListener('pdf:layer-ready', handleLayerReady as any)
+    viewer.onChange = origOnChange
+  }
+}
+
+// 导出接口
+export const initTextLayerOptimization = (layer: HTMLElement) => TextLayerOptimizer.add(layer)
+export const cleanupTextLayerOptimization = (layer: HTMLElement) => TextLayerOptimizer.remove(layer)
+export const hasClosestByClassName = closest

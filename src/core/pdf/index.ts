@@ -5,7 +5,6 @@
 // PDF查看器和搜索
 export { PDFViewer } from './viewer'
 export { PDFSearch } from './search'
-export { SiyuanPDFViewer } from './siyuan-viewer'
 
 // PDF元数据
 export { getMetadata } from './metadata'
@@ -32,4 +31,3 @@ export interface PdfAnnotation {
   type: 'text' | 'border'
   mode: 'text' | 'rect'
 }
-

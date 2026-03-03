@@ -38,18 +38,26 @@ const updateMarkBlockId=async(item:any,blockId:string,ctx:any)=>{
   else if(ctx.marks)await ctx.marks.updateMark(item,{blockId})
 }
 
-// 导入标注
-export const importMark=async(item:any,ctx:any)=>{
+// 导入标注到文档（统一方法）
+const importToDoc=async(item:any,docId:string,ctx:any)=>{
+  if(!docId)return ctx.showMsg?.(ctx.i18n?.noBindDoc||'未绑定文档','error')
   try{
-    const book=await(await import('@/core/bookshelf')).bookshelfManager.getBook(ctx.bookUrl)
-    if(!book?.bindDocId)return ctx.showMsg?.(ctx.i18n?.noBindDoc||'未绑定文档','error')
     const md=await genMarkdown(item,ctx)
     if(!md)return ctx.showMsg?.('生成失败','error')
-    const blockId=(await(await import('@/api')).appendBlock('markdown',md,book.bindDocId))?.[0]?.doOperations?.[0]?.id
+    const blockId=(await(await import('@/api')).appendBlock('markdown',md,docId))?.[0]?.doOperations?.[0]?.id
     if(blockId)await updateMarkBlockId(item,blockId,ctx)
     ctx.showMsg?.(blockId?ctx.i18n?.imported||'已导入':'导入失败',blockId?'info':'error')
-  }catch(e){console.error('[ImportMark]',e);ctx.showMsg?.(ctx.i18n?.importFailed||'导入失败','error')}
+  }catch(e){console.error('[ImportToDoc]',e);ctx.showMsg?.(ctx.i18n?.importFailed||'导入失败','error')}
 }
+
+// 导入标注到绑定文档
+export const importMark=async(item:any,ctx:any)=>{
+  const book=await(await import('@/core/bookshelf')).bookshelfManager.getBook(ctx.bookUrl)
+  await importToDoc(item,book?.bindDocId,ctx)
+}
+
+// 发送标注到指定文档
+export const sendMarkToDoc=async(item:any,docId:string,ctx:any)=>importToDoc(item,docId,ctx)
 
 // 更新文档块
 export const updateMarkInDoc=async(item:any,ctx:any)=>{

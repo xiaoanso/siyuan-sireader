@@ -67,6 +67,8 @@ const uploading = ref(false)
 const loadingDict = ref(true)
 const fontsLoaded = ref(false)
 const removingDict = ref<string|null>(null)
+const quickDocSearch = ref('')
+const quickDocResults = ref<any[]>([])
 
 // 方法
 const toggleAccordion = (key:string) => activeAccordion.value=activeAccordion.value===key?'':key
@@ -92,28 +94,20 @@ const handleUpload = async (e:Event) => {
 }
 const removeDict = async (id:string) => {await offlineDictManager.removeDict(id);offlineDicts.value=offlineDictManager.getDicts();removingDict.value=null;showMessage(props.i18n.deleted||'已删除',1500,'info')}
 const toggleDict = async (manager:any,ref:any,id:string) => {await manager.toggleDict(id);ref.value=manager.getDicts()}
+const searchQuickDocs=async()=>{const k=quickDocSearch.value.trim();if(!k){quickDocResults.value=[];return};const{searchDocs}=await import('@/composables/useSetting');quickDocResults.value=(await searchDocs(k)).slice(0,10)}
+const addQuickDoc=(doc:any)=>{const id=doc.path?.split('/').pop()?.replace('.sy','')||doc.id;const name=doc.hPath||doc.content||'无标题';if(!settings.value.quickSendDocs)settings.value.quickSendDocs=[];if(settings.value.quickSendDocs.some(d=>d.id===id))return showMessage('已存在',2000,'error');settings.value.quickSendDocs.push({id,name});quickDocSearch.value='';quickDocResults.value=[];save()}
+const removeQuickDoc=(i:number)=>{settings.value.quickSendDocs.splice(i,1);save()}
 // 拖拽
-let dragFrom = -1
-const drag = {
-  start:(e:DragEvent,idx:number) => {dragFrom=idx;(e.target as HTMLElement).style.opacity='0.4'},
-  end:(e:DragEvent) => {(e.target as HTMLElement).style.opacity='1';dragFrom=-1},
-  over:(e:DragEvent) => e.preventDefault(),
-  drop:async (e:DragEvent,idx:number,type:'nav'|'dict',ref?:any,manager?:any) => {
-    e.preventDefault()
-    if (dragFrom===-1||dragFrom===idx) return
-    if (type==='nav') {
-      const items = [...navItems.value]
-      items.splice(idx,0,...items.splice(dragFrom,1))
-      items.forEach((item,i) => item.order=i)
-      settings.value.navItems = items
-      save()
-    } else {
-      const arr = [...ref.value]
-      arr.splice(idx,0,...arr.splice(dragFrom,1))
-      await manager.sortDicts(arr.map((d:any) => d.id))
-      ref.value = arr
-    }
-  }
+let dragFrom=-1
+const dragStart=(e:DragEvent,i:number)=>{dragFrom=i;(e.target as HTMLElement).style.opacity='0.4'}
+const dragEnd=(e:DragEvent)=>{(e.target as HTMLElement).style.opacity='1';dragFrom=-1}
+const dragOver=(e:DragEvent)=>e.preventDefault()
+const dragDrop=async(e:DragEvent,to:number,type:'nav'|'dict'|'quickDoc',ref?:any,mgr?:any)=>{
+  e.preventDefault()
+  if(dragFrom===-1||dragFrom===to)return
+  if(type==='nav'){const arr=[...navItems.value];arr.splice(to,0,...arr.splice(dragFrom,1));arr.forEach((v,i)=>v.order=i);settings.value.navItems=arr;save()}
+  else if(type==='quickDoc'){const arr=[...settings.value.quickSendDocs];arr.splice(to,0,...arr.splice(dragFrom,1));settings.value.quickSendDocs=arr;save()}
+  else{const arr=[...ref.value];arr.splice(to,0,...arr.splice(dragFrom,1));await mgr.sortDicts(arr.map((d:any)=>d.id));ref.value=arr}
 }
 const ttsI18nKey = (key:string,suffix='') => `tts${key.charAt(0).toUpperCase()}${key.slice(1)}${suffix}`
 
@@ -184,7 +178,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                   <div class="ds-sub-title">{{i18n.navConfig||'导航栏配置'}}<svg class="ds-arrow" :class="{expanded:activeSub==='navItems'}" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></div>
                   <Transition name="expand">
                     <div v-if="activeSub==='navItems'" class="ds-list">
-                      <div v-for="(item,idx) in navItems" :key="item.id" class="ds-list-item" draggable="true" @dragstart="drag.start($event,idx)" @dragend="drag.end" @dragover="drag.over" @drop="drag.drop($event,idx,'nav')">
+                      <div v-for="(item,idx) in navItems" :key="item.id" class="ds-list-item" draggable="true" @dragstart="dragStart($event,idx)" @dragend="dragEnd" @dragover="dragOver" @drop="dragDrop($event,idx,'nav')">
                         <svg class="ds-list-handle" viewBox="0 0 24 24"><path d="M9 3h2v2H9V3m4 0h2v2h-2V3M9 7h2v2H9V7m4 0h2v2h-2V7m-4 4h2v2H9v-2m4 0h2v2h-2v-2m-4 4h2v2H9v-2m4 0h2v2h-2v-2m-4 4h2v2H9v-2m4 0h2v2h-2v-2Z"/></svg>
                         <div class="ds-list-label"><div>{{i18n[item.tip]||item.tip}}</div></div>
                         <input v-model="item.enabled" type="checkbox" class="b3-switch" :disabled="item.id==='appearance'" @change="save">
@@ -268,7 +262,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                         <button class="ds-btn-add" :disabled="uploading" @click.stop="fileInput?.click()"><svg><use xlink:href="#iconUpload"/></svg>{{uploading?(i18n.uploading||'上传中...'):(i18n.addDict||'添加词典')}}</button>
                         <small class="ds-hint">{{i18n.dictFormatHint||'支持 StarDict 和 dictd 格式'}} <a href="https://github.com/mm-o/siyuan-sireader/blob/main/docs/离线词典使用说明.md" target="_blank">{{i18n.downloadDict||'下载词典'}}</a></small>
                         <div v-if="offlineDicts.length" class="ds-list">
-                          <div v-for="(d,idx) in offlineDicts" :key="d.id" class="ds-list-item" draggable="true" @dragstart="drag.start($event,idx)" @dragend="drag.end" @dragover="drag.over" @drop="drag.drop($event,idx,'dict',offlineDicts,offlineDictManager)">
+                          <div v-for="(d,idx) in offlineDicts" :key="d.id" class="ds-list-item" draggable="true" @dragstart="dragStart($event,idx)" @dragend="dragEnd" @dragover="dragOver" @drop="dragDrop($event,idx,'dict',offlineDicts,offlineDictManager)">
                             <svg class="ds-list-handle" viewBox="0 0 24 24"><path d="M9 3h2v2H9V3m4 0h2v2h-2V3M9 7h2v2H9V7m4 0h2v2h-2V7m-4 4h2v2H9v-2m4 0h2v2h-2v-2m-4 4h2v2H9v-2m4 0h2v2h-2v-2m-4 4h2v2H9v-2m4 0h2v2h-2v-2Z"/></svg>
                             <div class="ds-list-label"><div>{{d.name}}</div><small>{{d.type==='stardict'?'StarDict':'dictd'}}</small></div>
                             <Transition name="fade"><div v-if="removingDict===d.id" class="sr-confirm" @click.stop><button @click="removingDict=null">{{i18n.cancel||'取消'}}</button><button @click="removeDict(d.id)" class="btn-delete">{{i18n.delete||'删除'}}</button></div></Transition>
@@ -287,7 +281,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                     <div class="ds-sub-title">{{i18n.onlineDict||'在线词典'}}<svg class="ds-arrow" :class="{expanded:activeSub==='onlineDict'}" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></div>
                     <Transition name="expand">
                       <div v-if="activeSub==='onlineDict'" class="ds-list">
-                        <div v-for="(d,idx) in onlineDicts" :key="d.id" class="ds-list-item" draggable="true" @dragstart="drag.start($event,idx)" @dragend="drag.end" @dragover="drag.over" @drop="drag.drop($event,idx,'dict',onlineDicts,onlineDictManager)">
+                        <div v-for="(d,idx) in onlineDicts" :key="d.id" class="ds-list-item" draggable="true" @dragstart="dragStart($event,idx)" @dragend="dragEnd" @dragover="dragOver" @drop="dragDrop($event,idx,'dict',onlineDicts,onlineDictManager)">
                           <svg class="ds-list-handle" viewBox="0 0 24 24"><path d="M9 3h2v2H9V3m4 0h2v2h-2V3M9 7h2v2H9V7m4 0h2v2h-2V7m-4 4h2v2H9v-2m4 0h2v2h-2v-2m-4 4h2v2H9v-2m4 0h2v2h-2v-2m-4 4h2v2H9v-2m4 0h2v2h-2v-2Z"/></svg>
                           <div class="ds-list-label"><div>{{d.name}}</div><small>{{d.desc}}</small></div>
                           <input type="checkbox" :checked="d.enabled" class="b3-switch" @change="toggleDict(onlineDictManager,onlineDicts,d.id)">
@@ -307,6 +301,23 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                   <label>{{i18n.linkFormat||'链接格式'}}</label>
                   <textarea v-model="settings.linkFormat" class="b3-text-field" rows="4" @input="debouncedSave"/>
                   <small>{{i18n?.linkFormatDesc||'可用变量：书名 作者 章节 位置 链接 文本 笔记 截图'}}</small>
+                </div>
+                <div class="ds-field">
+                  <label>{{i18n.quickSendDocs||'快捷发送文档'}}</label>
+                  <div v-if="settings.quickSendDocs?.length" class="ds-list">
+                    <div v-for="(doc,i) in settings.quickSendDocs" :key="doc.id" class="ds-list-item" draggable="true" @dragstart="dragStart($event,i)" @dragend="dragEnd" @dragover="dragOver" @drop="dragDrop($event,i,'quickDoc')">
+                      <svg class="ds-list-handle" viewBox="0 0 24 24"><path d="M9 3h2v2H9V3m4 0h2v2h-2V3M9 7h2v2H9V7m4 0h2v2h-2V7m-4 4h2v2H9v-2m4 0h2v2h-2v-2m-4 4h2v2H9v-2m4 0h2v2h-2v-2m-4 4h2v2H9v-2m4 0h2v2h-2v-2Z"/></svg>
+                      <div class="ds-list-label"><div>{{doc.name}}</div></div>
+                      <button @click="removeQuickDoc(i)" class="ds-list-btn ds-list-btn-del">×</button>
+                    </div>
+                  </div>
+                  <div style="position:relative;margin-top:8px">
+                    <input v-model="quickDocSearch" @input="searchQuickDocs" :placeholder="i18n?.searchDocPlaceholder||'搜索文档...'" class="b3-text-field"/>
+                    <div v-if="quickDocResults.length" style="position:absolute;top:100%;left:0;right:0;margin-top:4px;max-height:200px;overflow-y:auto;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.1);z-index:10">
+                      <button v-for="doc in quickDocResults" :key="doc.id" @click="addQuickDoc(doc)" style="width:100%;padding:8px;border:none;background:transparent;text-align:left;cursor:pointer;font-size:12px;transition:background .15s;border-bottom:1px solid var(--b3-border-color)" @mouseenter="$event.target.style.background='var(--b3-list-hover)'" @mouseleave="$event.target.style.background='transparent'">{{doc.hPath||doc.content||'无标题'}}</button>
+                    </div>
+                  </div>
+                  <small>{{i18n?.quickSendDocsDesc||'用于快速发送标注'}}</small>
                 </div>
               </div>
             </Transition>
