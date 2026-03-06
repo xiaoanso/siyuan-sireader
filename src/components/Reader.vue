@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity':props.settings?.toolbarOpacity/100||.3}">
+  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity':1-((currentSettings?.toolbarOpacity??70)/100)}">
     <div v-if="loading" class="reader-loading"><div class="spinner"></div><div>{{ error || '加载中...' }}</div></div>
     
     <!-- 遮罩：捕获外部点击关闭弹窗 -->
@@ -17,9 +17,9 @@
       </div>
     </Transition>
     
-    <!-- 搜索面板 -->
-    <Transition name="search-slide">
-      <div v-if="showSearch&&!loading" class="reader-search" @click.stop>
+    <!-- 底部工具栏组 -->
+    <div v-if="!loading" class="reader-toolbar-group">
+      <div v-if="showSearch" class="reader-panel" @click.stop>
         <input v-model="searchQuery" class="search-input" :placeholder="i18n.searchPlaceholder||'搜索...'" @keydown.enter="handleSearch" @keydown.esc="showSearch=false" ref="searchInputRef">
         <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click="handleSearch" aria-label="搜索"><svg><use xlink:href="#iconSearch"/></svg></button>
         <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click="handleSearchPrev" :disabled="!hasSearchResults" aria-label="上一个"><svg><use xlink:href="#iconUp"/></svg></button>
@@ -27,40 +27,36 @@
         <span class="search-count">{{ searchCount }}</span>
         <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click="handleSearchClear" aria-label="清除"><svg><use xlink:href="#iconClose"/></svg></button>
       </div>
-    </Transition>
-    
-    <!-- 快速标注面板 -->
-    <Transition name="search-slide">
-      <div v-if="showQuickMark&&!loading" class="reader-panel" @click.stop>
-        <div class="sr-colors">
-          <button v-for="(c,i) in COLORS" :key="c.color" class="sr-color-btn" :class="{active:quickMarkColor===i}" :style="{background:c.bg}" @click="quickMarkColor=i"/>
+      
+      <div v-if="showQuickMark" class="reader-panel" @click.stop>
+        <div class="mark-colors">
+          <button v-for="(c,i) in COLORS" :key="c.color" class="mark-color-btn" :class="{active:quickMarkColor===i}" :style="{background:c.bg}" @click="quickMarkColor=i"/>
         </div>
         <span class="panel-divider"/>
-        <div class="sr-styles">
-          <button v-for="s in STYLES.filter(s=>(!s.pdfOnly||isPdfMode)&&(!s.epubOnly||!isPdfMode))" :key="s.type" class="sr-style-btn" :class="{active:quickMarkStyle===s.type}" @click="quickMarkStyle=s.type">
-            <span class="sr-style-icon" :data-type="s.type">{{s.text}}</span>
+        <div class="mark-styles">
+          <button v-for="s in STYLES.filter(s=>(!s.pdfOnly||isPdfMode)&&(!s.epubOnly||!isPdfMode))" :key="s.type" class="mark-style-btn" :class="{active:quickMarkStyle===s.type}" @click="quickMarkStyle=s.type">
+            <span :data-type="s.type">{{s.text}}</span>
           </button>
         </div>
       </div>
-    </Transition>
-    
-    <!-- 底部控制栏 - 始终显示 -->
-    <div class="reader-toolbar">
-      <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handlePrev" :aria-label="i18n.prevChapter||'上一章'"><svg><use xlink:href="#iconLeft"/></svg></button>
-      <div v-if="isPdfMode&&!loading" class="toolbar-page-nav" @click.stop>
-        <input v-model.number="pageInput" @keydown.enter="handlePageJump" type="number" :min="1" :max="totalPages" class="toolbar-page-input">
-        <span class="toolbar-page-total">/ {{totalPages}}</span>
+      
+      <div class="reader-toolbar">
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handlePrev" :aria-label="i18n.prevChapter||'上一章'"><svg><use xlink:href="#iconLeft"/></svg></button>
+        <div v-if="isPdfMode" class="toolbar-page-nav" @click.stop>
+          <input v-model.number="pageInput" @keydown.enter="handlePageJump" type="number" :min="1" :max="totalPages" class="page-input">
+          <span class="page-total">/ {{totalPages}}</span>
+        </div>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleNext" :aria-label="i18n.nextChapter||'下一章'"><svg><use xlink:href="#iconRight"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="openToc" :aria-label="i18n.toc||'目录'"><svg><use xlink:href="#iconList"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:hasBookmark}" @click.stop="toggleBookmark" :aria-label="hasBookmark?(i18n.removeBookmark||'删除书签'):(i18n.addBookmark||'添加书签')"><svg><use xlink:href="#iconBookmark"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:showSearch}" @click.stop="toggleSearch" :aria-label="i18n.search||'搜索'"><svg><use xlink:href="#iconSearch"/></svg></button>
+        <button class="toolbar-btn toolbar-mark-btn b3-tooltips b3-tooltips__n" :class="{active:quickMarkMode}" @click.stop="toggleQuickMark" :aria-label="quickMarkMode?'退出快速标注':'快速标注'">
+          <svg><use xlink:href="#iconMark"/></svg>
+          <span class="mark-indicator" :style="{background:COLORS[quickMarkColor].bg}"></span>
+        </button>
+        <button v-if="ttsEnabled" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying}" @click.stop="toggleTTS" :aria-label="ttsPlaying?(i18n.ttsPause||'暂停朗读'):(i18n.ttsPlay||'开始朗读')"><svg><use :xlink:href="ttsPlaying?'#iconPause':'#iconPlay'"/></svg></button>
+        <button v-if="isMobile()" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleClose" aria-label="关闭"><svg><use xlink:href="#iconClose"/></svg></button>
       </div>
-      <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleNext" :aria-label="i18n.nextChapter||'下一章'"><svg><use xlink:href="#iconRight"/></svg></button>
-      <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="openToc" :aria-label="i18n.toc||'目录'"><svg><use xlink:href="#iconList"/></svg></button>
-      <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:hasBookmark}" @click.stop="toggleBookmark" :aria-label="hasBookmark?(i18n.removeBookmark||'删除书签'):(i18n.addBookmark||'添加书签')"><svg><use xlink:href="#iconBookmark"/></svg></button>
-      <button v-if="!loading" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:showSearch}" @click.stop="toggleSearch" :aria-label="i18n.search||'搜索'"><svg><use xlink:href="#iconSearch"/></svg></button>
-      <button v-if="!loading" class="toolbar-btn toolbar-mark-btn b3-tooltips b3-tooltips__n" :class="{active:quickMarkMode}" @click.stop="toggleQuickMark" :aria-label="quickMarkMode?'退出快速标注':'快速标注'">
-        <svg><use xlink:href="#iconMark"/></svg>
-        <span class="mark-color-indicator" :style="{background:COLORS[quickMarkColor].bg}"></span>
-      </button>
-      <button v-if="!loading&&ttsEnabled" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying}" @click.stop="toggleTTS" :aria-label="ttsPlaying?(i18n.ttsPause||'暂停朗读'):(i18n.ttsPlay||'开始朗读')"><svg><use :xlink:href="ttsPlaying?'#iconPause':'#iconPlay'"/></svg></button>
-      <button v-if="isMobile()" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleClose" aria-label="关闭"><svg><use xlink:href="#iconClose"/></svg></button>
     </div>
   </div>
   
@@ -306,8 +302,8 @@ const updatePageInfo=()=>{if(!pdfViewer.value)return;totalPages.value=pdfViewer.
 
 // 搜索
 const searchInputRef=ref<HTMLInputElement>()
-const toggleSearch=()=>{showSearch.value=!showSearch.value;showSearch.value&&setTimeout(()=>searchInputRef.value?.focus(),100)}
-const toggleQuickMark=()=>{showQuickMark.value=!showQuickMark.value;quickMarkMode.value=showQuickMark.value}
+const toggleSearch=()=>{showSearch.value=!showSearch.value;if(showSearch.value){showQuickMark.value=false;quickMarkMode.value=false;setTimeout(()=>searchInputRef.value?.focus(),100)}}
+const toggleQuickMark=()=>{showQuickMark.value=!showQuickMark.value;if(showQuickMark.value)showSearch.value=false;quickMarkMode.value=showQuickMark.value}
 const handleSearch=async()=>{
   if(!searchQuery.value.trim())return
   if(isPdfMode.value&&pdfSearcher.value){
@@ -405,23 +401,19 @@ onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));save
 .reader-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--b3-theme-on-background);z-index:10;pointer-events:none}
 .spinner{width:48px;height:48px;border:4px solid var(--b3-theme-primary-lighter);border-top-color:var(--b3-theme-primary);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.reader-toolbar{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:3px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;z-index:1001;opacity:var(--toolbar-opacity,.3);transition:opacity .2s;&:hover{opacity:1}}
-.toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;svg{width:14px;height:14px}&:hover{background:var(--b3-list-hover)}}
-.toolbar-mark-btn{position:relative;.mark-color-indicator{position:absolute;right:2px;bottom:2px;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--b3-theme-surface);box-shadow:0 0 0 .5px var(--b3-border-color)}}
+.reader-toolbar-group{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:1001;&:hover>*{opacity:1}}
+.reader-toolbar,.reader-panel{display:flex;align-items:center;gap:2px;padding:3px 4px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;opacity:var(--toolbar-opacity);transition:opacity .2s}
+.toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;svg{width:14px;height:14px}&:hover{background:var(--b3-list-hover)}&.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary)}}
+.toolbar-mark-btn{position:relative;.mark-indicator{position:absolute;right:2px;bottom:2px;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--b3-theme-surface);box-shadow:0 0 0 .5px var(--b3-border-color)}}
 .toolbar-page-nav{display:flex;align-items:center;gap:3px;padding:0 4px;font-size:11px;color:var(--b3-theme-on-surface)}
-.toolbar-page-input{width:36px;height:22px;padding:0 3px;border:none;background:var(--b3-theme-background-light);color:var(--b3-theme-on-surface);font-size:11px;text-align:center;border-radius:3px;transition:background .15s;&:focus{outline:none;background:var(--b3-theme-background)}&::-webkit-inner-spin-button,&::-webkit-outer-spin-button{display:none}}
-.toolbar-page-total{opacity:.7}
-.toolbar-btn.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary)}
-.reader-search,.reader-panel{position:absolute;bottom:56px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;padding:4px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;z-index:1000;opacity:var(--toolbar-opacity,.3);transition:opacity .2s;&:hover{opacity:1}}
-.panel-divider{width:1px;height:20px;background:var(--b3-border-color)}
-.sr-colors,.sr-styles{display:flex;gap:3px}
-.sr-color-btn{width:24px;height:24px;border:2px solid transparent;border-radius:50%;cursor:pointer;transition:all .15s;padding:0;&.active{border-color:var(--b3-theme-on-surface);transform:scale(1.1)}&:hover{transform:scale(1.05)}}
-.sr-style-btn{width:28px;height:24px;display:flex;align-items:center;justify-content:center;border:1px solid var(--b3-border-color);background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;color:var(--b3-theme-on-surface);&.active{background:var(--b3-theme-primary-lightest);border-color:var(--b3-theme-primary);color:var(--b3-theme-primary)}&:hover{background:var(--b3-list-hover)}}
-.sr-style-icon{font-size:12px;font-weight:600;&[data-type="underline"]{text-decoration:underline}&[data-type="outline"]{border:1px solid currentColor;padding:0 2px}&[data-type="dotted"]{border-bottom:2px dotted currentColor}&[data-type="dashed"]{border-bottom:2px dashed currentColor}&[data-type="double"]{border-bottom:3px double currentColor}&[data-type="squiggly"]{text-decoration:underline wavy}}
+.page-input{width:36px;height:22px;padding:0 3px;border:none;background:var(--b3-theme-background-light);color:var(--b3-theme-on-surface);font-size:11px;text-align:center;border-radius:3px;transition:background .15s;&:focus{outline:none;background:var(--b3-theme-background)}&::-webkit-inner-spin-button,&::-webkit-outer-spin-button{display:none}}
+.page-total{opacity:.7}
 .search-input{width:160px;height:22px;padding:0 6px;border:none;background:var(--b3-theme-background-light);color:var(--b3-theme-on-surface);font-size:11px;border-radius:3px;transition:background .15s;&:focus{outline:none;background:var(--b3-theme-background)}}
 .search-count{font-size:11px;color:var(--b3-theme-on-surface-variant);min-width:40px;text-align:center;opacity:.7}
-.search-slide-enter-active,.search-slide-leave-active{transition:all .2s}
-.search-slide-enter-from,.search-slide-leave-to{opacity:0;transform:translate(-50%,-10px)}
+.panel-divider{width:1px;height:20px;background:var(--b3-border-color)}
+.mark-colors,.mark-styles{display:flex;gap:3px}
+.mark-color-btn{width:24px;height:24px;border:2px solid transparent;border-radius:50%;cursor:pointer;transition:all .15s;padding:0;&.active{border-color:var(--b3-theme-on-surface);transform:scale(1.1)}&:hover{transform:scale(1.05)}}
+.mark-style-btn{width:28px;height:24px;display:flex;align-items:center;justify-content:center;border:1px solid var(--b3-border-color);background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;color:var(--b3-theme-on-surface);font-size:12px;font-weight:600;&.active{background:var(--b3-theme-primary-lightest);border-color:var(--b3-theme-primary);color:var(--b3-theme-primary)}&:hover{background:var(--b3-list-hover)}span[data-type="underline"]{text-decoration:underline}span[data-type="outline"]{border:1px solid currentColor;padding:0 2px}span[data-type="dotted"]{border-bottom:2px dotted currentColor}span[data-type="dashed"]{border-bottom:2px dashed currentColor}span[data-type="double"]{border-bottom:3px double currentColor}span[data-type="squiggly"]{text-decoration:underline wavy}}
 .reader-toc-popup{position:absolute;bottom:60px;left:50%;transform:translateX(-50%);width:min(360px,90vw);max-height:min(480px,70vh);background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:8px;box-shadow:0 4px 20px #0003;z-index:1002;overflow:hidden;display:flex;flex-direction:column}
 .toc-popup-enter-active,.toc-popup-leave-active{transition:all .2s}
 .toc-popup-enter-from,.toc-popup-leave-to{opacity:0;transform:translate(-50%,10px)}
@@ -440,12 +432,9 @@ onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));save
 .textLayer mark.pdf-search-hl{background:#ff06;border-radius:2px}
 .textLayer mark.pdf-search-current{background:#ff9800;color:#fff;box-shadow:0 0 0 2px #ff9800}
 
-/* PDF 标注渲染 */
-.pdf__rects{position:absolute;inset:0;pointer-events:none;z-index:2;user-select:none}
-.pdf__rect{cursor:pointer;pointer-events:auto;user-select:none}
-.pdf__rect>div{box-sizing:border-box;position:absolute;z-index:1;opacity:0.3;user-select:none;pointer-events:none}
-.pdf__rect>div:first-child{border-bottom-left-radius:4px;border-top-left-radius:4px}
-.pdf__rect>div:last-child{border-top-right-radius:4px;border-bottom-right-radius:4px}
+/* 选择模式下标注透明，避免阻挡文本选择 */
+.pdf-selecting .pdf-highlight{pointer-events:none !important}
+.pdf-selecting [data-note-marker]{pointer-events:none !important}
 
 /* 标注闪烁动画 */
 .pdf-highlight--flash{animation:flash 1.2s ease-in-out 1}

@@ -99,47 +99,42 @@ class TextLayerOptimizer {
         range.compareBoundaryPoints(Range.START_TO_END, this.prev) === 0
       )
 
-      if (active.size === 1) {
-        // 单页选择：根据方向选择锚点
-        let anchor = modStart ? range.startContainer : range.endContainer
-        const offset = modStart ? range.startOffset : range.endOffset
-        if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode as Node
-        const layer = (anchor as HTMLElement).parentElement?.closest('.textLayer') as HTMLElement
+      // 提取公共逻辑：插入墙的位置计算
+      const insertWall = (layer: HTMLElement, anchor: Node, offset: number, before: boolean) => {
         const end = this.layers.get(layer)
-        if (end && layer) {
-          end.style.width = layer.style.width
-          end.style.height = layer.style.height
-          // 向上：锚点前插入；向下：offset=0时用previousSibling.nextSibling避免跳到下一个span
-          const pos = modStart ? anchor as Node : 
-            (offset === 0 && (anchor as Node).previousSibling) ? 
-              (anchor as Node).previousSibling!.nextSibling : (anchor as Node).nextSibling
-          ;(anchor as HTMLElement).parentElement?.insertBefore(end, pos)
-        }
+        if (!end) return
+        end.style.width = layer.style.width
+        end.style.height = layer.style.height
+        if (anchor.nodeType === Node.TEXT_NODE) anchor = anchor.parentNode as Node
+        const pos = before ? anchor : 
+          (offset === 0 && anchor.previousSibling) ? anchor.previousSibling.nextSibling : anchor.nextSibling
+        ;(anchor as HTMLElement).parentElement?.insertBefore(end, pos)
+      }
+
+      if (active.size === 1) {
+        // 单页选择
+        const anchor = modStart ? range.startContainer : range.endContainer
+        const offset = modStart ? range.startOffset : range.endOffset
+        const layer = ((anchor.nodeType === Node.TEXT_NODE ? anchor.parentNode : anchor) as HTMLElement)?.closest('.textLayer') as HTMLElement
+        if (layer) insertWall(layer, anchor, offset, !!modStart)
       } else {
-        // 跨页选择：分别处理起始页、结束页、中间页
+        // 跨页选择
+        const getTextLayer = (node: Node) => ((node.nodeType === Node.TEXT_NODE ? node.parentNode : node) as HTMLElement)?.closest('.textLayer') as HTMLElement
+        const startTextLayer = getTextLayer(range.startContainer)
+        const endTextLayer = getTextLayer(range.endContainer)
+        
         for (const layer of active) {
           const end = this.layers.get(layer)
           if (!end) continue
-          end.style.width = layer.style.width
-          end.style.height = layer.style.height
-          const isStart = range.startContainer.nodeType === Node.TEXT_NODE && 
-            (range.startContainer.parentNode as HTMLElement)?.closest('.textLayer') === layer
-          const isEnd = range.endContainer.nodeType === Node.TEXT_NODE && 
-            (range.endContainer.parentNode as HTMLElement)?.closest('.textLayer') === layer
-          if (isStart && modStart) {
-            // 起始页且向上选择
-            let a = range.startContainer
-            if (a.nodeType === Node.TEXT_NODE) a = a.parentNode as Node
-            ;(a as HTMLElement).parentElement?.insertBefore(end, a)
-          } else if (isEnd && !modStart) {
-            // 结束页且向下选择
-            let a = range.endContainer
-            if (a.nodeType === Node.TEXT_NODE) a = a.parentNode as Node
-            const pos = (range.endOffset === 0 && (a as Node).previousSibling) ? 
-              (a as Node).previousSibling!.nextSibling : (a as Node).nextSibling
-            ;(a as HTMLElement).parentElement?.insertBefore(end, pos)
+          
+          if (layer === startTextLayer && modStart) {
+            insertWall(layer, range.startContainer, range.startOffset, true)
+          } else if (layer === endTextLayer && !modStart) {
+            insertWall(layer, range.endContainer, range.endOffset, false)
           } else {
-            // 中间页或非活动端：插入到最后
+            // 中间页：墙插到页面末尾
+            end.style.width = layer.style.width
+            end.style.height = layer.style.height
             const spans = layer.querySelectorAll('span[role="presentation"]')
             if (spans.length) spans[spans.length - 1].parentElement?.insertBefore(end, spans[spans.length - 1].nextSibling)
           }
@@ -205,49 +200,7 @@ export const getPdfSelectionRects = (viewer: any): any[] | null => {
   return coords.length ? coords.map(c => ({ x: c[0], y: c[1], w: c[2] - c[0], h: c[3] - c[1] })) : null
 }
 
-// 渲染PDF标注高亮
-export const showHighlight = (sel: { index: number; coords: number[][]; id: string; color: string; type?: string }, viewer: any) => {
-  const page = viewer.getPages()?.get(sel.index + 1)
-  if (!page) return null
-  const el = document.querySelector(`[data-page="${sel.index + 1}"]`) as HTMLElement
-  const layer = el?.querySelector('.textLayer') as HTMLElement
-  if (!layer) return null
-  
-  const vp = page.getViewport({ scale: viewer.getScale(), rotation: viewer.getRotation() })
-  let rects = layer.querySelector('.pdf__rects')
-  if (!rects) {
-    layer.insertAdjacentHTML('beforeend', '<div class="pdf__rects"></div>')
-    rects = layer.querySelector('.pdf__rects')
-  }
-  
-  let html = `<div class="pdf__rect" data-node-id="${sel.id}">`
-  sel.coords.forEach(rect => {
-    const b = vp.convertToViewportRectangle(rect)
-    const w = Math.abs(b[0] - b[2])
-    if (w <= 0) return
-    const style = sel.type === 'border' ? 
-      `border: 2px solid ${sel.color};` : 
-      `border: 2px solid ${sel.color};background-color: ${sel.color};`
-    html += `<div style="${style}left:${Math.min(b[0], b[2])}px;top:${Math.min(b[1], b[3])}px;width:${w}px;height:${Math.abs(b[1] - b[3])}px"></div>`
-  })
-  rects.insertAdjacentHTML('beforeend', html + '</div>')
-  return rects.lastElementChild
-}
-
 let isTextDown = false
-
-// 跟踪鼠标按下位置（判断是否在文本上按下）
-export const trackMouseDown = (e: MouseEvent) => {
-  isTextDown = !!document.elementFromPoint(e.clientX, e.clientY)?.closest('span[role="presentation"]')
-}
-
-// 修正PDF选择：如果不是在文本上按下则清除选择
-export const correctPdfSelectionOnMouseUp = (): boolean => {
-  const sel = window.getSelection()
-  if (!sel?.rangeCount || sel.isCollapsed) return false
-  if (!isTextDown) { sel.removeAllRanges(); return true }
-  return false
-}
 
 // 处理PDF文本选择，显示标注菜单
 export const handlePdfSelection = (viewer: any, mgr: any, show: (d: any, x: number, y: number) => void) => {
@@ -298,14 +251,18 @@ export const initPdfAnnotationEvents = (
   mgr: any,
   showMenu: (d: any, x: number, y: number) => void
 ) => {
-  const handleMouseDown = (e: MouseEvent) => trackMouseDown(e)
-  const handleMouseUp = (e: MouseEvent) => {
+  const handleMouseDown = (e: MouseEvent) => {
+    const target = document.elementFromPoint(e.clientX, e.clientY)
+    isTextDown = !!target?.closest('span[role="presentation"]')
+    if (isTextDown) container.classList.add('pdf-selecting')
+  }
+  
+  const handleMouseUp = () => {
+    container.classList.remove('pdf-selecting')
     setTimeout(() => {
-      const t = e.target as HTMLElement
-      // 忽略点击在标注卡片、菜单、标记上的情况
-      if (t.closest('.mark-card,.mark-selection-menu,[data-note-marker],.pdf-highlight')) return
-      correctPdfSelectionOnMouseUp()
-      handlePdfSelection(viewer, mgr, showMenu)
+      const sel = window.getSelection()
+      if (sel?.rangeCount && !sel.isCollapsed && !isTextDown) sel.removeAllRanges()
+      else handlePdfSelection(viewer, mgr, showMenu)
     }, 100)
   }
   
@@ -350,4 +307,3 @@ export const initPdfAnnotationRender = (
 // 导出接口
 export const initTextLayerOptimization = (layer: HTMLElement) => TextLayerOptimizer.add(layer)
 export const cleanupTextLayerOptimization = (layer: HTMLElement) => TextLayerOptimizer.remove(layer)
-export const hasClosestByClassName = closest

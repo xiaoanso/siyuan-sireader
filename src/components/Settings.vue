@@ -11,6 +11,7 @@ import { bookshelfManager } from '@/core/bookshelf'
 import { offlineDictManager, onlineDictManager } from '@/utils/dictionary'
 import { usePlugin } from '@/main'
 import { useReaderState } from '@/core/epub'
+import { useLicense } from '@/composables/useLicense'
 
 const props = defineProps<{modelValue:ReaderSettings;i18n:any;onSave:()=>Promise<void>}>()
 const emit = defineEmits<{'update:modelValue':[value:ReaderSettings]}>()
@@ -69,6 +70,7 @@ const fontsLoaded = ref(false)
 const removingDict = ref<string|null>(null)
 const quickDocSearch = ref('')
 const quickDocResults = ref<any[]>([])
+const {license,userAvatar,code:activationCode,loading:loadingLicense,activating,load:loadLicense,activate:activateLicense,clear:clearLicense,status:getLicenseStatus} = useLicense(plugin,props.i18n)
 
 // 方法
 const toggleAccordion = (key:string) => activeAccordion.value=activeAccordion.value===key?'':key
@@ -139,12 +141,14 @@ const debouncedSave = (() => {let t:any;return () => (clearTimeout(t),t=setTimeo
 const setFont = (f?:FontFileInfo) => (settings.value.textSettings.fontFamily=f?'custom':'inherit',settings.value.textSettings.customFont=f?{fontFamily:f.displayName,fontFile:f.name}:{fontFamily:'',fontFile:''},f?debouncedSave():save())
 const handleReadOnline = async (book:any) => {const {openOrActivateBook} = await import('@/utils/bookOpen');openOrActivateBook(plugin,book,settings.value)}
 const togglePreview = () => (previewExpanded.value=!previewExpanded.value,localStorage.setItem('sr-preview-expanded',previewExpanded.value?'1':'0'))
+const openPurchasePage = () => window.open('https://pay.ldxp.cn/shop/J7MJJ8YR/zmfsuc','_blank')
 
 // 生命周期
 onMounted(() => {
   bookshelfManager.init()
   loadingDict.value = true
   offlineDictManager.init(plugin).then(() => {offlineDicts.value=offlineDictManager.getDicts();onlineDicts.value=onlineDictManager.getDicts()}).finally(() => loadingDict.value=false)
+  loadLicense()
 })
 watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.value)&&(activeTab.value='bookshelf'))
 </script>
@@ -162,6 +166,33 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
               </div>
       <Transition name="slide" mode="out-in">
         <div v-if="activeTab==='appearance'" :key="activeTab" class="sr-section">
+          <div class="ds-card ds-accordion" @click="toggleAccordion('license')">
+            <h3>
+              <div v-if="license" class="license-avatar">
+                <img v-if="userAvatar" :src="userAvatar" :alt="license.userName">
+                <div v-else class="license-placeholder">{{license.userName[0].toUpperCase()}}</div>
+                <svg class="license-badge" viewBox="0 0 1024 1024"><use :xlink:href="license.type==='lifetime'?'#iconLicenseLifetime':license.type==='annual'?'#iconLicenseAnnual':license.type==='monthly'?'#iconLicenseMonthly':'#iconLicenseTrial'"/></svg>
+              </div>
+              <div v-if="license" class="license-info">
+                <div>{{license.userName}}<span class="license-tag" :class="`license-${license.type}`">{{i18n[license.type==='lifetime'?'lifetimeVersion':license.type==='annual'?'annualVersion':license.type==='monthly'?'monthlyVersion':'trialVersion']}}</span></div>
+                <div>ID {{license.userId}}</div>
+                <div><template v-if="license.type!=='lifetime'">剩余{{license.daysRemaining}}天 · </template>激活于 {{new Date(license.activatedAt).toLocaleDateString()}}</div>
+              </div>
+              <span v-else>授权</span>
+              <svg class="ds-arrow" :class="{expanded:activeAccordion==='license'}" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+            </h3>
+            <Transition name="expand">
+              <div v-if="activeAccordion==='license'" @click.stop>
+                <div v-if="loadingLicense" class="sr-empty">加载中...</div>
+                <button v-else-if="license" class="b3-button b3-button--text license-btn" @click="clearLicense">清除授权</button>
+                <div v-else class="license-input-group">
+                  <input v-model="activationCode" type="text" class="b3-text-field" placeholder="请输入激活码" :disabled="activating">
+                  <button class="b3-button b3-button--outline" :disabled="activating||!activationCode.trim()" @click="activateLicense">{{activating?'激活中':'激活'}}</button>
+                  <button class="b3-button b3-button--primary" @click="openPurchasePage">购买</button>
+                </div>
+              </div>
+            </Transition>
+          </div>
           <div class="ds-card ds-accordion" @click="toggleAccordion('interface')">
             <h3>{{i18n.interfaceLayout||'界面布局'}}<svg class="ds-arrow" :class="{expanded:activeAccordion==='interface'}" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg></h3>
                         <Transition name="expand">
@@ -406,6 +437,14 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
 .sr-nav{background:var(--b3-theme-background);display:flex;flex-shrink:0;.nav-left &,.nav-right &{width:42px;flex-direction:column;border-right:1px solid var(--b3-theme-background-light);padding:8px 0}.nav-top &,.nav-bottom &{height:42px;border-bottom:1px solid var(--b3-theme-background-light);padding:0 8px}.nav-right &{border-right:0;border-left:1px solid var(--b3-theme-background-light)}.nav-bottom &{border-bottom:0;border-top:1px solid var(--b3-theme-background-light)}}
 .sr-nav-tab{display:flex;align-items:center;justify-content:center;padding:10px 8px;border:none;background:transparent;cursor:pointer;transition:var(--b3-transition);color:var(--b3-theme-on-surface);svg{width:16px;height:16px}&:hover{color:var(--b3-theme-on-background)}&--active{color:var(--b3-theme-primary)}}
 .sr-content{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.ds-card{background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:8px;padding:16px;transition:all .2s;&:hover{box-shadow:0 2px 8px rgba(0,0,0,.08)}&.ds-accordion{cursor:pointer;user-select:none;h3{margin:0;font-size:14px;font-weight:600;display:flex;align-items:center;gap:16px;transition:color .15s}}}
+.license-avatar{position:relative;width:56px;height:56px;flex-shrink:0;img{width:100%;height:100%;border-radius:50%;object-fit:cover}}
+.license-placeholder{width:100%;height:100%;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:600}
+.license-badge{position:absolute;bottom:-2px;right:-2px;width:24px;height:24px}
+.license-info{flex:1;min-width:0;>div{line-height:1.5;margin-bottom:2px;&:first-child{font-size:16px;font-weight:600}&:not(:first-child){font-size:12px;color:var(--b3-theme-on-surface-light);opacity:.85}}}
+.license-tag{font-size:11px;padding:2px 7px;border-radius:3px;font-weight:500;margin-left:6px;opacity:.9;&.license-lifetime{background:rgba(156,39,176,.1);color:#9c27b0}&.license-annual{background:rgba(76,175,80,.1);color:#4caf50}&.license-monthly{background:rgba(33,150,243,.1);color:#2196f3}&.license-trial{background:rgba(255,152,0,.1);color:#ff9800}}
+.license-btn{width:100%;margin-top:8px}
+.license-input-group{display:flex;gap:8px;margin-top:8px;input{flex:1;min-width:0}button{flex-shrink:0;white-space:nowrap}}
 .sr-preview{position:sticky;top:0;z-index:10;margin:20px 20px 0;background:var(--b3-theme-surface);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;transition:max-height .3s;column-count:var(--column-count,1);column-gap:var(--gap);max-height:50px;&.expanded{max-height:min(300px,var(--max-block))}p{margin:0;padding:var(--margin-v) var(--margin-h);text-indent:calc(1em * var(--text-indent,0));break-inside:avoid;& + p{margin-top:calc(1em * var(--paragraph-spacing,0.8))}}}
 .sr-preview-hf{height:50px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-size:12px;opacity:.6;border:1px dashed currentColor;border-width:1px 0 0;user-select:none;&:first-child{border-width:0 0 1px;font-weight:500}&:hover{opacity:.8;background:var(--b3-list-hover)}}
 .sr-preview-toggle{width:14px;height:14px;transition:transform .3s}
@@ -413,7 +452,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
 .ds-color{width:55px;height:34px;padding:3px;border-radius:4px;cursor:pointer;border:1px solid var(--b3-border-color)}
 .ds-divider{height:1px;background:var(--b3-border-color);margin:16px 0}
 .ds-sub-accordion{cursor:pointer;user-select:none;margin-top:8px;&:hover .ds-sub-title{color:var(--b3-theme-primary)}}
-.ds-sub-title{font-size:13px;font-weight:600;color:var(--b3-theme-primary);display:flex;align-items:center;justify-content:space-between;padding:8px 0;transition:color .15s;svg{width:16px;height:16px;fill:currentColor;opacity:.7;transition:transform .2s;flex-shrink:0}&:has(svg.expanded) svg,svg.expanded{transform:rotate(180deg)}}
+.ds-sub-title{font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;padding:8px 0;transition:color .15s;svg{width:16px;height:16px;fill:currentColor;opacity:.7;transition:transform .2s;flex-shrink:0}&:has(svg.expanded) svg,svg.expanded{transform:rotate(180deg)}}
 .ds-hint{display:block;font-size:11px;color:var(--b3-theme-on-surface-variant);opacity:.7;margin:8px 0;line-height:1.5;a{color:var(--b3-theme-primary);text-decoration:none;&:hover{text-decoration:underline}}code{background:var(--b3-theme-background);padding:2px 6px;border-radius:3px;font-size:10px}}
 .ds-link-btn{padding:2px 8px;margin-left:6px;border:1px solid var(--b3-border-color);background:transparent;color:var(--b3-theme-primary);border-radius:3px;cursor:pointer;font-size:11px;transition:all .15s;&:hover:not(:disabled){background:var(--b3-list-hover)}&:disabled{opacity:.5;cursor:not-allowed}}
 .ds-btn-add{width:100%;padding:8px 12px;margin-bottom:8px;border:1px dashed var(--b3-border-color);background:transparent;color:var(--b3-theme-on-surface);border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;transition:all .15s;svg{width:14px;height:14px}&:hover:not(:disabled){background:var(--b3-list-hover);border-color:var(--b3-theme-primary);color:var(--b3-theme-primary)}&:disabled{opacity:.5;cursor:not-allowed}}

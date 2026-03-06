@@ -88,9 +88,17 @@ export class ReaderDatabase {
       const res = await fetch('/api/file/getFile', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: DB_PATH }) });
       if (res.ok) {
         const buf = await res.arrayBuffer();
-        if (buf.byteLength > 100) return new SQL.Database(new Uint8Array(buf));
+        // 验证 SQLite 魔数文件头 "SQLite format 3\0"
+        if (buf.byteLength >= 16) {
+          const header = new Uint8Array(buf, 0, 16);
+          const magic = String.fromCharCode(...header.slice(0, 15));
+          if (magic === 'SQLite format 3' && header[15] === 0) {
+            return new SQL.Database(new Uint8Array(buf));
+          }
+        }
       }
     } catch {}
+    // 创建新的空数据库
     const db = new SQL.Database();
     db.exec(`CREATE TABLE books (url TEXT PRIMARY KEY, title TEXT, author TEXT, cover TEXT, format TEXT, path TEXT, size INT, added INT, read INT, finished INT, status TEXT, progress INT, time INT, chapter INT, total INT, pos TEXT, source TEXT, rating INT, meta TEXT, bindDocId TEXT, bindDocName TEXT, autoSync INT, syncDelete INT);CREATE INDEX idx_read ON books(read);CREATE TABLE annotations (id TEXT PRIMARY KEY, book TEXT, type TEXT, loc TEXT, text TEXT, note TEXT, color TEXT, data TEXT, created INT, updated INT, chapter TEXT, block TEXT);CREATE INDEX idx_ann_book ON annotations(book);CREATE TABLE tags (book TEXT, tag TEXT, PRIMARY KEY(book,tag));CREATE INDEX idx_tag ON tags(tag);CREATE TABLE groups (book TEXT, gid TEXT, PRIMARY KEY(book,gid));CREATE INDEX idx_group ON groups(gid);CREATE TABLE settings (key TEXT PRIMARY KEY, val TEXT);`);
     return db;
