@@ -19,7 +19,7 @@ Support EPUB/PDF/TXT/Online novels with smart annotation, TTS, dictionary, AI tr
 
 ## 📝 Latest Updates
 
-### v0.9.0 (2026.3.8)
+### v0.9.1 (2026.3.8)
 
 **🎊 Membership System Launch**
 - Website: [sireader.745201.xyz](https://sireader.745201.xyz)

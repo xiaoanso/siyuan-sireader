@@ -33,7 +33,9 @@ export function useLicense(plugin: any, i18n: any) {
         license.value = result.license || null
         if (license.value) userAvatar.value = await LicenseManager.getUserAvatar()
         code.value = ''
-        showMessage(result.message || '激活成功', 2000, 'info')
+        showMessage(result.message || '激活成功，即将刷新页面...', 2000, 'info')
+        // 激活成功后自动刷新页面以应用权限
+        setTimeout(() => location.reload(), 2000)
       }
       else {
         showMessage(result.error || '激活失败', 3000, 'error')
