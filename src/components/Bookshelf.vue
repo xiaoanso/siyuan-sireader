@@ -196,9 +196,14 @@ import { isMobile } from '@/utils/mobile'
 import { searchDocs } from '@/composables/useSetting'
 import { getDatabase } from '@/core/database'
 import { usePlugin } from '@/main'
+import { useLicense } from '@/composables/useLicense'
 
 const props = defineProps<{ i18n?: any; coverSize?: number; openDocAssets?: boolean }>()
 const emit = defineEmits<{ read: [book: Book] }>()
+
+// 权限检查
+const plugin = usePlugin()
+const { can, showUpgrade } = useLicense(plugin, props.i18n || {})
 
 // 常量
 const MENU_ICONS = {status:{unread:'iconUncheck',reading:'iconEye',finished:'iconCheck'},sort:{time:'iconClock',added:'iconAdd',progress:'iconList',rating:'iconStar',readTime:'iconHistory',name:'iconA',author:'iconAccount',update:'iconRefresh'}}
@@ -251,7 +256,7 @@ const filterSections = computed(() => [
 
 // 基础
 const selectGroup = (id: string|null) => currentGroup.value=id
-const toggleViewMode = () => {const modes = ['grid','list','compact'] as const;viewMode.value=modes[(modes.indexOf(viewMode.value)+1)%3]}
+const toggleViewMode = () => {const modes = ['grid','list','compact'] as const; viewMode.value=modes[(modes.indexOf(viewMode.value)+1)%3]}
 const getBookColor = (title: string) => bookshelfManager.getBookColor(title)
 const getCoverUrl = (book: Book) => bookshelfManager.getCoverUrl(book)
 const getProgress = (book: Book) => book.format === 'online' && book.total ? `${(book.chapter ?? 0) + 1}/${book.total}` : `${book.progress || 0}%`
@@ -302,6 +307,7 @@ const refresh = () => Promise.all([loadBooks(),refreshGroups()])
 
 // 分组
 const startEditGroup = (g?: GroupConfig, type: 'folder'|'smart' = 'folder') => {
+  if (!g && !can.value(type==='smart'?'smart-group':'folder-group')) return showUpgrade(type==='smart'?'智能分组':'文件夹分组')
   editingGroup.value = g ? {...g, rules: g.rules || {tags:[],format:[],status:[],rating:0}} : {id: `group_${Date.now()}`, name: '', icon: type==='smart'?'⚡':'📁', order: groups.value.length, type, rules: {tags:[],format:[],status:[],rating:0}};
   panelMode.value = 'group';
 }
@@ -325,15 +331,12 @@ const showGroupMenu = (e?: MouseEvent, g?: GroupConfig) => {const m=buildMenu(g 
 ] : [
   {icon:'iconAdd',label:'新建文件夹',click:()=>startEditGroup()},
   {icon:'iconStar',label:'新建智能分组',click:()=>startEditGroup(undefined,'smart')},
-  {icon:'iconPDF',label:'同步 Assets PDF',click:async()=>{const r=await bookshelfManager.syncAssetsPDF().catch(()=>null);await refresh();showMessage(r?`+${r.added} -${r.removed} =${r.total}`:'失败',1500,r?'info':'error')}},
+  {icon:'iconPDF',label:'同步 Assets PDF',click:async()=>{if (!can.value('doc-assets')) return showUpgrade('文档assets同步'); const r=await bookshelfManager.syncAssetsPDF().catch(()=>null);await refresh();showMessage(r?`+${r.added} -${r.removed} =${r.total}`:'失败',1500,r?'info':'error')}},
   ...(groups.value.length?[{type:'separator'}]:[]),
   ...groups.value.map(gr=>({icon:gr.type==='smart'?'iconStar':'iconFolder',label:`${gr.name} (${groupCounts.value[gr.id]||0})`,click:()=>selectGroup(gr.id)}))
 ]); m.open({x:e?.clientX||0,y:e?.clientY||0})}
 const showFilterMenu = () => panelMode.value = 'filter'
-const showSortMenu = (e: MouseEvent) => buildMenu([
-  ...SORTS.map(([k,v])=>({icon:MENU_ICONS.sort[k]||'iconSort',label:v,click:()=>sortType.value=k})),
-  {type:'separator'},{icon:'iconSort',label:'反向排序',click:()=>sortReverse.value=!sortReverse.value}
-]).open({x:e.clientX,y:e.clientY})
+const showSortMenu = (e: MouseEvent) => buildMenu([...SORTS.map(([k,v])=>({icon:MENU_ICONS.sort[k]||'iconSort',label:v,click:()=>sortType.value=k})),{type:'separator'},{icon:'iconSort',label:'反向排序',click:()=>sortReverse.value=!sortReverse.value}]).open({x:e.clientX,y:e.clientY})
 
 // 书籍
 const bookOps = {
@@ -347,7 +350,7 @@ const updateBookField = async (book: Book, field: string, value: any, msg: strin
 }
 const readBook = async (book: Book) => {if(!props.openDocAssets&&book.format==='pdf'&&book.url.startsWith('asset://')){const plugin=usePlugin();openTab({app:(plugin as any).app,pdf:{path:book.url.replace('asset://','')},position:'right'});return}const {getBookWithFallback,findOpenedTab} = await import('@/utils/bookOpen');const full = await getBookWithFallback(bookshelfManager,book.url);if(!full)return showMessage('加载失败',3000,'error');const tab = findOpenedTab(full.title);if(tab)return tab.click();if(isMobile()){window.dispatchEvent(new CustomEvent('reader:open',{detail:{book:full}}))}else{emit('read',full)}}
 const removeBook = async (book: Book) => {const res = await bookshelfManager.removeBooks([book.url]); confirmDelete.value = null; await refresh(); showMessage(res.failed ? '删除失败' : '已移出', 2000, res.failed ? 'error' : 'info');}
-const showAddMenu = (e: MouseEvent) => buildMenu([{icon:'iconLink',label:'添加链接',click:()=>{panelMode.value='add';urlInput.value='';previewBookInfo.value=null}},{icon:'iconUpload',label:'选择文件',click:()=>fileInput.value?.click()}]).open({x:e.clientX,y:e.clientY})
+const showAddMenu = (e: MouseEvent) => buildMenu([{icon:'iconLink',label:'添加链接',click:()=>{if (!can.value('advanced-add')) return showUpgrade('高级添加方式'); panelMode.value='add';urlInput.value='';previewBookInfo.value=null}},{icon:'iconUpload',label:'选择文件',click:()=>fileInput.value?.click()}]).open({x:e.clientX,y:e.clientY})
 const handleFileUpload = async (e: Event) => {const files = Array.from((e.target as HTMLInputElement).files||[]); if (!files.length) return; const {success, failed} = await bookshelfManager.uploadBooks(files); await loadBooks(); showMessage(failed ? (success ? `成功${success}本，失败${failed}本` : '导入失败') : `导入${success}本`, 3000, failed && !success ? 'error' : 'info'); if (fileInput.value) fileInput.value.value = '';}
 const previewBook = async () => {if (!urlInput.value.trim()||previewLoading.value) return; previewLoading.value = true; try { previewBookInfo.value = await bookshelfManager.previewUrlBook(urlInput.value.trim()) } catch(e) { showMessage(e instanceof Error?e.message:'预览失败',2000,'error') } finally { previewLoading.value = false }}
 const confirmAdd = async () => {try { await bookshelfManager.addUrlBook(urlInput.value.trim()); await loadBooks(); showMessage('添加成功',2000,'info'); closePanel() } catch(e) { showMessage(e instanceof Error?e.message:'添加失败',2000,'error') }}
@@ -366,22 +369,16 @@ const showContextMenu = (book: Book, e: MouseEvent) => {
     {icon:'iconStar',label:'评分',type:'submenu',submenu:[...Array(5)].map((_,i)=>({icon:'iconStar',label:`${'★'.repeat(i+1)} ${i+1}星`,click:()=>updateBookField(book,'rating',i+1,`已评 ${i+1} 星`)})).concat([{type:'separator'},{icon:'iconClose',label:'清除',click:()=>updateBookField(book,'rating',0,'已清除评分')}])},
     {icon:'iconCheck',label:'标记状态',type:'submenu',submenu:STATUS_OPTIONS.map(([k,v])=>({icon:MENU_ICONS.status[k],label:v,click:()=>updateBookField(book,'status',k,`已标记为${v}`)}))},
     {icon:'iconFolder',label:'移动到',type:'submenu',submenu:(book.groups.length?[{icon:'iconFiles',label:'首页',click:()=>updateBookField(book,'group','home','已移动到首页')},...(folderGroups.value.length?[{type:'separator'}]:[])]:[] as any[]).concat(folderGroups.value.map(g=>({icon:'iconFolder',label:g.name,click:()=>updateBookField(book,'group',g.id,`已移动到：${g.name}`)})))},
-    {icon:hasBinding?'iconLinkOff':'iconLink',label:hasBinding?'解除绑定':'绑定思源',click:()=>showPanel('edit',book)},
+    {icon:hasBinding?'iconLinkOff':'iconLink',label:hasBinding?'解除绑定':'绑定思源',click:()=>{if (!can.value('book-edit')) return showUpgrade('书籍编辑'); showPanel('edit',book)}},
     {type:'separator'},
-    {icon:'iconEdit',label:'编辑信息',click:()=>showPanel('edit',book)},
+    {icon:'iconEdit',label:'编辑信息',click:()=>{if (!can.value('book-edit')) return showUpgrade('书籍编辑'); showPanel('edit',book)}},
     {icon:'iconTrashcan',label:'移出书架',click:()=>(m.close(),confirmDelete.value={type:'book',id:book.url,item:book})}
   ]); m.open({x:e.clientX,y:e.clientY});
 }
 const toggleSelect = (book: Book) => selectedBooks.value.has(book.url) ? selectedBooks.value.delete(book.url) : selectedBooks.value.add(book.url)
 const toggleSelectAll = () => isAllSelected.value ? selectedBooks.value.clear() : displayBooks.value.forEach(b => selectedBooks.value.add(b.url))
 const clearSelection = () => selectedBooks.value.clear()
-const batchOp = async (op: 'rate'|'status'|'remove') => {
-  const urls = Array.from(selectedBooks.value), showResult = async (res: any, action: string) => {clearSelection(); await refresh(); showMessage(res.failed?`成功${res.success}本，失败${res.failed}本`:`${action} ${res.success} 本`,2000,res.failed?'error':'info')};
-  if (op === 'remove') {
-    if (!confirm(`确定移出 ${urls.length} 本书籍？`)) return;
-    return showResult(await bookshelfManager.removeBooks(urls),'已移出');
-  }
-  buildMenu(op === 'rate' ? [
+const batchOp = async (op: 'rate'|'status'|'remove') => {if (!can.value('batch-operation')) return showUpgrade('批量操作'); const urls = Array.from(selectedBooks.value), showResult = async (res: any, action: string) => {clearSelection(); await refresh(); showMessage(res.failed?`成功${res.success}本，失败${res.failed}本`:`${action} ${res.success} 本`,2000,res.failed?'error':'info')}; if (op === 'remove') {if (!confirm(`确定移出 ${urls.length} 本书籍？`)) return; return showResult(await bookshelfManager.removeBooks(urls),'已移出')}; buildMenu(op === 'rate' ? [
     ...[...Array(5)].map((_,i)=>({icon:'iconStar',label:`${'★'.repeat(i+1)} ${i+1}星`,click:async()=>showResult(await bookshelfManager.batchUpdateRating(urls,i+1),'已评分')})),
     {type:'separator'},{icon:'iconClose',label:'清除评分',click:async()=>showResult(await bookshelfManager.batchUpdateRating(urls,0),'已清除')}
   ] : STATUS_OPTIONS.map(([k,v])=>({icon:MENU_ICONS.status[k],label:v,click:async()=>showResult(await bookshelfManager.batchUpdateStatus(urls,k),'已更新')}))).open({x:window.innerWidth/2,y:window.innerHeight/2});

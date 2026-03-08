@@ -1,866 +1,234 @@
-<div class="sy__outline" style="max-width: 900px; margin: 0 auto;">
-<div style="text-align: center; padding: 2.5em 1.5em; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.1); margin-bottom: 2em;">
-<h1 style="color: white; margin: 0 0 0.3em; font-size: 2.5em; font-weight: 600;">📖 SiReader</h1>
-<p style="color: rgba(255,255,255,0.9); margin: 0 0 1.5em; font-size: 1.1em;">Professional eBook Reader · Smart Annotation · Multi-format Support</p>
-<p style="color: rgba(255,255,255,0.85); margin: 0 0 1.5em; line-height: 1.6; font-size: 0.95em;">Transform SiYuan Notes into a professional eBook reader<br>Support EPUB/PDF/TXT/Online novels with smart annotation, multi-theme switching, dictionary lookup, AI translation, deck system, and more for an immersive reading experience</p>
-<p style="margin: 0 0 1em;">
-<img src="https://img.shields.io/badge/version-0.8.10-blue.svg" alt="Version" style="display: inline-block; margin: 0 4px;">
-<img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License" style="display: inline-block; margin: 0 4px;">
-<img src="https://img.shields.io/badge/SiYuan-3.0+-orange.svg" alt="SiYuan" style="display: inline-block; margin: 0 4px;">
-</p>
-<p style="margin: 0;">
-<a href="https://my.feishu.cn/wiki/Czp8wrf2NibwA9krhvmcHnbtnMc?from=from_copylink" style="display: inline-block; margin: 0 4px; color: white; text-decoration: none;">📖 User Guide</a>
-<a href="https://my.feishu.cn/wiki/XzefwHqz4inde7k7rJKce7shn8d?from=from_copylink" style="display: inline-block; margin: 0 4px; color: white; text-decoration: none;">🔄 Changelog</a>
-<a href="https://qm.qq.com/q/wpHDtsfxCw" style="display: inline-block; margin: 0 4px; color: white; text-decoration: none;">👥 QQ Group</a>
-</p>
+<div align="center">
+
+# 📖 SiReader
+
+**Professional eBook Reader · Smart Annotation · Flashcard Learning**
+
+Transform SiYuan Notes into a professional eBook reader  
+Support EPUB/PDF/TXT/Online novels with smart annotation, TTS, dictionary, AI translation, Anki flashcards
+
+[![Version](https://img.shields.io/badge/version-0.9.0-blue.svg)](https://github.com/your-repo/siyuan-sireader)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![SiYuan](https://img.shields.io/badge/SiYuan-3.0+-orange.svg)](https://github.com/siyuan-note/siyuan)
+
+[🌐 Website](https://sireader.745201.xyz) · [📖 Documentation](https://my.feishu.cn/wiki/Czp8wrf2NibwA9krhvmcHnbtnMc) · [💎 Purchase](https://pay.ldxp.cn/shop/J7MJJ8YR/lillyt) · [👥 QQ Group](https://qm.qq.com/q/wpHDtsfxCw) · [📝 Changelog](https://my.feishu.cn/wiki/XzefwHqz4inde7k7rJKce7shn8d)
+
 </div>
-</div>
-
----
-
-## ✨ Core Features
-
-### 📚 Multi-format Support
-- **EPUB** - Full support with smart TOC and footnote recognition
-- **PDF** - Professional reader with zoom, rotation, and search
-- **TXT** - Smart encoding detection and chapter recognition
-- **Online Novels** - Multi-source search with real-time updates
-
-### 🎨 Reading Experience
-- **8 Themes** - Default, Almond, Autumn, Green, Blue, Night, Dark, Gold
-- **Custom Themes** - Fully customizable text color, background, and images
-- **Reading Modes** - Single/double page, scroll/flip, left/right TOC
-- **Appearance Settings** - Font, size, spacing, margins, visual filters
-
-### 🔊 TTS Text-to-Speech
-- **Multi-voice Support** - Online voices (Edge TTS) and local voices (Browser TTS)
-- **Smart Playback** - Loop selected text, play from selected paragraph, play from current page
-- **Precise Highlighting** - PDF highlights current text precisely, EPUB auto-scrolls to current paragraph
-- **Pause/Resume** - Click to pause during playback, click again to resume
-- **Auto-stop on Navigation** - Automatically stops on page turn or jump to avoid position confusion
-- **Voice Management** - Favorite commonly used voices, switch between online/local voices
-- **Playback Settings** - Speed adjustment, auto page turn, text highlighting options
-
-### 🖊️ Smart Annotation
-- **7 Colors** - Red🔴Orange🟠Yellow🟡Green🟢Pink🩷Blue🔵Purple🟣, 4 styles (highlight/underline/border/wavy)
-- **PDF Advanced** - Ink annotation, shape annotation (rectangle/circle/triangle), fill function
-- **Note System** - Add detailed notes to annotations with real-time editing
-- **Precise Location** - Use CFI/page number for accurate positioning
-
-### 📖 Dictionary
-- **7 Sources** - Cambridge, Youdao, Haici, Chinese Character, Phrase, Zdic, Bing
-- **Smart Recognition** - Auto-select the most suitable dictionary
-- **Deck System** - Add words to deck for review
-
-### 🔍 Book Source
-- **Multi-source** - Custom book sources with concurrent search
-- **Smart Parsing** - Full support for JSONPath, CSS, XPath, JavaScript, Regex
-- **Rule Combination** - Support `&&`/`||`/`%%` combination, `{$.path}` nesting, `@put/@get` data sharing
-
-### 🎴 Flashcard Learning System
-- **Anki Import** - Full .apkg file import with deck structure and card content preserved (learning progress import not yet supported)
-- **SiYuan Flashcard Sync** - Import SiYuan flashcards with real-time bidirectional sync (auto-sync on add, delete, modify)
-- **Spaced Repetition** - Four-level rating system, smart queue, customizable learning steps
-- **FSRS Algorithm** - Advanced memory algorithm for optimized review intervals
-- **Data Statistics** - 11 visualization charts: ring charts, line charts, bubble charts, radar charts, heatmaps, etc.
-- **Comprehensive Settings** - 30+ configurable parameters, daily limits, learning steps, advanced options
-
----
-
-## 🚀 Quick Start
-
-### Installation
-1. Open SiYuan → `Settings` → `Marketplace` → `Plugins`
-2. Search "SiReader"
-3. Click install and enable
-
-### Usage
-- **Local Files** - Click "Add Book" button in bookshelf, select EPUB/PDF/TXT files to import
-- **Online Novels** - Click toolbar search button, search and add to bookshelf
-- **Bookshelf** - Click toolbar bookshelf button to manage all books
 
 ---
 
 ## 📝 Latest Updates
 
-### v0.8.10 - Lantern Festival Edition (2026.3.3)
+### v0.9.0 (2026.3.8)
 
-> 🏮 **Happy Lantern Festival! Wishing you a joyful celebration filled with happiness, reunion, and prosperity!**
+**🎊 Membership System Launch**
+- Website: [sireader.745201.xyz](https://sireader.745201.xyz)
+- Authorization: Trial (7 days)/Monthly/Annual/Lifetime membership
+- Online Activation: Enter activation code to activate, View status and remaining days
+- Feature Tiers: Different features based on membership level
+- **🎁 Limited Time Offer**: Lifetime membership ~~¥128~~ **¥108** (Until May 5th)
 
-#### ✨ New Features
+**🐛 Bug Fixes**
+- Fixed bookshelf initialization failure due to lax file validation during database loading
+- Fixed PDF text selection drift when dragging to annotated areas
+- Fixed PDF cross-page text selection drift in blank areas
 
-**Send To Feature**
-- New "Send To" button in text selection toolbar for quick annotation sending to specified documents
-- Configure quick send document list in settings with drag-and-drop sorting
-- Search and add documents to quick list
-
-**Translation Feature**
-- New translation feature supporting Azure, Google, and Yandex translation services
-- Direct translation after text selection
-
-#### ⚙️ Improvements
-
-**Reading Experience**
-- Optimized popup positioning in reading interface, stays within bounds with proper margins
-- New toolbar opacity adjustment (0-100%)
-- New quick annotation feature: select color and style in toolbar, then select text to annotate
-- New undo annotation feature (Ctrl+Z)
-
-**Interface**
-- Optimized TOC display, fixed duplicate tag icon issue
-
-#### 🐛 Bug Fixes
-
-**TTS Fixes**
-- Attempted fix for TTS loading issues on Linux devices
-
-**PDF Fixes**
-- Fixed PDF text selection drift issue
-- Fixed PDF background not fully applied issue
-
-**EPUB Fixes**
-- Fixed font size setting not working for some EPUB books
-
-**Other Fixes**
-- Fixed copy restriction for local file jump links
+**⚙️ Improvements**
+- Optimized reading control bar search and annotation menu display
+- Search and annotation popups are mutually exclusive to avoid overlap
+- Toolbar and secondary menu share opacity settings with responsive updates
 
 ---
 
-### v0.8.9 (2026.3.1)
+## 📋 Complete Feature List
 
-#### ✨ New Features
-
-**TTS Text-to-Speech System**
-- New TTS voice reading feature supporting EPUB and PDF formats
-- Support online voices (Edge TTS) and local voices (Browser TTS)
-- Smart text extraction: auto-recognize paragraphs, support reading from current position
-- PDF highlighting: precisely highlight current text during reading, auto page turn
-- EPUB auto-scrolling: automatically scroll to current paragraph during reading
-- Pause/resume: true pause and resume using AudioContext
-- Voice management: favorite commonly used voices, switch between online/local voices
-- Reading settings: speed adjustment, auto page turn, text highlighting options
-
-**TTS Smart Playback Scenarios**
-- **Loop Selected Text** - Select text → Click speak button in selection menu → Loop play selected content, auto-stop when selection cancelled
-- **Play from Selected Paragraph** - Select text → Click bottom play button → Play continuously from selected paragraph onwards
-- **Play from Current Page** - No selection → Click bottom play button → Play continuously from current page onwards
-- **Pause/Resume** - Click bottom play button during playback to pause, click again to resume
-- **Auto-stop on Navigation** - Automatically stops on page turn or jump to avoid position confusion
-- **New Position Playback** - After page turn, click play to start from new page; select new text to start from new position
-
-**Enhanced Annotation Copy**
-- New copy button: directly copy selected text without creating annotation
-- Optimized button layout: note, annotate, copy, dictionary four buttons
-- Auto-copy: automatically copy to clipboard after creating or saving annotation
-- Quick annotate: annotate button creates blue highlight and auto-copies link
-
-#### ⚙️ Improvements
-
-**Reading Statistics Optimization**
-- Optimized statistics duration display with one decimal precision
-- Optimized statistics page daily quote display
-
-**Bookshelf Enhancement**
-- Added group sync for Assets PDF, smart reference to SiYuan assets folder PDFs
-- Linked with "Open SiYuan PDF" setting, opens document and assets folder PDFs with SiYuan PDF when enabled
-
-**Selection Button Optimization**
-- Updated button icons: note uses edit icon, annotate uses annotation icon
-
-**Annotation Logic Optimization**
-- Unified annotation and copy logic, removed duplicate code
-- Optimized template replacement algorithm using placeholders to avoid keyword conflicts
-- Streamlined code structure for improved performance and maintainability
-
-#### 🐛 Bug Fixes
-
-**Annotation Template Fixes**
-- Fixed issue where book titles containing template fields (like "笔记", "截图") generated incorrect links
-- Fixed missing book title in annotation links
-- Fixed incorrect chapter name retrieval
-
-**TTS Bug Fixes**
-- Fixed old player not destroyed when adjusting settings causing overlapping playback
-- Fixed TTS still playing after closing book
-- Fixed paragraph skipping issue (WebSocket async message processing race condition)
-- Fixed PDF reading highlighting entire page instead of current paragraph
-
----
-
-### v0.8.8 (2026.2.27)
-
-#### ✨ New Features
-
-**Reading Statistics System**
-- New complete reading statistics feature, click status bar clock icon to view
-- Simple view: Display current session/today/total reading time
-- Detailed view: Includes reading calendar, book distribution, favorite books, rating distribution, format distribution
-- Reading calendar: Year/month view toggle, color depth indicates reading duration, hover to show detailed data
-- Favorite books: Sorted by reading time, display top 10 books with complete duration (accurate to seconds)
-- Daily quote: Random inspirational quotes (from Hitokoto API)
-- Auto-save every 60 seconds to prevent data loss from abnormal exits
-- Auto-save before page close, double protection
-
-#### ⚙️ Improvements
-
-**Bookshelf Interface Optimization**
-- Remove local file annotation copy restrictions
-- Optimize bookshelf grid view display, status as background, book source as type tag
-- Change reading status from "Read" to "Finished" for more accurate semantics
-- Book detail panel auto-refreshes latest data (including reading time)
-
-**Online Book Optimization**
-- Optimize online book search and add logic, cache improves performance
-- Optimize online book refresh and loading logic
-
-**EPUB Rendering Optimization**
-- Refactored CSS style application logic for improved code readability and maintainability
-- Enhanced font application strength to fix font settings not working for some books
-- Optimized style rule classification: base styles, font forcing, paragraph formatting, footnote hiding, etc., with modular management
-
-#### 🐛 Bug Fixes
-
-- Fix PDF color inversion issue in SiYuan default theme
-- Fix reading time resetting to zero after 59 seconds
-- Fix statistics data not refreshing in real-time
-- Fix calendar and favorite books time not updating
-- Fix EPUB footnote content displaying in main text (footnote content now hidden, only shown in popup when clicking footnote links)
+| Module | Feature | Description |
+|--------|---------|-------------|
+| **📚 Reading** | Format Support | EPUB/PDF/TXT/Online novels |
+| | Themes | 8 preset themes (Default/Almond/Autumn/Green/Blue/Night/Dark/Gold) + Custom |
+| | Reading Modes | Single/Double page/Continuous scroll |
+| | Page Animation | Slide/Scroll/None |
+| | Open Mode | New tab/Right tab/Bottom tab/New window |
+| | Navigation Position | Left/Right/Top/Bottom, Custom modules and sorting |
+| | TOC Navigation | TOC/Bookmarks/Marks, Search chapters, Reverse, Jump |
+| | Footnote Recognition | Auto-recognize footnotes/endnotes/references/terms, Click to popup |
+| | Text Settings | Font/Size/Letter spacing/Line height/Paragraph spacing/Text indent |
+| | Layout Settings | Horizontal margin/Vertical margin/Column gap/Header footer height/Max content width |
+| | Visual Enhancement | Brightness/Contrast/Sepia/Saturation/Invert |
+| | Reading Statistics | Session/Daily/Total time, Reading calendar, Book distribution, Favorite books, Rating distribution, Format distribution |
+| | PDF Toolbar | Zoom/Rotate/Search/Print/First page/Last page, Floating/Fixed style, Opacity adjustment |
+| | Bottom Toolbar | TOC/Previous/Next/Settings/Search |
+| | Full-text Search | Search book content, Highlight results, Jump support |
+| **🖊️ Annotation** | Colors | 7 colors (Red🔴Orange🟠Yellow🟡Green🟢Pink🩷Blue🔵Purple🟣) |
+| | Styles | Highlight/Underline/Border/Wavy |
+| | Quick Annotate | Select color and style in toolbar, Select text to annotate |
+| | PDF Advanced | Ink annotation, Shape annotation (Rectangle/Circle/Triangle), Fill function |
+| | Note System | Add detailed notes, Real-time editing, Add tags |
+| | Bookmarks | Add/Remove bookmarks, Bookmark list management |
+| | Line Notes | Add line-level notes to paragraphs |
+| | Annotation Management | Filter by color/chapter, Sort by time/date/chapter, Delete annotations |
+| | Quick Send | Configure quick document list (max 5), One-click send annotations |
+| | Auto Sync | Auto-sync annotations to bound SiYuan documents (Add/Delete/Modify) |
+| | Undo Annotation | Ctrl+Z to undo recent annotation |
+| | Copy Settings | Custom link format, Variables: Title/Author/Chapter/Position/Link/Text/Note/Screenshot |
+| | Precise Location | Use CFI/Page number for precise positioning, Jump to original text |
+| **🔊 TTS** | TTS Mode | Edge TTS (Online free), Local browser (Offline) |
+| | Multi-voice | Hundreds of online and local voices, Favorite commonly used voices |
+| | Smart Playback | Loop selected text, Play from selected paragraph, Play from current page, Read selected text |
+| | Precise Highlighting | PDF highlights current text precisely, EPUB auto-scrolls to current paragraph |
+| | Playback Control | Pause/Resume, Fast forward/backward 10s, Auto page turn, Auto stop |
+| | Voice Parameters | Speed/Volume/Pitch adjustment |
+| | Playback Options | Auto play, Highlight reading text, Auto page turn |
+| **📚 Bookshelf** | Group Management | Folder groups, Smart groups (Auto-filter by tags/format/status/rating) |
+| | Sorting | Recent read/Added time/Reading progress/Rating/Duration/Title/Author/Recent update |
+| | View Modes | Grid/List/Compact |
+| | Multi-filter | Status/Rating/Format/Tags/Update status |
+| | Book Management | Edit book info (Title/Author/Cover/Rating/Status/Tags), Remove books |
+| | Document Binding | Bind SiYuan documents, Auto-sync annotations |
+| | Batch Operations | Batch convert EPUB styles, Batch adjust width |
+| | Interface Settings | Cover size adjustment (80-160px), Toolbar opacity adjustment |
+| | Update Check | Check online book updates |
+| | Add Books | Local files (EPUB/PDF/TXT), HTTP(S) links, Absolute/Relative paths |
+| **🔍 Search** | Online Sources | Multi-source concurrent search, Built-in Anna's Archive/Project Gutenberg/Standard Ebooks |
+| | Custom Sources | Support JSONPath/CSS/XPath/JavaScript/Regex |
+| | Rule Combination | Support `&&`/`||`/`%%` combination, `{$.path}` nesting, `@put/@get` data sharing |
+| | Source Management | Import/Export/Enable/Disable/Edit/Delete sources |
+| | Format Filter | Filter search results by format |
+| | Quick Add | One-click add search results to bookshelf |
+| | Chapter Search | Search book chapter content |
+| **🎴 Flashcard** | Anki Import | Full .apkg file import, Preserve deck structure and card content |
+| | SiYuan Sync | Import SiYuan flashcards, Real-time bidirectional sync (Add/Delete/Modify auto-sync) |
+| | FSRS Algorithm | Advanced memory algorithm, Auto-calculate card stability and difficulty |
+| | Template Editing | View and edit deck templates (Front/Back/CSS), Real-time preview |
+| | Advanced Search | Support deck/tag/status/property multi-filter |
+| | Special Cards | Image occlusion, LaTeX formula rendering, Cloze support |
+| | Spaced Repetition | Four-level rating system, Smart learning queue, Custom learning steps |
+| | Data Statistics | 11 visualization charts: Ring/Line/Bubble/Radar/Heatmap charts |
+| | Comprehensive Settings | 30+ configurable parameters, Daily limits, Learning steps, Advanced options |
+| **📖 Dictionary** | Online Dictionaries | 7 sources (Cambridge/Youdao/Haici/Character/Phrase/Zdic/Bing) |
+| | Offline Dictionary | Support StarDict and dictd formats |
+| | Smart Recognition | Auto-select the most suitable dictionary |
+| | Dictionary Management | Add/Delete offline dictionaries |
+| | Add to Deck | Add words to deck for review |
+| **🌐 Translation** | Translation Services | Azure/Google/Yandex/AI Translation(Free)/AI Translation(SiYuan) |
+| | Selected Translation | Translate selected text directly |
+| | Translation Panel | Independent translation panel to display results |
+| **⚙️ Others** | Authorization System | Trial/Monthly/Annual/Lifetime membership |
+| | Shortcuts | Custom shortcuts (Previous/Next/Bookmark/PDF operations, etc.) |
+| | Data Management | SQLite unified data management, Auto-migrate old version data |
+| | Mobile Support | Support PDF reading (EPUB/TXT not supported yet) |
 
 ---
 
-### v0.8.7 (2026.2.25)
-
-#### ✨ New Features
-
-**Enhanced Book Addition Methods**
-- Support "Add Link" or "Select File" when adding books
-- Support HTTP(S) links, Windows/Unix absolute paths, relative paths
-- Preview book info when adding links (title, author, cover, publication info, etc.)
-- Auto-extract book metadata (title, author, cover, publisher, ISBN, etc.)
-
-**Enhanced Book Search**
-- New unified HTTP book source management system
-- Built-in sources: Anna's Archive, Project Gutenberg, Standard Ebooks
-- Book source management interface for unified HTTP and regular source management
-- Support enable/disable HTTP book sources
-- Anna's Archive supports format filtering and custom domains
-- Search results auto-recognize HTTP download links with quick add to bookshelf
-
-**Unified TXT Reading Experience**
-- Unified TXT format reading experience, consistent with EPUB
-- Support complete annotation features (highlight/note/bookmark)
-
-#### ⚙️ Improvements
-
-**Performance Optimization**
-- Optimized bookshelf loading speed, SQL.js wasm file now bundled locally (~660KB), eliminating network download delay
-- Optimized online book refresh and loading logic
-- Unified file loading logic, eliminated duplicate code
-- Simplified computed fields in multiple components to single-line expressions
-
-**Interface Optimization**
-- Optimized bookshelf sidebar layout with drag-to-resize support
-
-#### 🐛 Bug Fixes
-
-- Fixed online book search failure issue
-- Fixed PDF page turning scrolling by screen height instead of page number in continuous scroll mode
-- Fixed EPUB annotation selection offset issue
-
----
-
-### v0.8.6 (2026.2.19)
-
-> **⚠️ Important: Data Migration**  
-> **This version includes a major data structure upgrade. The plugin will automatically detect and prompt for migration of old version data on first startup.**
-> 
-> **Migration Instructions:**
-> - **Auto-detection**: Automatically detects old version data (`index.json` and `books/*.json`) on plugin startup
-> - **One-click Migration**: Click "Confirm" in the popup to automatically migrate all books, annotations, bookmarks, notes, and settings
-> - **Data Preservation**: Migration process does not delete original data. You can optionally clean up old files (preserving book files, covers, dictionaries, Anki data)
-> - **Migration Content**: Book metadata, reading progress, highlights, notes, bookmarks, ink annotations, shape annotations, dictionary deck, settings
-> 
-> **Important Notes:**
-> - **Strongly recommend backing up `/data/storage/petal/siyuan-sireader/` directory before upgrading**
-> - After migration completes, you'll be prompted whether to clean up old data files. Recommend confirming successful migration before cleaning
-> - Cleanup preserves: book files (.epub/.pdf/.txt), cover images, dictionaries, Anki data, deck-data.db
-> - If migration fails, old data remains intact and can be manually restored or contact developer
-> 
-> **📱 Mobile Note:**
-> - Mobile currently only supports PDF reading, EPUB and TXT formats are temporarily disabled
-
-#### ✨ New Features
-
-**Bookshelf System Redesign**
-- Support folder groups and smart groups (auto-filter by tags/format/status/rating)
-- 8 sorting methods (time/added/progress/rating/duration/title/author/update)
-- Three view modes (grid/list/compact)
-- Multi-dimensional filtering (status/rating/format/tags/update status)
-- Book info editing (title/author/cover/rating/status/tags)
-- Support binding SiYuan documents with auto-sync configuration
-
-**Data Storage Redesign**
-- Use SQLite to unify all data management (books/groups/annotations/settings/Anki)
-- Database file: `/data/storage/petal/siyuan-sireader/reader.db`
-- Index optimization, query speed improved by 10x+
-
-**PDF Annotation Enhancement**
-- Smart text selection, solving selection drift, cross-page selection, watermark misselection issues
-- Support rectangular box selection annotation (text highlight/border mode)
-- Annotations auto-sync to bound SiYuan documents (add/delete/modify)
-- Shape annotations support fill function (solid/hollow toggle)
-
-#### ⚙️ Improvements
-
-**Performance Optimization**
-- Bookshelf loading performance improved by 33% (34ms → 22.6ms), group preview improved by 99.7% (20ms+ → 0.05ms)
-- Optimized database query logic, preload cache to avoid repeated queries, extremely streamlined code
-
-**Annotation Panel Optimization**
-- Use SiYuan native menu component with auto edge detection to prevent overflow
-- Selection menu changed to horizontal three-button layout (annotate/copy/dictionary)
-
-**Keyboard Shortcut System**
-- Extract shortcut logic to independent module for unified management
-- Fixed issue where shortcuts didn't work inside iframe
-
-**Reading Interface Optimization**
-- TOC and search panels support click-outside-to-close with transparent overlay
-
-**Settings Interface Redesign**
-- Accordion-style collapsible panels, main accordions mutually exclusive
-- Dictionary features use sub-accordion grouping
-- Custom font lazy loading, improved opening speed
-- Unified all delete/reset interaction logic and styles
-
-#### 🐛 Bug Fixes
-
-- Fixed issue where book data files were duplicated when books closed abnormally
-- Fixed inaccurate PDF annotation positioning
-- Fixed missing purple highlight after adding PDF words to deck
-- Fixed settings lost after reopening
-- Fixed bookshelf progress not updating
-- Fixed annotations without notes unable to jump
-- Fixed PDF progress save failure
-- Fixed books unable to open due to duplicate document names
-
----
-
-### v0.8.5 (2026.2.9)
-
-#### ✨ New Features
-
-**Card Editing**
-- Support flashcard editing, modify card front, back, and tags
-- SiYuan flashcard editing temporarily has issues, please wait for future optimization
-
-**Navigation Customization**
-- Support enabling/disabling function modules
-- Support navigation item sorting, customize button order
-
-#### 🔧 Improvements
-
-**Settings Interface Redesign**
-- Accordion-style collapsible panels, main accordions mutually exclusive
-- Reorganized groups: Interface Layout, Reading Theme, Text Styles, Dictionary Tools, Other Settings
-- Dictionary moved to settings panel for unified management, using sub-accordions
-- Custom font lazy loading, improved settings panel opening speed
-
-**Interaction Optimization**
-- Unified all delete, reset confirmation interaction logic and styles
-- Dictionary deletion uses inline confirmation buttons, consistent with other delete operations
-
-#### 🐛 Bug Fixes
-
-- Fixed settings page content being squeezed and not fully displayed
-
----
-
-### v0.8.4 (2026.2.7)
-
-#### ✨ New Features
-
-**SiYuan Flashcard Bidirectional Sync**
-- Support importing SiYuan flashcards to plugin decks, click "Import SiYuan" button in deck management
-- Two-step selection process: select SiYuan deck first, then select target plugin deck
-- Auto-parse 7 flashcard types: mark cards, heading blocks, list blocks, super blocks, Q&A, multi-line, default
-- Support cloze formats: `{{c1::answer::hint}}` and `==mark==`, multiple clozes supported
-- Imported cards auto-add `siyuan` tag, preserve original block ID and deck ID
-
-**Real-time Bidirectional Sync**
-- WebSocket monitors SiYuan flashcard changes in real-time, auto-sync to plugin
-- SiYuan adds flashcard → Auto-import to plugin deck
-- SiYuan deletes flashcard → Auto-delete corresponding card in plugin
-- SiYuan modifies flashcard content → Auto-update card content in plugin
-- Plugin modifies card → Can sync back to SiYuan notes (support locate and delete)
-
-#### 🔧 Improvements
-
-- Created card list component to unify card loading and rendering logic
-- Optimized statistics page structure for clearer data display
-- Support deleting parent decks for batch deletion
-- Unified event trigger mechanism, all deck and card operations update UI in real-time
-- Simplified import and sync prompts, only show final results
-- Use SiYuan theme variables for CSS styles, more coordinated interface
-
-#### 🐛 Bug Fixes
-
-- Fixed issue where card page didn't update after deleting deck
-- Fixed wildcard selector style leak causing SiYuan code blocks to be force-locked in height and text size reduced
-- Improved Anki database and progress data cleanup logic
-
----
-
-### v0.8.3 (2026.2.6)
-
-#### ✨ Anki Card Features Enhanced
-
-**🖼️ Image Occlusion**
-- Support Anki image occlusion cards for anatomy diagrams, maps, charts, circuit diagrams, etc.
-- Auto-recognize image occlusion note types with clear SVG vector masking
-- Front side shows red semi-transparent masks, back side shows green highlighted answers
-- Support multiple masking areas, auto-switch based on card number
-
-**📐 LaTeX Formula Rendering**
-- Full support for Anki LaTeX formula format
-- Auto-convert `[$]...[/$]` format to standard LaTeX syntax (inline `\(...\)` and block `\[...\]`)
-- Use MathJax 3.x rendering engine, auto re-render on page turn and card flip
-
-**🔍 Deck Search Function**
-- Support advanced search syntax for quick card location
-- Basic search: search card front, back, and tag content
-- Advanced filtering: support deck (`deck:English`), tag (`tag:high-frequency`), state (`is:due`), property (`prop:ivl>30`) multi-dimensional filtering
-- Combined search: support multi-condition combination like `deck:English tag:verb is:due`
-
-**📝 Cloze Support**
-- Fully compatible with Anki cloze format
-- Support basic cloze `{{c1::answer}}` and hint cloze `{{c1::answer::hint}}`
-- Support multiple cloze positions, auto-display corresponding cloze based on card number
-- Front shows `[...]` or `[hint]`, back shows all answers highlighted
-
-#### 🚀 Performance Optimization
-
-**📦 Media Loading Optimization**
-- Complete media loading system refactor, 40x performance improvement
-- Three-tier cache architecture: Blob cache (30MB) + Zip cache (2 files) + network fetch
-- Subsequent image loading reduced from ~2000ms to ~50ms
-- LRU eviction strategy + 5-minute TTL auto-cleanup, total memory controlled at ≤60MB
-
-#### 🔧 Feature Improvements
-
-**📁 Smart Folder Naming**
-- Folders named based on deck names like `col-English-Words`, `col-Japanese-Words`
-- Auto-increment on duplicate import: `col-English-Words-1`, `col-English-Words-2`
-
-**🔄 Data Sync Mechanism**
-- Auto-sync database and folders on startup to maintain data consistency
-- Auto-delete corrupted collections and associated decks from database
-- Auto-recognize manually copied folders and add to database
-
-**🏗️ Architecture Optimization**
-- Unified error handling return format, simplified conditional logic
-- Collection and Deck dual deduplication to avoid duplicate imports
-
-#### 🐛 Bug Fixes
-- Fixed deck not displaying after import
-- Fixed parent-child deck ID conflict issue
-- Fixed collection deletion not cleaning up files
-
----
-
-### v0.8.2 (2026.2.4)
-
-#### ✨ New Features
-- **Script Support** - Cards now support loading and executing script content for interactive features (e.g., dictionary lookup, audio playback)
-- **Tag Image Display** - Automatically extract image info from card scripts, display corresponding images based on tags, works on both front and back
-
-#### 🔧 Improvements
-- Image processing code reduced by 78%, smoother operation, 10x faster matching
-- Auto-detect and select optimal database file, auto-handle compressed formats
-- Enhanced robustness, unified path handling, optimized caching
-
-#### 🐛 Bug Fixes
-- Fixed issues where some card images failed to load
-- Fixed image information loss during processing
-- Fixed tag images not displaying on back side
-
----
-
-### v0.8.1 (2026.2.3)
-
-#### ✨ New Features
-
-**🎨 Deck Template Editor**
-- **View Template Info** - Display deck field list, front template, back template
-- **Edit Templates** - Support editing front template, back template, and CSS styles
-- **Live Preview** - Preview changes immediately, support front/back toggle
-- **Auto Save** - Changes auto-save, settings persist on next open
-
-**🎯 Complete Anki Template System Support**
-- **Template Syntax** - Full support for Anki template syntax (conditional display, nested conditions, front content reference)
-- **Advanced Filters** - Japanese furigana, kanji/kana extraction, hint buttons, type input, plain text
-- **Perfect Styling** - Custom fonts, colors, layouts all work correctly
-- **Math Formulas** - Auto-recognize and render LaTeX formulas (inline and block)
-- **Card Editing** - Support direct editing of card content (front/back independent editing)
-
-**📦 Full Support for New Anki Format**
-- **Auto Format Detection** - Support `.anki21b` (compressed), `.anki2`, `.anki21` all formats
-- **Smart Decompression** - Auto-handle compressed database and media files
-- **Backward Compatible** - Perfect compatibility with old Anki formats
-- **Hierarchical Decks** - Correctly recognize and import multi-level deck structures
-
-#### 🐛 Bug Fixes
-
-- **✅ Database Initialization** - Fixed database creation failure after plugin update
-- **✅ Statistics Page Error** - Fixed error when clicking "Total" tab with no learning data
-
-#### ⚡ Performance Optimization
-
-- **Emoji Picker** - Load 50 emojis initially, scroll to load more, faster opening
-- **Code Simplification** - Optimized code structure, reduced 20% code size, smoother operation
-- **Style Unification** - Unified style management, more coordinated interface
-
----
-
-### v0.8.0 (2026.2.1)
-
-> **⚠️ Important Notice for Next Version**  
-> - **Database Unification**: v0.9.0 will unify all data storage into a single SQLite database. **This is a breaking update, please backup your data in advance**  
-> - **Membership Features**: v0.9.0 will introduce professional subscription to unlock more advanced features
-
-#### ✨ New Features
-
-- **📦 Anki Deck Import** - Full support for .apkg file import, preserving deck structure and card content
-  - Auto-parse Anki database, extract decks, cards, templates
-  - Auto-extract media files (images, audio) and load on-demand
-  - **Note**: Current version does not support importing original learning progress, multi-level deck structure, custom CSS styles. Will be supported in future versions
-  
-- **🎴 Complete Flashcard Learning System** - Professional spaced repetition learning functionality
-  - Four-level rating system: Again, Hard, Good, Easy
-  - Smart learning queue: new cards, learning, review cards auto-sorted
-  - Learning steps: support custom learning steps (e.g., 1 minute, 10 minutes, 1 day)
-  - Daily limits: set daily new cards and review cards limits
-  - Deck enable/disable: flexible learning content control
-  - Study session: record study start time and statistics
-  
-- **📊 Multi-dimensional Data Statistics** - Comprehensive learning data analysis and visualization
-  - **Today's Stats**: new cards, reviews, correct rate, streak days
-  - **Today's Rating**: ring chart showing rating distribution (again/hard/good/easy)
-  - **Memory Curve**: line chart showing 7-day/30-day memory retention trend
-  - **Overall Stats**: total cards, reviewed, average correct rate, streak days
-  - **Lapse Analysis**: categorized by lapse count (0, 1-2, 3-5, >5)
-  - **Learning Efficiency**: bubble chart showing review count vs interval days (efficient mastery/steady progress/needs consolidation/difficult cards)
-  - **Memory Strength**: categorized by Ease value (difficult<130%, average 130-200%, good 200-250%, excellent≥250%)
-  - **FSRS Stats**: target retention, FSRS cards, average stability, average difficulty
-  - **Difficulty Distribution**: radar chart showing FSRS difficulty distribution (easy/medium/hard/very hard)
-  - **Interval Distribution**: ring chart showing interval distribution (<1 day, 1-3 days, 4-14 days, ≥15 days)
-  - **Review Intervals**: detailed interval distribution (<1 day, 1-7 days, 1-4 weeks, 1-3 months, 3-6 months, >6 months)
-  - **Study Calendar**: heatmap showing annual study activity, support date filtering and navigation
-  
-- **🧠 FSRS Algorithm Integration** - Advanced spaced repetition algorithm
-  - Support FSRS (Free Spaced Repetition Scheduler) algorithm
-  - Auto-calculate card stability and difficulty
-  - Set desired memory retention rate (default 90%)
-  - Support custom FSRS weight parameters
-  - Seamless switch with traditional SM-2 algorithm
-  
-- **💾 Independent Database Management** - High-performance data storage solution
-  - Use SQL.js to implement client-side SQLite database (WebAssembly version)
-  - Separate learning progress and card content for optimized query performance
-  - Support complex queries: filter by state, interval, difficulty, date
-  - Auto-indexing optimization, support large card collections (10000+)
-  - Data persistence to SiYuan Notes `/data/storage/petal/siyuan-sireader/`
-  - Support Anki database and SiYuan database dual storage
-  
-- **⚙️ Comprehensive Deck Settings** - 20+ configurable parameters
-  - **Daily Limits**: new cards/review cards daily count (default 20/200)
-  - **Learning Steps**: new card learning steps (default 1,10 minutes), graduating interval (1 day), easy interval (4 days)
-  - **Lapse Handling**: relearning steps (10 minutes), minimum interval (1 day), leech threshold (8 times)
-  - **Display Order**: new card order (random/sequential), review sort (due/random/interval), new review priority (mixed/new first/review first), new card collection priority (deck/position/random)
-  - **FSRS Options**: enable/disable, desired retention (default 90%), custom weights
-  - **Advanced Options**: maximum interval (36500 days), starting ease (2.5), easy bonus (1.3), interval modifier (1.0), hard interval (1.2), new interval (0.0)
-  - **Related Cards**: related new cards/review cards temporarily hidden (avoid showing related content simultaneously)
-  - **Future Support**: audio settings, timer, auto-advance, easy days, notebook binding will be implemented in future versions
-
-#### ⚡ Performance Optimization
-
-- **🚀 Database Query Optimization** - Add indexes for high-frequency query fields, improve query speed by 10x+
-- **💾 Caching Mechanism** - Anki database caching to avoid repeated loading
-- **📦 Lazy Loading** - Media files (images, audio) extracted on-demand from .apkg, reduce memory usage
-- **🔄 Batch Operations** - Support batch import, batch update, improve large card collection processing efficiency
-
-#### 🐛 Bug Fixes
-
-- **📊 Statistics Accuracy** - Fix incorrect streak days calculation
-- **🎴 Card State Sync** - Fix inaccurate learning progress save timing
-- **💾 Database Initialization** - Fix database creation failure on first use
-
-
-
-## 📖 Feature Details
-
-### 🎨 Theme System
-8 preset themes for different scenarios, support custom themes:
-- **Default** - Classic white background with black text
-- **Almond** - Eye-protection color scheme
-- **Autumn** - Warm tone
-- **Green** - Fresh and eye-friendly
-- **Blue** - Calm and peaceful
-- **Night** - Dark background
-- **Dark** - Pure black mode
-- **Gold** - Luxury color scheme
-
-### 🖊️ Annotation System
-7 colors with 4 style combinations:
-- **Colors** - Red🔴Orange🟠Yellow🟡Green🟢Pink🩷Blue🔵Purple🟣
-- **Styles** - Highlight, underline, border, wavy
-- **Notes** - Add detailed notes to annotations
-- **Management** - Filter by color, batch management
-
-### 📖 Dictionary System
-9 professional dictionary sources with smart recognition:
-- **AI Translation** - Free AI translation (no config), SiYuan AI translation (requires OpenAI API)
-- **Offline Dictionary** - Support StarDict (.ifo/.idx/.dict.dz) and dictd (.index/.dict.dz) formats
-- **English Dictionary** - Cambridge (bilingual, phonetics, audio, examples), Youdao (simple), Haici (rich examples)
-- **Chinese Dictionary** - Character (radicals, strokes), Phrase (synonyms, antonyms), Zdic (classical Chinese)
-- **Universal Dictionary** - Bing (external webpage)
-
-**Key Features:**
-- **Smart Parsing** - Auto-extract POS, tags, annotations, domains, usage
-- **Long Text Translation** - AI translation supports long text and paragraphs with format preservation
-- **Dictionary Sorting** - Customizable dictionary query order
-- **Offline Query** - Offline dictionaries work without network, fast query
-- **Audio Pronunciation** - Cambridge dictionary supports US/UK pronunciation
-
-### 🔊 TTS Text-to-Speech System
-Complete voice reading functionality with smart playback scenarios:
-
-**Voice Options:**
-- **Online Voices** - Edge TTS with 100+ voices in multiple languages
-- **Local Voices** - Browser built-in TTS (no network required)
-- **Voice Management** - Favorite commonly used voices for quick access
-- **Speed Control** - Adjustable playback speed (0.5x - 2.0x)
-
-**Smart Playback Scenarios:**
-- **Loop Selected Text** - Select text → Click speak button in selection menu → Loop play selected content, auto-stop when selection cancelled
-- **Play from Selected Paragraph** - Select text → Click bottom play button → Play continuously from selected paragraph onwards
-- **Play from Current Page** - No selection → Click bottom play button → Play continuously from current page onwards
-- **Pause/Resume** - Click play button during playback to pause, click again to resume
-- **Auto-stop on Navigation** - Automatically stops on page turn or jump to avoid position confusion
-- **New Position Playback** - After page turn, click play to start from new page; select new text to start from new position
-
-**Reading Features:**
-- **Precise Highlighting** - PDF highlights current text precisely with auto page turn
-- **Auto-scrolling** - EPUB automatically scrolls to current paragraph
-- **Text Extraction** - Smart paragraph recognition for EPUB and PDF
-- **Preload Mechanism** - Preload 3 paragraphs for seamless playback
-- **Settings** - Text highlighting toggle, auto page turn, playback speed
-
-### 🔍 Book Source System
-Powerful rule parser:
-- **JSONPath** - `$.key`, `$[0]`, `$[*]`, `.key` recursive search
-- **CSS Selectors** - Chain selection, index filtering, attribute extraction
-- **JavaScript** - `<js>...</js>` code block, `result` variable passing
-- **Regex** - `##regex##replace` syntax
-- **Rule Combination** - `&&` (and), `||` (or), `%%` (cross merge)
-
-### 🛠️ PDF Toolbar
-Professional PDF reading tools:
-- **Zoom Control** - Zoom in, zoom out, fit width, fit page
-- **Rotation** - Rotate left/right 90°
-- **Tool Modes** - Text selection, hand drag
-- **Ink Annotation** - 7 colors, width adjustment, eraser, undo
-- **Shape Annotation** - Rectangle, circle, triangle with fill support
-- **Document Operations** - Print, download, export images, view metadata
-
-### 📊 Reading Statistics
-Track reading time:
-- **Current Session** - Current reading session time
-- **Today** - Today's total reading time
-- **Total** - Cumulative reading time
-- **Status Bar** - Real-time display in status bar
-- **Auto Save** - Auto-save every minute
-
-### 🔗 Copy & Jump
-Smart link generation:
-- **Annotation Copy** - One-click copy to SiYuan note format
-- **Custom Template** - Support custom link format
-- **Shape Screenshot** - Auto-generate shape annotation screenshots
-- **Precise Jump** - Click link to jump to exact annotation position
-- **Blink Hint** - Highlight blink effect after jump
-
-### 📦 Deck System
-Vocabulary learning and review:
-- **One-click Add** - Add word lookup results to deck with one click
-- **Reading Annotation** - Deck words show 🌐 icon in reading interface
-- **Real-time Sync** - Immediately update reading interface after add/delete
-- **Data Persistence** - Store as `deck.json` file
-- **Position Record** - Record word location in book, chapter, page
-- **Smart Annotation** - Deck words auto-highlight in purple
-
-### 🎴 Flashcard Learning System
-Complete spaced repetition learning functionality:
-
-**Anki Deck Import:**
-- **Full Compatibility** - Support .apkg file import with all data preserved
-- **Learning Progress** - Retain original intervals, difficulty, review counts
-- **Deck Structure** - Support multi-level decks (e.g., Language::English::Vocabulary)
-- **Media Files** - Auto-extract images and audio, load on-demand
-- **Custom Templates** - Preserve Anki card templates and CSS styles
-
-**SiYuan Flashcard Bidirectional Sync:**
-- **Import Function** - Click "Import SiYuan" in deck management, two-step selection to complete import
-- **7 Card Types** - Support mark cards, heading blocks, list blocks, super blocks, Q&A, multi-line, default
-- **Cloze Support** - Full support for `{{c1::answer::hint}}` and `==mark==` formats, multiple clozes supported
-- **Real-time Sync** - WebSocket monitors SiYuan flashcard changes, auto-sync to plugin
-  - SiYuan adds flashcard → Auto-import to plugin deck
-  - SiYuan deletes flashcard → Auto-delete corresponding card in plugin
-  - SiYuan modifies flashcard content → Auto-update card content in plugin
-  - Plugin modifies card → Can sync back to SiYuan notes (support locate and delete)
-- **Tag Management** - Imported cards auto-add `siyuan` tag, preserve original block ID and deck ID
-
-**Learning Features:**
-- **Four-level Rating** - Again, Hard, Good, Easy
-- **Smart Queue** - Auto-sort new cards, learning cards, review cards
-- **Learning Steps** - Customizable steps (e.g., 1 minute, 10 minutes, 1 day)
-- **Daily Limits** - Set daily new cards and review cards limits
-- **Deck Management** - Enable/disable decks for flexible learning control
-- **Study Session** - Track study time and statistics
-
-**FSRS Algorithm:**
-- **Advanced Algorithm** - Free Spaced Repetition Scheduler
-- **Smart Calculation** - Auto-calculate card stability and difficulty
-- **Memory Optimization** - Set desired retention rate (default 90%)
-- **Custom Weights** - Support custom FSRS parameters
-- **Seamless Switch** - Free switch between FSRS and traditional SM-2
-
-**Data Statistics:**
-- **Today's Stats** - New cards, reviews, correct rate, study time, rating distribution
-- **History** - 365-day study data with chart visualization
-- **Overall Stats** - Total cards, reviews, study days, average correct rate, streak
-- **Interval Distribution** - Statistics by time range (<1 day, 1-7 days, 1-4 weeks, etc.)
-- **Retention Rate** - Memory effectiveness by interval and difficulty
-- **Forecast** - Predict study load for next 7 and 30 days
-
-**Deck Settings (30+ Parameters):**
-- **Daily Limits** - New cards/review cards per day
-- **Learning Steps** - New card steps, graduating interval, easy interval
-- **Lapse Handling** - Relearning steps, minimum interval, leech threshold
-- **Display Order** - New card order (random/sequential), review sort (due/random/interval)
-- **FSRS Options** - Enable/disable, desired retention, custom weights
-- **Advanced Options** - Maximum interval, starting ease, easy bonus, interval modifier
-- **Related Cards** - Temporarily hide related new cards/review cards (avoid showing related content simultaneously)
-- **Audio Settings** - Auto-play, answer audio
-- **Timer** - Show timer, maximum answer time
-- **Auto-advance** - Auto-show answer, auto-next card
-
-**Database Management:**
-- **High Performance** - Browser-based SQLite using SQL.js
-- **Separated Storage** - Learning progress and card content separated for optimized queries
-- **Complex Queries** - Filter by state, interval, difficulty, date
-- **Auto-indexing** - Support large card collections (10000+)
-- **Data Persistence** - Store in SiYuan `/data/storage/petal/siyuan-sireader/`
-- **Dual Database** - Anki database and SiYuan database coexist
-
-### 📚 Bookshelf Management
-Complete book management system:
-- **Multi-view** - Grid, list, compact display modes
-- **Smart Sorting** - Recently added, recently read, reading progress, title, author
-- **Tag Filtering** - Filter by book tags
-- **Progress Display** - Real-time reading progress percentage
-- **Update Check** - One-click check all online book updates
-- **Metadata Parsing** - Auto-extract title, author, intro, chapters, cover
-- **Batch Management** - Support batch delete, export books
-
-### 🔗 Smart Jump
-Precise positioning and jump:
-- **sireader:// Protocol** - Support custom protocol links
-- **CFI Positioning** - EPUB uses CFI for precise positioning
-- **Page Positioning** - PDF uses page number and rectangle coordinates
-- **Blink Hint** - Highlight blink effect after jump
-- **Smart Detection** - Auto-detect opened books, jump directly
-
-### 📱 Mobile Support (Experimental)
-Initial mobile reading support:
-- **Gesture Navigation** - Swipe left/right to turn pages (minimum 50px)
-- **Position Memory** - Auto-save and restore reading position
-- **Back Support** - Listen to browser back button
-- **Sidebar Entry** - Add SiReader icon to mobile sidebar
-
----
-
-## ⚙️ Settings
-
-### General Settings
-- **Open Mode** - New tab, right tab, bottom tab, new window
-- **Navigation Position** - Left, right, top, bottom
-- **TOC Position** - Left, right
-- **Reading Mode** - Single, double, scroll
-- **Page Animation** - Slide, none
-
-### Appearance Settings
-- **Theme** - 8 preset themes + custom
-- **Text** - Font, size, letter spacing
-- **Paragraph** - Line height, paragraph spacing, text indent
-- **Layout** - Horizontal margin, vertical margin, column gap
-- **Visual** - Brightness, contrast, sepia, saturation, invert
-
-### Dictionary Settings
-- **Offline Dictionary** - StarDict/MDict format, support upload, sort, enable/disable
-- **Online Dictionary** - 9 dictionary sources, support sort, enable/disable
-- **AI Translation** - Free AI (no config), SiYuan AI (requires OpenAI API)
-- **Dictionary Management** - Customize query order, prioritize dictionaries at the top
+## 💎 Membership Features
+
+### Feature Comparison
+
+| Category | Feature | 🆓 Free | ⭐ Trial | 💎 Monthly | 👑 Annual | 🏆 Lifetime |
+|----------|---------|---------|---------|-----------|----------|-----------|
+| **📚 Reading** | Format Support | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Themes | Default | 8 + Custom | 8 + Custom | 8 + Custom | 8 + Custom |
+| | Reading Modes | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Page Animation | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Text Settings | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Layout Settings | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Visual Enhancement | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Statistics | Simple | Full | Full | Full | Full |
+| | TOC Navigation | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Footnote Recognition | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Full-text Search | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | PDF Toolbar | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **🖊️ Annotation** | Colors | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Styles | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Quick Annotate | - | - | - | ✓ | ✓ |
+| | PDF Advanced | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Note System | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Bookmarks | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Line Notes | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Management | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Quick Send | - | - | - | ✓ | ✓ |
+| | Auto-sync SiYuan | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Undo | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Custom Link Format | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **🔊 TTS** | TTS Function | - | ✓ | ✓ | ✓ | ✓ |
+| | Online Voices | - | - | ✓ | ✓ | ✓ |
+| | Local Voices | - | ✓ | ✓ | ✓ | ✓ |
+| | Smart Playback | - | ✓ | ✓ | ✓ | ✓ |
+| | Selected Text | - | ✓ | ✓ | ✓ | ✓ |
+| | Precise Highlighting | - | ✓ | ✓ | ✓ | ✓ |
+| | Playback Control | - | ✓ | ✓ | ✓ | ✓ |
+| | Voice Parameters | - | ✓ | ✓ | ✓ | ✓ |
+| **📚 Bookshelf** | Basic | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Folder Groups | - | ✓ | ✓ | ✓ | ✓ |
+| | Smart Groups | - | - | ✓ | ✓ | ✓ |
+| | Assets Sync | - | - | ✓ | ✓ | ✓ |
+| | Sorting | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | View Modes | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Multi-filter | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | View Book Info | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Edit Book Info | - | ✓ | ✓ | ✓ | ✓ |
+| | Document Binding | - | ✓ | ✓ | ✓ | ✓ |
+| | Batch Operations | - | ✓ | ✓ | ✓ | ✓ |
+| | Add Methods | Local files | Local/Link/Path | Local/Link/Path | Local/Link/Path | Local/Link/Path |
+| **🔍 Search** | Online Sources | - | - | ✓ | ✓ | ✓ |
+| | Custom Sources | - | - | ✓ | ✓ | ✓ |
+| | Source Management | - | - | ✓ | ✓ | ✓ |
+| | Format Filter | - | - | ✓ | ✓ | ✓ |
+| | Chapter Search | - | - | ✓ | ✓ | ✓ |
+| **🎴 Flashcard** | Basic | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Anki Import | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Spaced Repetition | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Deck Management | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Learning Settings | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Statistics Charts | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Template Editing | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Advanced Search | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Special Cards | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | SiYuan Sync | - | - | ✓ | ✓ | ✓ |
+| | FSRS Algorithm | - | - | - | ✓ | ✓ |
+| **📖 Dictionary** | Online | 2 (Youdao/Bing) | All 7 | All 7 | All 7 | All 7 |
+| | Offline | - | ✓ | ✓ | ✓ | ✓ |
+| | Smart Recognition | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Management | - | ✓ | ✓ | ✓ | ✓ |
+| | Add to Deck | - | ✓ | ✓ | ✓ | ✓ |
+| **🌐 Translation** | Services | - | ✓ | ✓ | ✓ | ✓ |
+| | Selected Text | - | ✓ | ✓ | ✓ | ✓ |
+| **⚙️ Others** | Custom Shortcuts | - | ✓ | ✓ | ✓ | ✓ |
+| | Data Management | ✓ | ✓ | ✓ | ✓ | ✓ |
+| | Mobile Support | PDF | PDF | PDF | PDF | PDF |
+| | Technical Support | Community | Community | Priority | Priority | Highest |
+| | New Features | - | - | - | Priority | Highest Priority |
+| | Updates | Free | Free | Free | Free | Lifetime Free |
+
+### Membership Tiers
+
+**🆓 Free** - Basic reading + Full annotation + Full flashcard  
+**⭐ Trial (7 days)** - Full features (except Quick annotate/Quick send/Online search/SiYuan sync/FSRS)  
+**💎 Monthly** - Full features (except Quick annotate/Quick send/FSRS)  
+**👑 Annual** - Full features + Quick annotate + Quick send + FSRS + Priority support  
+**🏆 Lifetime** - All features + Lifetime updates + Highest priority
 
 ---
 
 ## 💡 Tips
 
 ### Reading Tips
-1. **Theme Switch** - Use default/almond in daytime, night/dark at night
-2. **Reading Mode** - Use page+single for novels, scroll+double for academic
-3. **Shortcuts** - ← → for page turn, Space for page turn, PageUp/Down for page turn
+- **Theme Switch** - Use Default/Almond in daytime, Night/Dark at night
+- **Shortcuts** - ← → for page turn, Space for page turn, PageUp/Down for page turn
 
 ### Annotation Tips
-1. **Color Classification** - Red for core concepts, yellow for general points, green for positive cases, blue for supplementary, purple for questions
-2. **Annotation Review** - Regularly review in annotation mode
-3. **Annotation Export** - Auto-save to SiYuan notes
+- **Color Classification** - Red for core concepts, Yellow for general points, Green for positive cases, Blue for supplementary, Purple for questions
+- **Quick Annotate** - Select color in toolbar then select text to annotate, Ctrl+Z to undo
 
 ### Dictionary Tips
-1. **Quick Lookup** - Double-click to select and query
-2. **Pin Window** - Click 📌 to pin dictionary window
-3. **Multi-dictionary** - Switch between different dictionary tabs
-4. **Offline Dictionary** - Download StarDict format dictionaries, upload and use without network
-5. **AI Translation** - Support long text translation with format and paragraph preservation
-6. **Dictionary Sorting** - Adjust order in dictionary management, prioritize frequently used dictionaries
+- **Quick Lookup** - Double-click to select and query
+- **Offline Dictionary** - Download StarDict format dictionaries, Upload and use without network
+- **Dictionary Sorting** - Adjust order in dictionary management, Prioritize frequently used dictionaries
 
 ### PDF Tips
-1. **Ink Annotation** - Suitable for handwritten notes and highlighting
-2. **Shape Annotation** - Rectangle selection, circle marking, triangle indication
-3. **Toolbar Drag** - Long press toolbar button to drag position
-4. **Hand Tool** - Enable to drag pages, suitable for large documents
-
-### Book Source Tips
-1. **Concurrent Search** - Search multiple sources simultaneously
-2. **Custom Sources** - Support importing JSON format sources
-3. **Rule Debugging** - Use browser developer tools to test rules
-
----
-
-## 🏗️ Technical Architecture
-
-### Core Modules
-- **Foliate.js** - EPUB rendering engine with CFI positioning
-- **PDF.js** - Mozilla's PDF rendering engine (SiYuan built-in)
-- **RuleParser** - Multi-format book source parser (JSONPath/CSS/XPath/JS/Regex)
-- **MarkManager** - Unified annotation manager for PDF/EPUB/TXT
-- **Bookshelf** - Book metadata and progress management
-
-### Key Features
-- **Unified Annotation** - Single API for PDF/EPUB/TXT annotations
-- **Smart Positioning** - CFI for EPUB, page+rect for PDF, section for TXT
-- **Real-time Sync** - Auto-save reading progress and annotations
-- **Deck Integration** - Vocabulary cards sync with reading interface
-- **Mobile Support** - Gesture navigation and position memory
+- **Ink Annotation** - Suitable for handwritten notes and highlighting
+- **Shape Annotation** - Rectangle selection, Circle marking, Triangle indication
+- **Toolbar Drag** - Long press toolbar button to drag position
 
 ---
 
@@ -881,23 +249,11 @@ A: SiYuan AI requires OpenAI API configuration in Settings → AI, or use "AI Tr
 **Q: Offline dictionary not working?**  
 A: Ensure complete dictionary files (.ifo/.idx/.dict.dz or .index/.dict.dz) are uploaded and enabled in dictionary management
 
-**Q: Dictionary results inaccurate?**  
-A: Switch between different dictionaries for comparison, or adjust dictionary query order
-
 **Q: Theme switch not working?**  
 A: Refresh reader page or reopen the file
 
 **Q: PDF annotations misaligned?**  
 A: Try rescaling or rotating the page, annotations will auto re-render
-
-**Q: Book source search failed?**  
-A: Check network connection, some sources may be invalid, try other sources
-
-**Q: Can't turn pages on mobile?**  
-A: Ensure swipe distance exceeds 50px, or use bottom page buttons
-
-**Q: Reading progress lost?**  
-A: Plugin auto-saves progress, if issues occur try reopening the book
 
 ---
 
@@ -906,7 +262,6 @@ A: Plugin auto-saves progress, if issues occur try reopening the book
 - [SiYuan](https://github.com/siyuan-note/siyuan) - Excellent plugin development framework
 - [Foliate.js](https://github.com/johnfactotum/foliate-js) - Powerful EPUB rendering engine
 - [PDF.js](https://github.com/mozilla/pdf.js) - Mozilla's PDF rendering engine
-- [Guiye Plugin](https://github.com/Wetoria) - Vue3 + Vite plugin template
 
 ---
 

@@ -13,12 +13,12 @@ export interface OnlineDict{id:string;name:string;icon:string;enabled:boolean;ur
 export interface DictConfig{dicts:{id:string;name:string;type:string;enabled:boolean;files:any}[];online?:{id:string;enabled:boolean}[]}
 export interface DictCardData{word:string;phonetic?:string;phonetics?:{text:string;audio?:string}[];badges?:{text:string;gradient:boolean}[];meanings?:{pos:string;text:string}[];defs?:string[];examples?:{en:string;zh:string}[];extras?:{label:string;text:string}[];meta?:string}
 
-const DICT_NAMES:Record<string,string>={ai:'AI','ai-free':'AI(免费)',cambridge:'剑桥',youdao:'有道',haici:'海词',mxnzp:'汉字',ciyu:'词语',zdic:'汉典',offline:'离线',bing:'必应'}
+const DICT_NAMES:Record<string,string>={cambridge:'剑桥',youdao:'有道',haici:'海词',mxnzp:'汉字',ciyu:'词语',zdic:'汉典',offline:'离线',bing:'必应'}
 export const getDictName=(id:string)=>DICT_NAMES[id]||id
 
 export const POS_MAP:Record<string,{name:string;color:string}>={n:{name:'n.',color:'#2563eb'},noun:{name:'n.',color:'#2563eb'},v:{name:'v.',color:'#059669'},verb:{name:'v.',color:'#059669'},vt:{name:'vt.',color:'#047857'},vi:{name:'vi.',color:'#0d9488'},a:{name:'adj.',color:'#d97706'},adj:{name:'adj.',color:'#d97706'},adjective:{name:'adj.',color:'#d97706'},ad:{name:'adv.',color:'#ea580c'},adv:{name:'adv.',color:'#ea580c'},adverb:{name:'adv.',color:'#ea580c'},prep:{name:'prep.',color:'#7c3aed'},conj:{name:'conj.',color:'#9333ea'},pron:{name:'pron.',color:'#db2777'},int:{name:'int.',color:'#dc2626'},art:{name:'art.',color:'#4f46e5'}}
 
-export const ONLINE_DICTS:OnlineDict[]=[{id:'ai-free',name:'AI翻译(免费)',icon:'#iconSparkles',enabled:true,desc:'免费AI翻译，无需配置'},{id:'ai',name:'AI翻译(思源)',icon:'#iconSparkles',enabled:true,desc:'使用思源AI智能翻译'},{id:'cambridge',name:'剑桥',icon:'#iconLanguage',enabled:true,desc:'英汉双解，支持发音'},{id:'youdao',name:'有道',icon:'https://shared.ydstatic.com/images/favicon.ico',enabled:true,desc:'英汉词典，简洁快速'},{id:'haici',name:'海词',icon:'https://dict.cn/favicon.ico',enabled:true,desc:'英汉词典，例句丰富'},{id:'mxnzp',name:'汉字',icon:'#iconA',enabled:true,desc:'汉字字典，详细解释'},{id:'ciyu',name:'词语',icon:'#iconFont',enabled:true,desc:'汉语词语，成语典故'},{id:'zdic',name:'汉典',icon:'https://www.zdic.net/favicon.ico',enabled:true,desc:'汉字词语查询'},{id:'bing',name:'必应',icon:'https://cn.bing.com/favicon.ico',enabled:true,url:'https://cn.bing.com/dict/search?q={{word}}',desc:'必应词典网页版'}]
+export const ONLINE_DICTS:OnlineDict[]=[{id:'youdao',name:'有道',icon:'https://shared.ydstatic.com/images/favicon.ico',enabled:true,desc:'英汉词典，简洁快速'},{id:'bing',name:'必应',icon:'https://cn.bing.com/favicon.ico',enabled:true,url:'https://cn.bing.com/dict/search?q={{word}}',desc:'必应词典网页版'},{id:'cambridge',name:'剑桥',icon:'#iconLanguage',enabled:true,desc:'英汉双解，支持发音'},{id:'haici',name:'海词',icon:'https://dict.cn/favicon.ico',enabled:true,desc:'英汉词典，例句丰富'},{id:'mxnzp',name:'汉字',icon:'#iconA',enabled:true,desc:'汉字字典，详细解释'},{id:'ciyu',name:'词语',icon:'#iconFont',enabled:true,desc:'汉语词语，成语典故'},{id:'zdic',name:'汉典',icon:'https://www.zdic.net/favicon.ico',enabled:true,desc:'汉字词语查询'}]
 
 let plugin:Plugin|null=null,onlineDicts=[...ONLINE_DICTS]
 
@@ -249,44 +249,7 @@ const mergeExtras=(extrasArray:{label:string;text:string}[][])=>{
   return Array.from(map).map(([label,texts])=>({label,text:Array.from(texts).join('、')}))
 }
 
-const AI_PROMPT=`你是专业翻译人员，母语为{{to}}。任务：将输入文本翻译成标准、地道的{{to}}。执行前先判断输入语言。规则：1.如文本包含{{to}}句子或段落，仅{{to}}部分原样输出（含标点、空白符），不翻译、润色或改写。其他非{{to}}部分翻译成自然流畅的{{to}}。2.多语言混合段落，把所有文本看做整体，仅{{to}}部分原样保留，剩余非{{to}}继续翻译。3.严格保留原文段落数量、空格（含行首空格）、空白符、缩进、换行符、标点符号等格式，必须与原文完全一致。4.保留HTML标签结构并保证语义通顺。5.不翻译专有名词、代码。输出：1.不输出任何说明、解释或注释（如"翻译如下："、"（注：xxx)"等）。2.直接返回译文文本，不用JSON格式。3.保留所有原始格式，若原文行首有空格，译文也必须有相同数量空格。4.换行符、标点符号、空白符必须与原文一致。5.不参考历史对话，仅按上述规则执行。现在翻译：{{text}}`
 
-// AI 查询通用函数
-const queryAICommon=async(word:string,isLong:boolean,url:string,bodyFn:(prompt:string)=>any,errorMsgs:{config:string;fail:string;timeout:string;unavailable:string})=>{
-  try{
-    const isChinese=/[\u4e00-\u9fa5]/.test(word)
-    const toLang=isChinese?'us-en':'zh-cn'
-    const prompt=isLong?AI_PROMPT.replace(/\{\{to\}\}/g,toLang).replace('{{text}}',word):(isChinese?`翻译成英文并简要解释：${word}`:`翻译成中文并简要解释：${word}`)
-    const controller=new AbortController()
-    const timeoutId=setTimeout(()=>controller.abort(),60000)
-    const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyFn(prompt)),signal:controller.signal}).finally(()=>clearTimeout(timeoutId))
-    if(!res.ok)return errorMsgs.config?{word,defs:[errorMsgs.config]}:null
-    const data=await res.json()
-    if(data.code!==0||!data.data)return{word,defs:[errorMsgs.fail]}
-    const text=(data.data||await res.text()).trim().replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
-    return{word,defs:text.split('\n').filter((l:string)=>l.trim())}
-  }catch(e:any){
-    if(e.name==='AbortError')return{word,defs:[errorMsgs.timeout]}
-    return{word,defs:[errorMsgs.unavailable]}
-  }
-}
-
-async function queryAIFree(word:string,isLong=false){
-  const isChinese=/[\u4e00-\u9fa5]/.test(word)
-  return queryAICommon(word,isLong,'https://ai.bingal.com/api/v1/translate',prompt=>({text:prompt,lang:isChinese?'us-en':'zh-cn'}),{config:'',fail:'',timeout:'',unavailable:''}).catch(()=>null)
-}
-
-export async function queryAI(word:string,isLong=false){
-  // 拦截并移除思源AI的全屏加载进度条
-  const checkAndRemove=()=>{const el=document.querySelector('#progress:has(.b3-dialog__loading)');if(el)el.remove();else requestAnimationFrame(checkAndRemove)}
-  checkAndRemove()
-  return queryAICommon(word,isLong,'/api/ai/chatGPT',prompt=>({msg:prompt}),{
-    config:'思源AI 翻译功能需要配置\n请在思源笔记 设置 → AI 中配置 OpenAI API 或其他 AI 服务\n\n💡 提示：可使用"AI翻译(免费)"选项，无需配置',
-    fail:'思源AI 翻译失败，请检查 AI 配置\n\n💡 提示：可使用"AI翻译(免费)"选项',
-    timeout:'思源AI 翻译超时\n请稍后重试或减少文本长度\n\n💡 提示：可使用"AI翻译(免费)"选项',
-    unavailable:'思源AI 翻译服务不可用\n可能原因：\n• 未配置思源 AI 服务\n• API 密钥无效或额度不足\n• 网络连接问题\n\n💡 提示：可使用"AI翻译(免费)"选项'
-  })
-}
 
 // 通用查询函数：自动解析文本并提取标签
 const queryWithParse=async(word:string,fetchFn:()=>Promise<{entry:string;phonetic?:string;audio?:string;rawDefs:string[]}|null>,source:string)=>{
@@ -473,6 +436,8 @@ export async function openDict(word:string,_x?:number,_y?:number,selection?:{cfi
   
   if(selectionInfo){
     dialog.element.querySelector('#dict-deck-btn')?.addEventListener('click',async()=>{
+      const license=await(await import('@/core/license')).LicenseManager.getLicense(plugin!)
+      if(!(await import('@/core/license')).LicenseManager.can('dict-deck',license))return(await import('siyuan')).showMessage('需要体验会员',2000,'info'),(window as any)._openLicense?.()
       if(!state.data)return
       const deckSelect=dialog?.element.querySelector('#dict-deck-select')as HTMLSelectElement
       const deckId=deckSelect?.value||'default'
@@ -504,10 +469,10 @@ export async function openDict(word:string,_x?:number,_y?:number,selection?:{cfi
     })
   }
   
-  switchDict(allDicts[0]?.id||'ai')
+  switchDict(allDicts[0]?.id||'youdao')
 }
 
-function switchDict(dictId:string){
+async function switchDict(dictId:string){
   if(!dialog)return
   state.dictId=dictId
   const baseStyle='padding:4px 8px;font-size:12px'
@@ -516,18 +481,18 @@ function switchDict(dictId:string){
     btn.classList.toggle('b3-button--cancel',isActive)
     el.style.cssText=isActive?`${baseStyle};background:var(--b3-theme-primary);color:var(--b3-theme-on-primary);box-shadow:0 2px 4px rgba(0,0,0,0.2)`:baseStyle
   })
+  
+  const license=await(await import('@/core/license')).LicenseManager.getLicense(plugin!)
+  const freeDicts=['youdao','bing']
+  if(dictId==='offline'&&!(await import('@/core/license')).LicenseManager.can('dict-offline',license))return setBody('<div style="text-align:center;padding:40px 20px"><div style="font-size:16px;margin-bottom:12px">📖 离线词典</div><div style="font-size:14px;color:var(--b3-theme-on-surface-variant);margin-bottom:16px">需要体验会员</div><button class="b3-button b3-button--outline" onclick="window._openLicense && window._openLicense()" style="padding:6px 16px">去激活</button></div>')
+  if(!freeDicts.includes(dictId)&&dictId!=='offline'&&!(await import('@/core/license')).LicenseManager.can('dict-advanced',license))return setBody('<div style="text-align:center;padding:40px 20px"><div style="font-size:16px;margin-bottom:12px">📖 高级词典</div><div style="font-size:14px;color:var(--b3-theme-on-surface-variant);margin-bottom:16px">需要体验会员<br>免费版可用：有道、必应</div><button class="b3-button b3-button--outline" onclick="window._openLicense && window._openLicense()" style="padding:6px 16px">去激活</button></div>')
+  
   const dict=onlineDicts.find(d=>d.id===dictId)
   if(dict?.url)return setBody(`<iframe src="${dict.url.replace('{{word}}',state.word)}" style="width:100%;height:100%;border:none"/>`)
   
-  dictId!=='ai'&&dictId!=='ai-free'&&setBody('<div style="text-align:center;padding:20px;color:var(--b3-theme-on-surface-light)">查询中...</div>')
-  
-  const isLongText=state.word.length>50||state.word.split(/[。！？.!?]/).length>2
-  const loading=(type:string)=>`<div class="dict-loading"><div class="dict-loading-spinner"></div><div class="dict-loading-text">${type} 正在${isLongText?'翻译':'思考'}...</div></div>`
-  
+  setBody('<div style="text-align:center;padding:20px;color:var(--b3-theme-on-surface-light)">查询中...</div>')
   const queries:Record<string,()=>Promise<DictCardData|null>>={
     offline:async()=>{const r=await offlineDictManager.lookup(state.word);return r?parseOfflineDict(r):null},
-    'ai-free':async()=>{setBody(loading('免费AI'));const r=await queryAIFree(state.word,isLongText);return r?{word:isLongText?'译文':r.word,defs:r.defs}:null},
-    ai:async()=>{setBody(loading('思源AI'));const r=await queryAI(state.word,isLongText);return r?{word:isLongText?'译文':r.word,defs:r.defs}:null},
     cambridge:async()=>{const r=await queryCambridge(state.word);return r?{word:r.word,phonetics:r.phonetics.map(p=>({text:`${p.region==='us'?'美':'英'} /${p.ipa}/`,audio:'https://dictionary.cambridge.org'+p.audio})),meanings:r.parts.flatMap(p=>p.means.map(m=>({pos:p.part,text:m}))),examples:r.examples,extras:[{label:'来源',text:'剑桥词典'}]}:null},
     youdao:()=>queryYoudao(state.word),
     haici:()=>queryHaici(state.word),

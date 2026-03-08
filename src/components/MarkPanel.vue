@@ -95,7 +95,7 @@ import Translate from './Translate.vue'
 
 interface MarkSelection { text: string; location: { format: 'pdf'|'epub'; cfi?: string; section?: number; page?: number; rects?: any[] } }
 
-const props = defineProps<{ manager: MarkManager|null; i18n?: Record<string,string>; pdfViewer?: any; reader?: any; currentView?: any; ttsController?: any; ttsConfig?: any; quickMarkMode?: boolean; quickMarkColor?: HighlightColor; quickMarkStyle?: 'highlight'|'underline'|'outline'|'dotted'|'dashed'|'double'|'squiggly' }>()
+const props = defineProps<{ manager: MarkManager|null; i18n?: Record<string,string>; pdfViewer?: any; reader?: any; currentView?: any; ttsController?: any; ttsConfig?: any; quickMarkMode?: boolean; quickMarkColor?: HighlightColor; quickMarkStyle?: 'highlight'|'underline'|'outline'|'dotted'|'dashed'|'double'|'squiggly'; can?: any; showUpgrade?: any }>()
 const emit = defineEmits<{ 
   copy: [text: string, selection: any]; 
   dict: [text: string, x: number, y: number, selection: any]; 
@@ -271,11 +271,11 @@ const handleCopy=async(color?:HighlightColor,style?:MarkStyle)=>{if(!state.selec
 const toggleSendMenu=()=>{state.showSendMenu=!state.showSendMenu;state.showSendMenu&&(sendSearch.value='',sendDocs.value=[])}
 const searchSendDocs=async()=>{const k=sendSearch.value.trim();if(!k)return sendDocs.value=[];try{sendDocs.value=await(await import('@/composables/useSetting')).searchDocs(k)}catch{sendDocs.value=[]}}
 const createMark=async()=>{if(!state.selection||!props.manager)return null;const pos=state.selection.location?.cfi||state.selection.location?.page||state.selection.location?.section;if(!pos)return null;return await props.manager.addHighlight(pos,state.selection.text.trim(),props.quickMarkColor||'blue',props.quickMarkStyle||'highlight',state.selection.location.rects,state.selection.location.textOffset)}
-const handleSendToDoc=async(docId:string)=>{if(!docId)return;const mark=await createMark();if(mark)await(await import('@/utils/copy')).sendMarkToDoc(mark,docId,{bookUrl:(window as any).__currentBookUrl||'',isPdf:isPdf.value,showMsg:(m:string,t?:string)=>showMessage(m,t==='error'?2000:1500,t as any),i18n:props.i18n,marks:props.manager});closeAll()}
+const handleSendToDoc=async(docId:string)=>{if(props.can&&!props.can('quick-send'))return props.showUpgrade?.('快捷发送');if(!docId)return;const mark=await createMark();if(mark)await(await import('@/utils/copy')).sendMarkToDoc(mark,docId,{bookUrl:(window as any).__currentBookUrl||'',isPdf:isPdf.value,showMsg:(m:string,t?:string)=>showMessage(m,t==='error'?2000:1500,t as any),i18n:props.i18n,marks:props.manager});closeAll()}
 const handleCopyText=()=>{if(!state.selection)return;navigator.clipboard.writeText(state.selection.text).then(()=>showMessage(props.i18n?.copied||'已复制',1000));closeAll()}
-const handleSpeak=()=>{if(!state.selection||!props.ttsController)return;props.ttsController.speak(state.selection.text,props.ttsConfig);state.showMenu=false}
+const handleSpeak=()=>{if(!state.selection||!props.ttsController)return;if(props.can&&!props.can('tts'))return props.showUpgrade?.('TTS朗读');props.ttsController.speak(state.selection.text,props.ttsConfig);state.showMenu=false}
 const handleDict=async()=>{if(!state.selection)return;const{openDict}=await import('@/utils/dictionary');openDict(state.selection.text,state.x,state.y,{text:state.selection.text,cfi:state.selection.location?.cfi,section:state.selection.location?.section,page:state.selection.location?.page,rects:state.selection.location?.rects});state.showMenu=false}
-const handleTranslate=()=>{state.showMenu=false;state.showTranslate=true}
+const handleTranslate=()=>{if(props.can&&!props.can('translate'))return props.showUpgrade?.('翻译');state.showMenu=false;state.showTranslate=true}
 
 // 卡片操作
 const handleEdit=()=>{state.isEditing=true;nextTick(()=>noteRef.value?.focus())}

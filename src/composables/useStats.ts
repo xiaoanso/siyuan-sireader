@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { showMessage } from 'siyuan'
 import type { Plugin } from 'siyuan'
 
 export function useStats(plugin: Plugin) {

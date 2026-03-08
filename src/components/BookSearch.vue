@@ -149,9 +149,14 @@ import { bookSourceManager } from '@/utils/BookSearch'
 import { bookshelfManager } from '@/core/bookshelf'
 import { showMessage } from 'siyuan'
 import SourceMgr from './SourceMgr.vue'
+import { usePlugin } from '@/main'
+import { useLicense } from '@/composables/useLicense'
 
 const props = defineProps<{ i18n: any }>()
 const emit = defineEmits(['read'])
+
+const plugin = usePlugin()
+const { can, showUpgrade } = useLicense(plugin, props.i18n)
 
 const shelfBooks = ref(new Set<string>())
 const checkInShelf = async (book: any) => { if (await bookshelfManager.hasBook(book.bookUrl)) shelfBooks.value.add(book.bookUrl) }
@@ -219,6 +224,7 @@ const loadChapters = async () => {
 }
 
 const addToShelf = async (book: any) => {
+  if (!can.value('book-search')) return showUpgrade('在线搜书')
   try {
     const { addOnlineBook } = await import('@/core/online')
     await addOnlineBook(book, chapters.value.length ? chapters.value : undefined)
@@ -228,6 +234,7 @@ const addToShelf = async (book: any) => {
 }
 
 const addUrlBook = async (book: any) => {
+  if (!can.value('book-search')) return showUpgrade('在线搜书')
   try {
     const { httpSourceManager } = await import('@/utils/HttpSources')
     await httpSourceManager.addToBookshelf(book, bookshelfManager)

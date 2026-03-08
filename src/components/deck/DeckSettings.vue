@@ -95,7 +95,7 @@
       <h3>智能算法</h3>
       <div class="ds-field switch">
         <label>启用 FSRS 算法</label>
-        <input type="checkbox" v-model="form.enableFsrs" class="b3-switch">
+        <input type="checkbox" v-model="form.enableFsrs" class="b3-switch" @change="handleFsrsToggle">
         <small>使用思源内置的智能间隔算法,根据记忆规律自动调整复习时间</small>
       </div>
       <div v-if="form.enableFsrs" class="ds-field">
@@ -242,6 +242,11 @@ import { useConfirm } from '@/composables/useSetting'
 import { getSettingsManager } from './settings'
 import { getDatabase } from './database'
 import type { DeckSettings } from './types'
+import { usePlugin } from '@/main'
+import { useLicense } from '@/composables/useLicense'
+
+const plugin = usePlugin()
+const { can, showUpgrade } = useLicense(plugin, {})
 
 const loading = ref(true)
 const form = ref<DeckSettings | null>(null)
@@ -315,6 +320,13 @@ const save = async () => {
     window.dispatchEvent(new Event('sireader:deck-updated'))
   } catch (e) {
     console.error('[DeckSettings] Save failed:', e)
+  }
+}
+
+const handleFsrsToggle = () => {
+  if (form.value?.enableFsrs && !can.value('fsrs')) {
+    form.value.enableFsrs = false
+    showUpgrade('FSRS算法')
   }
 }
 

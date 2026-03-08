@@ -115,6 +115,8 @@ import { ref, computed, onMounted, h, watch } from 'vue'
 import { fetchSyncPost, showMessage } from 'siyuan'
 import type { Pack } from './types'
 import { syncAllSiyuanDecks } from './siyuan-card'
+import { usePlugin } from '@/main'
+import { useLicense } from '@/composables/useLicense'
 
 const props = defineProps<{
   packs: Pack[]
@@ -123,6 +125,9 @@ const props = defineProps<{
   allTags: string[]
   i18n?: any
 }>()
+
+const plugin = usePlugin()
+const { can, showUpgrade } = useLicense(plugin, props.i18n || {})
 
 const emit = defineEmits<{
   save: [data: any]
@@ -244,6 +249,7 @@ const save=()=>{if(!form.value.name.trim())return showMessage('请输入卡组�
 const confirmDelete=(id:string)=>{emit('delete',id);removing.value=null}
 
 const syncSiyuan = async () => {
+  if (!can.value('siyuan-sync')) return showUpgrade('思源闪卡同步')
   if (syncing.value) return
   syncing.value = true
   await syncAllSiyuanDecks(() => emit('reload'))

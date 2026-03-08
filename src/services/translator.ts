@@ -57,8 +57,45 @@ export async function translateYandex(text: string, targetLang: string = 'zh-CN'
   return data.translations?.[0] || text
 }
 
+export async function translateAIFree(text: string, targetLang: string = 'zh-CN'): Promise<string> {
+  const isChinese = /[\u4e00-\u9fa5]/.test(text)
+  const lang = isChinese ? `zh-CN-${targetLang}` : `en-${targetLang}`
+  const response = await fetch('https://translate.toil.cc/v2/translate/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lang, service: 'chatgpt', text })
+  })
+  const data = await response.json()
+  return data.translations?.[0] || text
+}
+
+export async function translateAISiyuan(text: string, targetLang: string = 'zh-CN'): Promise<string> {
+  const hideProgress = () => {
+    const el = document.querySelector('#progress:has(.b3-dialog__loading)')
+    if (el) el.remove()
+    else requestAnimationFrame(hideProgress)
+  }
+  hideProgress()
+  
+  const langMap: Record<string, string> = {
+    'zh-CN': '中文', 'en': 'English', 'ja': '日本語', 'ko': '한국어',
+    'fr': 'Français', 'de': 'Deutsch', 'es': 'Español', 'ru': 'Русский'
+  }
+  const targetName = langMap[targetLang] || targetLang
+  const response = await fetch('/api/ai/chatGPT', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ msg: `请将以下文本翻译成${targetName}，只返回译文，不要解释：\n\n${text}` })
+  })
+  const data = await response.json()
+  if (data.code !== 0) throw new Error(data.msg || '翻译失败')
+  return data.data || text
+}
+
 export const translators = {
   google: { name: 'Google', translate: translateGoogle },
   azure: { name: 'Azure', translate: translateAzure },
-  yandex: { name: 'Yandex', translate: translateYandex }
+  yandex: { name: 'Yandex', translate: translateYandex },
+  'ai-free': { name: 'AI翻译(免费)', translate: translateAIFree },
+  ai: { name: 'AI翻译(思源)', translate: translateAISiyuan }
 }

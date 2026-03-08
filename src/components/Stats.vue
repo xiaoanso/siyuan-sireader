@@ -8,7 +8,7 @@
         <div class="popup-item">今日: <span>{{fmt(todayTime)}}</span></div>
         <div class="popup-item">累计: <span>{{fmt(totalTime)}}</span></div>
         <div class="popup-divider"></div>
-        <button class="popup-btn" @click.stop="showDetail=true">查看详情 →</button>
+        <button class="popup-btn" @click.stop="handleViewDetail">查看详情 →</button>
       </template>
 
       <!-- 详细视图 -->
@@ -140,12 +140,15 @@
 import {ref,computed,onMounted,onUnmounted,watch,nextTick,inject} from 'vue'
 import {getDatabase} from '@/core/database'
 import {bookshelfManager} from '@/core/bookshelf'
+import {useLicense} from '@/composables/useLicense'
 
 const props=defineProps<{visible:boolean}>()
 const emit=defineEmits<{close:[];open:[book:any]}>()
 
-// 注入useStats实例
+// 注入useStats实例和plugin
 const statsComposable=inject<any>('stats')
+const plugin=inject<any>('plugin')
+const {can,showUpgrade}=useLicense(plugin,{})
 
 const popupRef=ref<HTMLElement>(),showDetail=ref(false)
 const totalBooks=ref(0),finishedCount=ref(0),annotationCount=ref(0)
@@ -261,6 +264,8 @@ const getDays=(m:number)=>{
 }
 
 const switchView=()=>calView.value=calView.value==='year'?'month':'year'
+
+const handleViewDetail=()=>{if(!can.value('reader-stats'))return showUpgrade('阅读统计');showDetail.value=true}
 
 // 统一刷新方法
 const refresh=()=>now.value=Date.now()

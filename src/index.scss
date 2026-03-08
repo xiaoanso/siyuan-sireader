@@ -334,8 +334,8 @@
     transform-origin: 0 0;
   }
   
-  ::selection { background: rgba(0,100,255,0.3); }
-  ::-moz-selection { background: rgba(0,100,255,0.3); }
+  ::selection { background: rgba(0,150,255,0.6) !important; }
+  ::-moz-selection { background: rgba(0,150,255,0.6) !important; }
 }
 
 .annotationLayer {

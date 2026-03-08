@@ -61,7 +61,7 @@
   </div>
   
   <!-- 统一标注弹窗 -->
-  <MarkPanel ref="markPanelRef" :manager="markManager" :pdf-viewer="pdfViewer" :reader="reader" :current-view="currentView" :i18n="i18n" :tts-controller="ttsController" :tts-config="currentSettings?.tts" :quick-mark-mode="quickMarkMode" :quick-mark-color="COLORS[quickMarkColor].color" :quick-mark-style="quickMarkStyle" @copy="(text,sel)=>handleCopy({text,cfi:sel?.cfi,page:sel?.page,section:sel?.section,rects:sel?.rects,textOffset:sel?.textOffset})" @dict="handleOpenDict" @copy-mark="handleCopy" />
+  <MarkPanel ref="markPanelRef" :manager="markManager" :pdf-viewer="pdfViewer" :reader="reader" :current-view="currentView" :i18n="i18n" :tts-controller="ttsController" :tts-config="currentSettings?.tts" :quick-mark-mode="quickMarkMode" :quick-mark-color="COLORS[quickMarkColor].color" :quick-mark-style="quickMarkStyle" :can="can" :show-upgrade="showUpgrade" @copy="(text,sel)=>handleCopy({text,cfi:sel?.cfi,page:sel?.page,section:sel?.section,rects:sel?.rects,textOffset:sel?.textOffset})" @dict="handleOpenDict" @copy-mark="handleCopy" />
 </template>
 
 <script setup lang="ts">
@@ -84,10 +84,12 @@ import { gotoPDF, gotoEPUB, restorePosition as restorePos, initJump } from '@/ut
 import { copyMark as copyMarkUtil } from '@/utils/copy'
 import { createKeyboardHandler, setupEpubKeyboard } from '@/utils/keyboard'
 import { TTSController } from '@/services/TTSPlayer'
+import { useLicense } from '@/composables/useLicense'
 
 const props = defineProps<{ file?: File; plugin: Plugin; settings?: ReaderSettings; url?: string; blockId?: string; bookInfo?: any; onReaderReady?: (r: FoliateReader) => void; i18n?: any }>()
 
 const i18n = computed(() => props.i18n || {})
+const { can, showUpgrade } = useLicense(props.plugin, i18n.value)
 const currentSettings = ref(props.settings)
 const pdfToolbarFixed = computed(() => currentSettings.value?.pdfToolbarStyle === 'fixed')
 
@@ -140,7 +142,7 @@ let shapeToolManager: ShapeToolManager | null = null
 const ttsController = new TTSController()
 const ttsEnabled = computed(() => currentSettings.value?.tts?.enabled || false)
 const ttsPlaying = computed(() => ttsController.isActive.value && !ttsController.paused.value)
-const toggleTTS = () => ttsController.toggle(() => reader, currentSettings.value?.tts)
+const toggleTTS = () => {if (!can.value('tts')) return showUpgrade('TTS朗读'); ttsController.toggle(() => reader, currentSettings.value?.tts)}
 const syncTTS = async () => ttsController.sync(currentSettings.value?.tts?.enabled || false)
 
 // Computed
@@ -303,7 +305,7 @@ const updatePageInfo=()=>{if(!pdfViewer.value)return;totalPages.value=pdfViewer.
 // 搜索
 const searchInputRef=ref<HTMLInputElement>()
 const toggleSearch=()=>{showSearch.value=!showSearch.value;if(showSearch.value){showQuickMark.value=false;quickMarkMode.value=false;setTimeout(()=>searchInputRef.value?.focus(),100)}}
-const toggleQuickMark=()=>{showQuickMark.value=!showQuickMark.value;if(showQuickMark.value)showSearch.value=false;quickMarkMode.value=showQuickMark.value}
+const toggleQuickMark=()=>{if(!can.value('quick-mark'))return showUpgrade('快速标注');showQuickMark.value=!showQuickMark.value;if(showQuickMark.value)showSearch.value=false;quickMarkMode.value=showQuickMark.value}
 const handleSearch=async()=>{
   if(!searchQuery.value.trim())return
   if(isPdfMode.value&&pdfSearcher.value){
@@ -423,7 +425,8 @@ onUnmounted(async()=>{window.dispatchEvent(new CustomEvent('reader:close'));save
 /* PDF 文本层选择优化 */
 .textLayer{position:absolute;inset:0;line-height:1;overflow:clip;opacity:1;text-size-adjust:none;forced-color-adjust:none;transform-origin:0 0;z-index:0}
 .textLayer span{color:transparent;cursor:text;position:absolute;white-space:pre;transform-origin:0% 0%;z-index:1}
-.textLayer::selection{background:#0064ff4d}
+.textLayer::selection{background:rgba(0,150,255,0.6) !important}
+.textLayer::-moz-selection{background:rgba(0,150,255,0.6) !important}
 .textLayer.selecting{cursor:text}
 .endOfContent{display:block;position:absolute;inset:100% 0 0;z-index:0;cursor:default;user-select:none}
 .textLayer.selecting .endOfContent{top:0}

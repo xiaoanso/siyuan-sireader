@@ -25,7 +25,12 @@ const showStats = ref(false)
 let settingsApp: any = null
 let mobileReaderApp: any = null
 
-const openSetting = () => document.querySelector<HTMLElement>(`.dock__item[data-title="${plugin.i18n?.name || '思阅'}"]`)?.click()
+// 打开设置并展开授权
+const openSetting = () => {
+  const btn = document.querySelector<HTMLElement>(`.dock__item[data-title="${plugin.i18n?.name || '思阅'}"]`)
+  if (!btn?.classList.contains('dock__item--active')) btn?.click()
+  setTimeout(() => (window as any)._openLicense?.(), 100)
+}
 
 // ===== 阅读器核心 =====
 const FORMATS = ['.epub', '.pdf', '.mobi', '.azw3', '.azw', '.fb2', '.cbz', '.txt']
@@ -483,6 +488,7 @@ plugin.addTopBar({ icon: `<svg><use xlink:href="#${iconId}"/></svg>`, title: '�
 const statsInstance = useStats(plugin)
 statsInstance.init()
 provide('stats', statsInstance)
+provide('plugin', plugin)
 
 // 处理统计面板切换
 const handleStatsToggle = () => showStats.value = !showStats.value

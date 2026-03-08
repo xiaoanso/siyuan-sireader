@@ -22,6 +22,7 @@ const activeTab = ref<'appearance'|'bookshelf'|'search'|'toc'|'bookmark'|'mark'|
 const previewExpanded = ref(localStorage.getItem('sr-preview-expanded')!=='0')
 const activeAccordion = ref('')
 const activeSub = ref('')
+const licenseRef = ref<HTMLElement>()
 const plugin = usePlugin()
 const {canShowToc} = useReaderState()
 const {customFonts,isLoadingFonts,loadCustomFonts,resetStyles:resetStylesRaw} = useSetting(plugin)
@@ -45,7 +46,7 @@ const loadTTS = async () => {
     loadingTTS.value = false
   }
 }
-const selectVoice = (name:string) => {if (settings.value.tts) {settings.value.tts.voice=name;save()}}
+const selectVoice = (name:string,isLocal:boolean) => {if (!isLocal&&!can.value('tts-online')) return showUpgrade('在线语音'); if (settings.value.tts) {settings.value.tts.voice=name;save()}}
 const toggleFav = (voice:any) => {
   if (!settings.value.tts) return
   const fav = settings.value.tts.favoriteVoices||[]
@@ -70,7 +71,7 @@ const fontsLoaded = ref(false)
 const removingDict = ref<string|null>(null)
 const quickDocSearch = ref('')
 const quickDocResults = ref<any[]>([])
-const {license,userAvatar,code:activationCode,loading:loadingLicense,activating,load:loadLicense,activate:activateLicense,clear:clearLicense,status:getLicenseStatus} = useLicense(plugin,props.i18n)
+const {license,userAvatar,code:activationCode,loading:loadingLicense,activating,load:loadLicense,activate:activateLicense,clear:clearLicense,status:getLicenseStatus,can,showUpgrade} = useLicense(plugin,props.i18n)
 
 // 方法
 const toggleAccordion = (key:string) => activeAccordion.value=activeAccordion.value===key?'':key
@@ -139,9 +140,22 @@ const previewStyle = computed(() => {
 const save = async () => (emit('update:modelValue',settings.value),await props.onSave())
 const debouncedSave = (() => {let t:any;return () => (clearTimeout(t),t=setTimeout(save,300))})()
 const setFont = (f?:FontFileInfo) => (settings.value.textSettings.fontFamily=f?'custom':'inherit',settings.value.textSettings.customFont=f?{fontFamily:f.displayName,fontFile:f.name}:{fontFamily:'',fontFile:''},f?debouncedSave():save())
+const saveTheme = () => {if(!can.value('reader-theme')){settings.value.theme='default';showUpgrade('主题配色');return}save()}
 const handleReadOnline = async (book:any) => {const {openOrActivateBook} = await import('@/utils/bookOpen');openOrActivateBook(plugin,book,settings.value)}
 const togglePreview = () => (previewExpanded.value=!previewExpanded.value,localStorage.setItem('sr-preview-expanded',previewExpanded.value?'1':'0'))
-const openPurchasePage = () => window.open('https://pay.ldxp.cn/shop/J7MJJ8YR/zmfsuc','_blank')
+const openPurchasePage = () => window.open('https://pay.ldxp.cn/shop/J7MJJ8YR/lillyt','_blank')
+const openMembershipInfo = () => window.open('https://github.com/mm-o/siyuan-sireader','_blank')
+
+// 打开授权面板
+;(window as any)._openLicense = () => {
+  activeTab.value = 'appearance'
+  activeAccordion.value = 'license'
+  setTimeout(() => {
+    licenseRef.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    licenseRef.value?.classList.add('license-highlight')
+    setTimeout(() => licenseRef.value?.classList.remove('license-highlight'), 2000)
+  }, 50)
+}
 
 // 生命周期
 onMounted(() => {
@@ -166,7 +180,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
               </div>
       <Transition name="slide" mode="out-in">
         <div v-if="activeTab==='appearance'" :key="activeTab" class="sr-section">
-          <div class="ds-card ds-accordion" @click="toggleAccordion('license')">
+          <div ref="licenseRef" class="ds-card ds-accordion" data-name="license" @click="toggleAccordion('license')">
             <h3>
               <div v-if="license" class="license-avatar">
                 <img v-if="userAvatar" :src="userAvatar" :alt="license.userName">
@@ -176,19 +190,19 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
               <div v-if="license" class="license-info">
                 <div>{{license.userName}}<span class="license-tag" :class="`license-${license.type}`">{{i18n[license.type==='lifetime'?'lifetimeVersion':license.type==='annual'?'annualVersion':license.type==='monthly'?'monthlyVersion':'trialVersion']}}</span></div>
                 <div>ID {{license.userId}}</div>
-                <div><template v-if="license.type!=='lifetime'">剩余{{license.daysRemaining}}天 · </template>激活于 {{new Date(license.activatedAt).toLocaleDateString()}}</div>
+                <div><template v-if="license.type!=='lifetime'">{{i18n.remaining||'剩余'}}{{license.daysRemaining}}{{i18n.days||'天'}} · </template>{{i18n.activatedAt||'激活于'}} {{new Date(license.activatedAt).toLocaleDateString()}}</div>
               </div>
-              <span v-else>授权</span>
+              <span v-else>{{i18n.membership||'会员订阅'}}<svg class="ds-help-icon" viewBox="0 0 24 24" @click.stop="openMembershipInfo"><use xlink:href="#iconHelp"/></svg></span>
               <svg class="ds-arrow" :class="{expanded:activeAccordion==='license'}" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
             </h3>
             <Transition name="expand">
               <div v-if="activeAccordion==='license'" @click.stop>
-                <div v-if="loadingLicense" class="sr-empty">加载中...</div>
-                <button v-else-if="license" class="b3-button b3-button--text license-btn" @click="clearLicense">清除授权</button>
+                <div v-if="loadingLicense" class="sr-empty">{{i18n.loading||'加载中'}}...</div>
+                <button v-else-if="license" class="b3-button b3-button--text license-btn" @click="clearLicense">{{i18n.logout||'退出登录'}}</button>
                 <div v-else class="license-input-group">
-                  <input v-model="activationCode" type="text" class="b3-text-field" placeholder="请输入激活码" :disabled="activating">
-                  <button class="b3-button b3-button--outline" :disabled="activating||!activationCode.trim()" @click="activateLicense">{{activating?'激活中':'激活'}}</button>
-                  <button class="b3-button b3-button--primary" @click="openPurchasePage">购买</button>
+                  <input v-model="activationCode" type="text" class="b3-text-field" :placeholder="i18n.enterActivationCode||'请输入激活码'" :disabled="activating">
+                  <button class="b3-button b3-button--outline" :disabled="activating||!activationCode.trim()" @click="activateLicense">{{activating?(i18n.activating||'激活中'):(i18n.activate||'激活')}}</button>
+                  <button class="b3-button b3-button--primary" @click="openPurchasePage">{{i18n.purchase||'购买'}}</button>
                 </div>
               </div>
             </Transition>
@@ -226,7 +240,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
               <div v-if="activeAccordion==='theme'" @click.stop>
                 <div class="ds-field select">
                   <label>{{i18n.presetTheme||'预设主题'}}</label>
-                  <select v-model="settings.theme" class="b3-select" @change="save">
+                  <select v-model="settings.theme" class="b3-select" @change="saveTheme">
                     <option v-for="(theme,key) in PRESET_THEMES" :key="key" :value="key">{{i18n[theme.name]||theme.name}}</option>
                     <option value="custom">{{i18n.custom||'自定义'}}</option>
                   </select>
@@ -237,7 +251,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                     <div class="ds-divider"></div>
                     <div v-for="item in customThemeItems" :key="item.key" class="ds-field">
                       <label>{{i18n[item.label]}}</label>
-                      <input v-model="settings.customTheme[item.key]" :type="item.type" :class="item.type==='color'?'ds-color':'b3-text-field'" @change="save">
+                      <input v-model="settings.customTheme[item.key]" :type="item.type" :class="item.type==='color'?'ds-color':'b3-text-field'" @change="can('reader-theme')?save():showUpgrade('主题配色')">
                     </div>
                   </div>
                 </Transition>
@@ -290,7 +304,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                     <Transition name="expand">
                       <div v-if="activeSub==='offlineDict'">
                         <input ref="fileInput" type="file" multiple accept=".ifo,.idx,.dz,.index,.syn" style="display:none" @change="handleUpload">
-                        <button class="ds-btn-add" :disabled="uploading" @click.stop="fileInput?.click()"><svg><use xlink:href="#iconUpload"/></svg>{{uploading?(i18n.uploading||'上传中...'):(i18n.addDict||'添加词典')}}</button>
+                        <button class="ds-btn-add" :disabled="uploading" @click.stop="can('dict-offline')?fileInput?.click():showUpgrade('离线词典')"><svg><use xlink:href="#iconUpload"/></svg>{{uploading?(i18n.uploading||'上传中...'):(i18n.addDict||'添加词典')}}</button>
                         <small class="ds-hint">{{i18n.dictFormatHint||'支持 StarDict 和 dictd 格式'}} <a href="https://github.com/mm-o/siyuan-sireader/blob/main/docs/离线词典使用说明.md" target="_blank">{{i18n.downloadDict||'下载词典'}}</a></small>
                         <div v-if="offlineDicts.length" class="ds-list">
                           <div v-for="(d,idx) in offlineDicts" :key="d.id" class="ds-list-item" draggable="true" @dragstart="dragStart($event,idx)" @dragend="dragEnd" @dragover="dragOver" @drop="dragDrop($event,idx,'dict',offlineDicts,offlineDictManager)">
@@ -376,7 +390,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                       <div v-if="activeSub==='ttsFavorites'">
                         <small class="ds-hint">{{i18n.ttsCurrentVoice||'当前'}}: {{settings.tts.voice}}</small>
                         <div v-if="myVoices.length" class="ds-list ds-list-scroll">
-                          <div v-for="v in myVoices" :key="v.name" class="ds-list-item ds-list-item-simple" :class="{active:settings.tts.voice===v.name}" @click.stop="selectVoice(v.name)">
+                          <div v-for="v in myVoices" :key="v.name" class="ds-list-item ds-list-item-simple" :class="{active:settings.tts.voice===v.name}" @click.stop="selectVoice(v.name,v.isLocal)">
                             <div class="ds-list-label">
                               <div>{{v.displayName}}</div>
                               <small>{{v.isLocal?'🎤 本地':v.locale}}</small>
@@ -397,7 +411,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
                         <small class="ds-hint">{{i18n.ttsOnlineHint||'点击语音名称选择，点击星号收藏'}}</small>
                         <div v-if="loadingTTS" class="sr-empty">{{i18n.loading||'加载中...'}}</div>
                         <div v-else-if="onlineVoices.length" class="ds-list ds-list-scroll">
-                          <div v-for="v in onlineVoices" :key="v.name" class="ds-list-item ds-list-item-simple" :class="{active:settings.tts.voice===v.name}" @click.stop="selectVoice(v.name)">
+                          <div v-for="v in onlineVoices" :key="v.name" class="ds-list-item ds-list-item-simple" :class="{active:settings.tts.voice===v.name}" @click.stop="selectVoice(v.name,false)">
                             <div class="ds-list-label">
                               <div>{{v.displayName}}</div>
                               <small>{{v.locale}}</small>
@@ -442,6 +456,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
 .license-placeholder{width:100%;height:100%;border-radius:50%;background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:600}
 .license-badge{position:absolute;bottom:-2px;right:-2px;width:24px;height:24px}
 .license-info{flex:1;min-width:0;>div{line-height:1.5;margin-bottom:2px;&:first-child{font-size:16px;font-weight:600}&:not(:first-child){font-size:12px;color:var(--b3-theme-on-surface-light);opacity:.85}}}
+.ds-help-icon{width:16px;height:16px;margin-left:6px;opacity:.5;cursor:pointer;transition:all .15s;vertical-align:text-bottom;transform:translateY(-1px);&:hover{opacity:1;color:var(--b3-theme-primary)}}
 .license-tag{font-size:11px;padding:2px 7px;border-radius:3px;font-weight:500;margin-left:6px;opacity:.9;&.license-lifetime{background:rgba(156,39,176,.1);color:#9c27b0}&.license-annual{background:rgba(76,175,80,.1);color:#4caf50}&.license-monthly{background:rgba(33,150,243,.1);color:#2196f3}&.license-trial{background:rgba(255,152,0,.1);color:#ff9800}}
 .license-btn{width:100%;margin-top:8px}
 .license-input-group{display:flex;gap:8px;margin-top:8px;input{flex:1;min-width:0}button{flex-shrink:0;white-space:nowrap}}
@@ -465,5 +480,7 @@ watch(canShowToc,(show) => !show&&['toc','bookmark','mark'].includes(activeTab.v
 .ds-list-btns{display:flex;gap:4px;flex-shrink:0}
 .ds-list-btn{width:24px;height:24px;padding:0;border:1px solid var(--b3-border-color);background:var(--b3-theme-surface);color:var(--b3-theme-on-surface);border-radius:4px;cursor:pointer;font-size:14px;line-height:1;transition:all .15s;&:hover{background:var(--b3-list-hover)}&:active{transform:scale(.95)}}
 .ds-list-btn-del{color:var(--b3-theme-error);&:hover{background:var(--b3-theme-error);color:white;border-color:var(--b3-theme-error)}}
+.license-highlight{animation:license-pulse 2s ease;box-shadow:0 0 0 4px var(--b3-theme-primary-light),0 8px 24px rgba(33,150,243,.4) !important}
+@keyframes license-pulse{0%,100%{transform:scale(1);box-shadow:0 2px 8px rgba(0,0,0,.08)}10%,30%,50%{transform:scale(1.03);box-shadow:0 0 0 4px var(--b3-theme-primary-light),0 8px 24px rgba(33,150,243,.4)}20%,40%{transform:scale(1);box-shadow:0 0 0 2px var(--b3-theme-primary-lighter),0 4px 16px rgba(33,150,243,.2)}}
 @media (max-width:640px){.sr-settings{flex-direction:column !important}.sr-nav{width:100% !important;height:42px !important;flex-direction:row !important;padding:0 4px !important}}
 </style>
