@@ -23,6 +23,7 @@ export class EdgeTTSPlayer {
   private currentSource: any = null
   private voiceTask: Promise<void>
   private ticket = 0
+  private lastSpokenText = ''
 
   constructor(source: Document | any, config: any, startRange?: Range) {
     this.view = source?.initTTS ? source : null
@@ -83,6 +84,7 @@ export class EdgeTTSPlayer {
   private markSSML(ssml = '') {
     const mark = /<mark\b[^>]*\bname="([^"]+)"/.exec(ssml)?.[1]
     mark && this.foliateTTS?.setMark(mark)
+    // Foliate #speak(from mark) returns mark→end-of-block; only speak the current sentence range.
     return this.ssmlOf(this.foliateTTS?.getLastRange?.(), ssml)
   }
 
@@ -90,21 +92,22 @@ export class EdgeTTSPlayer {
     if (fromCurrent) return this.ssmlOf(this.foliateTTS?.getLastRange?.(), this.foliateTTS?.resume())
     const range = this.startRange
     this.startRange = undefined
-    return this.markSSML(range
-      ? this.foliateTTS?.from(range)
-      : (this.foliateTTS?.start(), this.foliateTTS?.nextMark(this.config.highlightText) || this.foliateTTS?.resume()))
+    // Prefer from(range); otherwise start() at first block — do NOT call nextMark() here
+    // (nextMark with lastMark=null advances to the *next* block and skips the first).
+    return this.markSSML(range ? this.foliateTTS?.from(range) : this.foliateTTS?.start())
   }
 
   private async nextSSML(paused = false) {
-    const ssml = this.foliateTTS?.nextMark(paused || this.config.highlightText)
-    if (ssml || !this.view || !this.config.autoTurnPage) return ssml
+    const raw = this.foliateTTS?.nextMark(paused || this.config.highlightText)
+    if (raw) return this.markSSML(raw)
+    if (!this.view || !this.config.autoTurnPage) return ''
     const doc = this.foliateTTS?.doc
     await this.view.next()
     await this.view.initTTS('sentence', ttsNodeFilter, this.highlighter)
     this.foliateTTS = this.view.tts
     if (this.foliateTTS?.doc === doc) return ''
-    this.foliateTTS?.start()
-    return this.markSSML(this.foliateTTS?.nextMark(paused || this.config.highlightText) || this.foliateTTS?.resume())
+    // After page turn, start at first sentence of the new document (not nextMark).
+    return this.markSSML(this.foliateTTS?.start())
   }
 
   private waitWhilePaused(ticket: number) {
@@ -120,20 +123,24 @@ export class EdgeTTSPlayer {
   private async playSSML(ssml: string, ticket: number) {
     while (this.paused && !this.stopped && ticket === this.ticket) await this.waitWhilePaused(ticket)
     if (this.stopped || ticket !== this.ticket || !ssml) return
-    this.config.onBlock?.(this.textOf(ssml))
+    const text = this.textOf(ssml)
+    if (!text) return
+    // Guard against accidental duplicate utterance of the exact same sentence.
+    if (text === this.lastSpokenText) return
+    this.lastSpokenText = text
+    this.config.onBlock?.(text)
     const range = this.foliateTTS?.getLastRange?.()
     this.config.highlightText && range && this.renderer?.scrollToAnchor?.(range, true)
-    return this.isLocal ? this.playLocal(ssml, ticket) : this.playOnline(ssml, ticket)
+    return this.isLocal ? this.playLocal(text, ticket) : this.playOnline(text, ticket)
   }
 
-  private playLocal(ssml: string, ticket: number) {
+  private playLocal(text: string, ticket: number) {
     return new Promise<void>((resolve) => {
       if (this.stopped || ticket !== this.ticket) return resolve()
-      const utterance = new SpeechSynthesisUtterance(this.textOf(ssml))
+      const utterance = new SpeechSynthesisUtterance(text)
       const voice = window.speechSynthesis.getVoices().find((v: any) => v.name === this.config.voice)
       if (voice) utterance.voice = voice
       utterance.rate = this.config.rate || 1
-      // pitch settings are Hz offset (-50…50); map roughly to utterance.pitch (0.5–2)
       const pitchHz = Number(this.config.pitch) || 0
       utterance.pitch = Math.max(0.5, Math.min(2, 1 + pitchHz / 100))
       this.currentSource = utterance
@@ -142,8 +149,7 @@ export class EdgeTTSPlayer {
     })
   }
 
-  private async playOnline(ssml: string, ticket: number) {
-    const text = this.textOf(ssml)
+  private async playOnline(text: string, ticket: number) {
     if (!text) return
     const buf = await this.edge.toSSMLStream(
       text,
@@ -162,6 +168,7 @@ export class EdgeTTSPlayer {
     catch {
       throw new Error('音频解码失败')
     }
+    this.stopCurrent()
     const source = this.audioCtx.createBufferSource()
     source.buffer = audioBuffer
     source.connect(this.audioCtx.destination)
@@ -174,13 +181,13 @@ export class EdgeTTSPlayer {
   }
 
   private async playFrom(ssml: string, ticket: number) {
-    // Continuous sentence reading always advances; autoTurnPage only controls chapter/page turns in nextSSML.
     while (!this.stopped && ticket === this.ticket && ssml) {
       await this.playSSML(ssml, ticket)
       if (this.stopped || ticket !== this.ticket) break
       while (this.paused && !this.stopped && ticket === this.ticket) await this.waitWhilePaused(ticket)
       if (this.stopped || ticket !== this.ticket) break
       const prev = this.foliateTTS?.getLastRange?.()
+      this.lastSpokenText = '' // allow identical wording on a later sentence
       ssml = await this.nextSSML()
       if (!ssml) break
       const gap = this.gapOf(prev, this.foliateTTS?.getLastRange?.())
@@ -212,6 +219,7 @@ export class EdgeTTSPlayer {
     await this.initPipeline()
     await this.voiceTask
     this.stopped = this.paused = false
+    this.lastSpokenText = ''
     await this.playFrom(this.firstSSML(fromCurrent), ++this.ticket)
   }
 
@@ -220,6 +228,7 @@ export class EdgeTTSPlayer {
     const ticket = ++this.ticket
     const seek = delta < 0 ? this.markSSML(this.foliateTTS.prevMark(true)) : this.nextSSML(true)
     this.stopped = this.paused = false
+    this.lastSpokenText = ''
     this.stopCurrent()
     Promise.resolve(seek).then(ssml => this.playFrom(ssml, ticket))
   }
@@ -235,6 +244,7 @@ export class EdgeTTSPlayer {
     this.stopped = true
     this.paused = false
     this.ticket++
+    this.lastSpokenText = ''
     this.stopCurrent()
     this.edge.close()
   }
