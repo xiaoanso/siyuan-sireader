@@ -28,9 +28,7 @@
           <label class="tts-mini-voice">
             <span>语音</span>
             <select class="b3-select" :value="ttsSettings.voice" @focus="loadVoices" @change="setVoice">
-              <optgroup v-for="g in voiceGroups" :key="g.locale" :label="g.label">
-                <option v-for="voice in g.voices" :key="voice.name" :value="voice.name">{{ voice.displayName || voice.name }}</option>
-              </optgroup>
+              <option v-for="voice in voiceOptions" :key="voice.name" :value="voice.name">{{ voiceLabel(voice) }}</option>
             </select>
           </label>
           <label class="tts-mini-rate">
@@ -65,7 +63,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { settingsManager, TTS_STYLE_OPTIONS, type ReaderSettings } from '@/composables/useSetting'
 import { getTTSController } from '@/services/TTSPlayer'
-import { groupVoicesByLocale, type TTSVoice } from '@/services/TTSEngine'
+import { sortVoicesFlat, voiceDisplayLabel, type TTSVoice } from '@/services/TTSEngine'
 
 const STYLE_LABELS: Record<string, string> = {
   general: '通用', assistant: '助手', chat: '聊天', customerservice: '客服', newscast: '新闻',
@@ -104,24 +102,16 @@ const ttsSettings = computed(() => settings.value?.tts)
 const voiceOptions = computed(() => {
   const current = ttsSettings.value?.voice
   const favorites = settings.value?.tts?.favoriteVoices || []
-  const list = [
+  const list = sortVoicesFlat([
     ...voices.value.filter(v => v.isLocal),
     ...favorites.filter(v => !voices.value.some(local => local.name === v.name)),
     ...voices.value.filter(v => !v.isLocal && !favorites.some(f => f.name === v.name)),
-  ]
+  ])
   return current && !list.some(v => v.name === current)
     ? [{ name: current, displayName: current, locale: '', gender: 'Female' as const, isLocal: false }, ...list]
     : list
 })
-const voiceGroups = computed(() => {
-  const locals = voiceOptions.value.filter(v => v.isLocal)
-  const online = voiceOptions.value.filter(v => !v.isLocal)
-  const groups = [
-    ...(locals.length ? [{ locale: 'local', label: '本地', voices: locals }] : []),
-    ...groupVoicesByLocale(online),
-  ]
-  return groups.filter(g => g.voices.length)
-})
+const voiceLabel = (voice: TTSVoice) => voiceDisplayLabel(voice)
 const loadVoices = async () => {
   if (loadingVoices.value || voices.value.length) return
   loadingVoices.value = true
