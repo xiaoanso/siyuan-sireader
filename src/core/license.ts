@@ -30,28 +30,6 @@ type StoredLicense = {
   lastReport?: string
 }
 
-// Undefined features are free.
-const PAID_FEATURES: Record<string, string> = {
-  'reader-theme': 'trial',
-  'reader-stats': 'trial',
-  'quick-mark': 'annual',
-  'quick-send': 'annual',
-  'folder-group': 'trial',
-  'smart-group': 'monthly',
-  'book-edit': 'trial',
-  'batch-operation': 'trial',
-  'doc-assets': 'monthly',
-  'book-search': 'monthly',
-  'tts': 'trial',
-  'tts-online': 'monthly',
-  'translate': 'trial',
-  'dict-offline': 'trial',
-  'dict-advanced': 'trial',
-  'siyuan-sync': 'monthly',
-}
-
-const LEVELS: Record<string, number> = { free: 0, trial: 1, monthly: 2, annual: 3, lifetime: 4 }
-
 export class LicenseManager {
   private static readonly API = 'https://api.745201.xyz'
   private static readonly KEY = 'sireader_license'
@@ -63,11 +41,9 @@ export class LicenseManager {
   private static legacyRecoveryPromise: Promise<{ license: LicenseInfo, lastReport: string } | null> | null = null
   private static lastLegacyRecoveryAt = 0
 
-  static can(feature: string, license: LicenseInfo | null): boolean {
-    const required = PAID_FEATURES[feature]
-    if (!required) return true
-    if (!license || !this.isUsable(license)) return false
-    return (LEVELS[license.type] || 0) >= (LEVELS[required] || 0)
+  /** All features unlocked (VIP restrictions removed). */
+  static can(_feature: string, _license: LicenseInfo | null): boolean {
+    return true
   }
 
   static async activate(code: string) {
