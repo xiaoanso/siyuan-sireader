@@ -53,19 +53,57 @@ export interface TTSVoice {
   isLocal?: boolean
 }
 
-/** Coarse language groups (VoiceCraft-style: zh/en/ja/ko/es/fr/de/ru…). */
+/**
+ * Edge TTS 粗粒度语种分组（按语言，不按地区变体）。
+ * 目录顺序对齐 Edge TTS locale 说明：中文 / 英语 / 西班牙语 / …
+ */
 export const LANGUAGE_LABELS: Record<string, string> = {
-  zh: '中文', en: '英文', ja: '日语', ko: '韩语',
-  es: '西班牙语', fr: '法语', de: '德语', ru: '俄语',
-  pt: '葡萄牙语', it: '意大利语', nl: '荷兰语', ar: '阿拉伯语',
-  th: '泰语', vi: '越南语', id: '印尼语', ms: '马来语',
-  hi: '印地语', tr: '土耳其语', pl: '波兰语', sv: '瑞典语',
-  da: '丹麦语', fi: '芬兰语', nb: '挪威语', cs: '捷克语',
-  el: '希腊语', he: '希伯来语', hu: '匈牙利语', ro: '罗马尼亚语',
-  uk: '乌克兰语', other: '其他',
+  zh: '中文', en: '英语', es: '西班牙语', fr: '法语', de: '德语',
+  pt: '葡萄牙语', it: '意大利语', ja: '日语', ko: '韩语', ru: '俄语',
+  uk: '乌克兰语', pl: '波兰语', nl: '荷兰语', tr: '土耳其语',
+  hi: '印地语', th: '泰语', vi: '越南语', ar: '阿拉伯语',
+  ta: '泰米尔语', te: '泰卢固语', kn: '卡纳达语', ml: '马拉雅拉姆语',
+  bn: '孟加拉语', mr: '马拉地语', gu: '古吉拉特语', pa: '旁遮普语',
+  sv: '瑞典语', nb: '挪威语', nn: '挪威语', no: '挪威语', da: '丹麦语', fi: '芬兰语', is: '冰岛语',
+  id: '印尼语', ms: '马来语', fil: '菲律宾语', tl: '菲律宾语', my: '缅甸语',
+  el: '希腊语', cs: '捷克语', sk: '斯洛伐克语', hu: '匈牙利语', ro: '罗马尼亚语',
+  bg: '保加利亚语', hr: '克罗地亚语', sl: '斯洛文尼亚语', et: '爱沙尼亚语',
+  lv: '拉脱维亚语', lt: '立陶宛语', sr: '塞尔维亚语', mk: '马其顿语',
+  ca: '加泰罗尼亚语', gl: '加利西亚语', eu: '巴斯克语', cy: '威尔士语', ga: '爱尔兰语', mt: '马耳他语',
+  he: '希伯来语', fa: '波斯语', ur: '乌尔都语', si: '僧伽罗语', ne: '尼泊尔语',
+  km: '高棉语', lo: '老挝语', ka: '格鲁吉亚语', hy: '亚美尼亚语', az: '阿塞拜疆语', kk: '哈萨克语', uz: '乌兹别克语',
+  af: '南非荷兰语', zu: '祖鲁语', xh: '科萨语', yo: '约鲁巴语', ig: '伊博语', ha: '豪萨语', am: '阿姆哈拉语', sw: '斯瓦希里语', so: '索马里语',
+  qu: '克丘亚语',
+  other: '其他',
 }
 
-const LANGUAGE_ORDER = ['zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'ru', 'pt', 'it'] as const
+const LANGUAGE_ORDER = [
+  'zh', 'en', 'es', 'fr', 'de', 'pt', 'it', 'ja', 'ko', 'ru',
+  'uk', 'pl', 'nl', 'tr', 'hi', 'th', 'vi',
+  'ta', 'te', 'kn', 'ml', 'bn', 'mr', 'gu', 'pa',
+  'ar',
+  'sv', 'nb', 'nn', 'no', 'da', 'fi', 'is',
+  'id', 'ms', 'fil', 'tl', 'my',
+  'el', 'cs', 'sk', 'hu', 'ro', 'bg', 'hr', 'sl', 'et', 'lv', 'lt', 'sr',
+  'he', 'fa', 'ur', 'si',
+  'af', 'zu', 'xh', 'yo', 'ig', 'ha', 'am', 'sw',
+  'qu',
+] as const
+
+export const LOCALE_HINTS: Record<string, string> = {
+  'zh-CN': '简体', 'zh-TW': '台湾', 'zh-HK': '香港', 'zh-SG': '新加坡',
+  'zh-CN-liaoning': '辽宁', 'zh-CN-shaanxi': '陕西',
+  'en-US': '美国', 'en-GB': '英国', 'en-AU': '澳大利亚', 'en-CA': '加拿大', 'en-IN': '印度',
+  'en-IE': '爱尔兰', 'en-NZ': '新西兰', 'en-ZA': '南非', 'en-KE': '肯尼亚', 'en-NG': '尼日利亚',
+  'en-PH': '菲律宾', 'en-SG': '新加坡',
+  'es-ES': '西班牙', 'es-MX': '墨西哥', 'es-AR': '阿根廷', 'es-CO': '哥伦比亚', 'es-CL': '智利',
+  'es-PE': '秘鲁', 'es-US': '美国', 'es-VE': '委内瑞拉', 'es-CR': '哥斯达黎加', 'es-UY': '乌拉圭',
+  'fr-FR': '法国', 'fr-CA': '加拿大', 'fr-BE': '比利时', 'fr-CH': '瑞士',
+  'de-DE': '德国', 'de-AT': '奥地利', 'de-CH': '瑞士',
+  'pt-BR': '巴西', 'pt-PT': '葡萄牙',
+  'nl-NL': '荷兰', 'nl-BE': '比利时',
+  'ar-SA': '沙特', 'ar-EG': '埃及', 'ar-AE': '阿联酋', 'ar-MA': '摩洛哥',
+}
 
 export const languageOfLocale = (locale?: string) => {
   const raw = (locale || '').trim()
@@ -74,14 +112,28 @@ export const languageOfLocale = (locale?: string) => {
   return primary || 'other'
 }
 
-export const languageLabel = (lang: string) => LANGUAGE_LABELS[lang] || LANGUAGE_LABELS[lang.toLowerCase()] || lang || '其他'
+export const languageLabel = (lang: string) => {
+  const key = (lang || '').toLowerCase()
+  return LANGUAGE_LABELS[key] || key || '其他'
+}
+
+export const localeHint = (locale?: string) => {
+  const key = (locale || '').trim()
+  if (!key) return ''
+  if (LOCALE_HINTS[key]) return LOCALE_HINTS[key]
+  const lower = key.toLowerCase()
+  for (const [k, v] of Object.entries(LOCALE_HINTS)) {
+    if (lower === k.toLowerCase() || lower.startsWith(`${k.toLowerCase()}-`)) return v
+  }
+  return key
+}
 
 const languagePriority = (lang: string) => {
   const i = (LANGUAGE_ORDER as readonly string[]).indexOf(lang)
-  return i >= 0 ? i : 100
+  return i >= 0 ? i : 900 + (lang.codePointAt(0) || 0)
 }
 
-/** Group voices by coarse language (中文/英文/…), not full locale. */
+/** Group voices by coarse language (中文/英语/西班牙语/…), not full locale. */
 export const groupVoicesByLocale = <T extends { locale?: string; displayName?: string; name?: string }>(voices: T[]) => {
   const map = new Map<string, T[]>()
   for (const v of voices) {
@@ -102,9 +154,31 @@ export const groupVoicesByLocale = <T extends { locale?: string; displayName?: s
     }))
 }
 
-/** @deprecated alias — same coarse language grouping */
 export const groupVoicesByLanguage = groupVoicesByLocale
 export const localeLabel = (locale: string) => languageLabel(languageOfLocale(locale))
+
+/** Flat list label: 「中文 · 晓晓」/「英语 · Jenny」 */
+export const voiceDisplayLabel = (voice: { displayName?: string; name?: string; locale?: string; isLocal?: boolean }) => {
+  const name = (voice.displayName || voice.name || '').trim() || '未知语音'
+  if (voice.isLocal) return `本地 · ${name}`
+  const lang = languageLabel(languageOfLocale(voice.locale))
+  const region = localeHint(voice.locale)
+  const prefix = region && region !== lang && region !== voice.locale ? `${lang}（${region}）` : lang
+  if (!voice.locale && lang === '其他') return name
+  return name.startsWith(`${prefix} · `) || name.startsWith(`${lang} · `) ? name : `${prefix} · ${name}`
+}
+
+/** Sort for flat lists: language order → locale → display name */
+export const sortVoicesFlat = <T extends { locale?: string; displayName?: string; name?: string; isLocal?: boolean }>(voices: T[]) =>
+  [...voices].sort((a, b) => {
+    if (!!a.isLocal !== !!b.isLocal) return a.isLocal ? -1 : 1
+    const pa = languagePriority(languageOfLocale(a.locale))
+    const pb = languagePriority(languageOfLocale(b.locale))
+    if (pa !== pb) return pa - pb
+    const la = (a.locale || '').localeCompare(b.locale || '')
+    if (la) return la
+    return (a.displayName || a.name || '').localeCompare(b.displayName || b.name || '', 'zh')
+  })
 
 let voiceCache: { at: number; voices: TTSVoice[] } | null = null
 let onlineVoiceTask: Promise<TTSVoice[]> | null = null

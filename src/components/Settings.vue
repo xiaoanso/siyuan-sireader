@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showMessage } from 'siyuan'
 import type { ReaderSettings, FontFileInfo } from '@/composables/useSetting'
 import { DEFAULT_NAV_ITEMS, LINK_FORMAT_PRESETS, NOTE_MODE_LABELS, NOTE_MODE_OPTIONS, NOTE_TARGET_OPTIONS, PRESET_THEMES, SectionTitle, SettingItem, SettingRows, SettingSection, UI_CONFIG, getLicenseMedia, setCustomBackgroundFromInput, settingSectionIcon, useSetting, useConfirm, useDocSearch, useNotebooks } from '@/composables/useSetting'
-import { groupVoicesByLocale } from '@/services/TTSEngine'
+import { sortVoicesFlat, voiceDisplayLabel } from '@/services/TTSEngine'
 import { bookshelfManager } from '@/core/bookshelf'
 import { offlineDictManager, onlineDictManager } from '@/utils/dictionary'
 import { usePlugin } from '@/main'
@@ -57,7 +57,7 @@ const myVoices = computed(() => [...ttsVoices.value.filter(v => v.isLocal),...(s
 const onlineVoices = computed(() => ttsVoices.value.filter(v => !v.isLocal))
 const voiceRow = (v:any, isLocal:boolean) => ({
   key: v.name,
-  text: v.displayName,
+  text: voiceDisplayLabel({ ...v, isLocal }),
   meta: isLocal
     ? (props.i18n.localVoice || '本地')
     : [v.locale, v.gender === 'Male' ? (props.i18n.ttsMale || '男') : v.gender === 'Female' ? (props.i18n.ttsFemale || '女') : ''].filter(Boolean).join(' · '),
@@ -130,26 +130,14 @@ const voiceSections = computed(() => {
     rows: myVoices.value.map((v: any) => voiceRow(v, !!v.isLocal)),
     empty: props.i18n.ttsNoFavorites || '暂无，请点击下方加载',
   }
-  if (!onlineVoices.value.length) {
-    return [fav, {
-      key: 'ttsVoices',
-      title: props.i18n.ttsVoiceList || '在线语音',
-      hint: props.i18n.ttsOnlineHint || '按语种分组；点击名称选择，点击星号收藏',
-      rows: [] as any[],
-      empty: props.i18n.ttsNoVoices || '暂无语音',
-      loadLabel: props.i18n.ttsLoadVoices || '加载语音',
-    }]
-  }
-  return [
-    fav,
-    ...groupVoicesByLocale(onlineVoices.value).map(g => ({
-      key: `ttsLocale:${g.locale}`,
-      title: `${g.label} · ${g.voices.length}`,
-      hint: g.locale === 'other' ? '' : g.locale,
-      rows: g.voices.map((v: any) => voiceRow(v, false)),
-      empty: '',
-    })),
-  ]
+  return [fav, {
+    key: 'ttsVoices',
+    title: props.i18n.ttsVoiceList || '在线语音',
+    hint: props.i18n.ttsOnlineHint || '点击语音名称选择，点击星号收藏',
+    rows: sortVoicesFlat(onlineVoices.value).map((v: any) => voiceRow(v, false)),
+    empty: props.i18n.ttsNoVoices || '暂无语音',
+    loadLabel: onlineVoices.value.length ? undefined : (props.i18n.ttsLoadVoices || '加载语音'),
+  }]
 })
 const noteFields = computed(() => [
   checkboxField('annotationSyncOnAdd', props.i18n.annotationSyncOnAdd || '添加时同步', settings.value.annotationSyncOnAdd, value => (settings.value.annotationSyncOnAdd = value, save()), true, props.i18n.annotationSyncOnAddDesc || '新增标注时自动同步到已绑定文档'),
@@ -171,7 +159,7 @@ const toggleAccordion = (key:string) => openGroups.value[key] = !openGroups.valu
 const toggleSub = async (key:string) => {
   openSubs.value[key] = !openSubs.value[key]
   if (key === 'customFont' && !fontsLoaded.value && openSubs.value[key]) return await loadCustomFonts(), void (fontsLoaded.value = true)
-  const needsVoices = openSubs.value[key] && !ttsVoices.value.length && (key === 'ttsFavorites' || key === 'ttsVoices' || key.startsWith('ttsLocale:'))
+  const needsVoices = openSubs.value[key] && !ttsVoices.value.length && (key === 'ttsFavorites' || key === 'ttsVoices')
   if (needsVoices) await loadTTS()
 }
 watch(openGroups, groups => groups.other && loadNotebooks(), { deep: true })
