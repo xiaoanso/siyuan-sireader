@@ -292,6 +292,9 @@ const checkSelection = (doc?: Document, e?: Event) => {
       if (state.selection) {
         state.selection = null
         selectionDoc = null
+        // Only stop selection-loop TTS on explicit content mouseup/touchend.
+        // selectionchange also fires when focus leaves the iframe to click .mark-menu — that must not kill speak.
+        if (e && (e.type === 'mouseup' || e.type === 'touchend')) props.ttsController?.cancelLoop?.()
       }
       if (state.showMenu && !state.showPanel && !state.showSendMenu) closeAll()
       return false

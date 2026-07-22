@@ -360,6 +360,13 @@ const setupPdfCommands = (registry: PluginRegistry) => {
   const capture = getCapability<any>(registry, 'capture')?.forDocument(documentId)
   const docs = quickDocs()
   const selectedMark = () => getPdfSelectionMark(selection)
+  const clearSelection = selection?.clear?.bind(selection)
+  if (selection && clearSelection) {
+    selection.clear = (...args: any[]) => {
+      void import('@/services/TTSPlayer').then(({ getTTSController }) => getTTSController().cancelLoop())
+      return clearSelection(...args)
+    }
+  }
   const openSendMenu = (type: 'selection' | 'annotation') => {
     const commandId = `sireader:send-${type}-menu`
     uiDoc?.openMenu?.(`sireader-pdf-send-${type}`, commandId, commandId)
@@ -416,6 +423,11 @@ const setupPdfCommands = (registry: PluginRegistry) => {
   ;[
     ['dict', props.i18n?.dict || '词典', 'book', async (mark: any) => (await import('@/utils/dictionary')).openDict(mark.text, innerWidth / 2, innerHeight / 2, mark)],
     ['translate', props.i18n?.translate || '翻译', 'text', (mark: any) => openPdfTranslate(mark.text)],
+    ['speak', props.i18n?.ttsPlay || '朗读', 'volume', async (mark: any) => {
+      const { getTTSController } = await import('@/services/TTSPlayer')
+      const tts = props.settings?.tts || (window as any).__sireader_settings?.tts
+      getTTSController().speak(mark.text, tts)
+    }],
   ].forEach(([id, label, icon, run]: any) => commands?.registerCommand?.({ id: `sireader:${id}-selection`, label, icon, action: async () => { const mark = await selectedMark(); if (mark?.text) run(mark) } }))
   docs.forEach((doc: any, index: number) => commands?.registerCommand?.({
     id: `sireader:send-selection:${index}`,
@@ -480,9 +492,10 @@ const setupPdfCommands = (registry: PluginRegistry) => {
     ] as any)
   }
   if (selectionMenu) {
-    const items = selectionMenu.items.filter((item: any) => !['sireader-create-mask', 'sireader-create-hole', 'sireader-dict-selection', 'sireader-translate-selection', 'sireader-send-selection-list', 'sireader-send-selection-divider', 'sireader-send-selection-menu'].includes(item.id))
+    const items = selectionMenu.items.filter((item: any) => !['sireader-create-mask', 'sireader-create-hole', 'sireader-dict-selection', 'sireader-translate-selection', 'sireader-speak-selection', 'sireader-send-selection-list', 'sireader-send-selection-divider', 'sireader-send-selection-menu'].includes(item.id))
     selectionMenu.items = addMissingPdfMenuItemsAfterFirst(items, [
       { type: 'command-button', id: 'sireader-create-hole', commandId: 'sireader:create-hole', variant: 'icon-text' },
+      { type: 'command-button', id: 'sireader-speak-selection', commandId: 'sireader:speak-selection', variant: 'icon' },
       { type: 'command-button', id: 'sireader-dict-selection', commandId: 'sireader:dict-selection', variant: 'icon' },
       { type: 'command-button', id: 'sireader-translate-selection', commandId: 'sireader:translate-selection', variant: 'icon' },
       ...(docs.length ? [

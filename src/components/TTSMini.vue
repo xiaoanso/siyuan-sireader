@@ -28,7 +28,9 @@
           <label class="tts-mini-voice">
             <span>语音</span>
             <select class="b3-select" :value="ttsSettings.voice" @focus="loadVoices" @change="setVoice">
-              <option v-for="voice in voiceOptions" :key="voice.name" :value="voice.name">{{ voice.displayName || voice.name }}</option>
+              <optgroup v-for="g in voiceGroups" :key="g.locale" :label="g.label">
+                <option v-for="voice in g.voices" :key="voice.name" :value="voice.name">{{ voice.displayName || voice.name }}</option>
+              </optgroup>
             </select>
           </label>
           <label class="tts-mini-rate">
@@ -37,8 +39,17 @@
           </label>
         </div>
         <div class="tts-mini-line tts-mini-line--triple">
-          <label class="tts-mini-rate"><span>音调 {{ Number(ttsSettings.pitch || 1).toFixed(1) }}</span><input class="b3-slider" type="range" min="0.5" max="1.5" step="0.1" :value="ttsSettings.pitch || 1" @input="setNum('pitch', $event)"></label>
+          <label class="tts-mini-rate"><span>音调 {{ Number(ttsSettings.pitch || 0) }}Hz</span><input class="b3-slider" type="range" min="-50" max="50" step="5" :value="ttsSettings.pitch || 0" @input="setNum('pitch', $event)"></label>
+          <label class="tts-mini-rate"><span>音量 {{ Number(ttsSettings.volume || 0) }}%</span><input class="b3-slider" type="range" min="-50" max="50" step="5" :value="ttsSettings.volume || 0" @input="setNum('volume', $event)"></label>
           <label class="tts-mini-rate"><span>句 {{ Number(ttsSettings.sentenceGap || 0).toFixed(1) }}s</span><input class="b3-slider" type="range" min="0" max="3" step="0.1" :value="ttsSettings.sentenceGap || 0" @input="setNum('sentenceGap', $event)"></label>
+        </div>
+        <div class="tts-mini-line">
+          <label class="tts-mini-voice">
+            <span>风格</span>
+            <select class="b3-select" :value="ttsSettings.style || 'general'" @change="setStyle">
+              <option v-for="s in styleOptions" :key="s" :value="s">{{ styleLabel(s) }}</option>
+            </select>
+          </label>
           <label class="tts-mini-rate"><span>段 {{ Number(ttsSettings.paragraphGap ?? 0.3).toFixed(1) }}s</span><input class="b3-slider" type="range" min="0" max="5" step="0.1" :value="ttsSettings.paragraphGap ?? 0.3" @input="setNum('paragraphGap', $event)"></label>
         </div>
         <div class="tts-mini-switches">
@@ -52,9 +63,14 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { settingsManager, type ReaderSettings } from '@/composables/useSetting'
+import { settingsManager, TTS_STYLE_OPTIONS, type ReaderSettings } from '@/composables/useSetting'
 import { getTTSController } from '@/services/TTSPlayer'
-import type { TTSVoice } from '@/services/TTSEngine'
+import { groupVoicesByLocale, type TTSVoice } from '@/services/TTSEngine'
+
+const STYLE_LABELS: Record<string, string> = {
+  general: '通用', assistant: '助手', chat: '聊天', customerservice: '客服', newscast: '新闻',
+  affectionate: '亲切', calm: '平静', cheerful: '愉快', gentle: '温和', lyrical: '抒情', serious: '严肃',
+}
 
 const tts = getTTSController()
 const visible = ref(false)
@@ -62,8 +78,10 @@ const popupRef = ref<HTMLElement>()
 const settings = ref<ReaderSettings | null>((window as any).__sireader_settings || null)
 const voices = ref<TTSVoice[]>([])
 const loadingVoices = ref(false)
+const styleOptions = TTS_STYLE_OPTIONS
 let saveTimer: number | undefined
 
+const styleLabel = (s: string) => STYLE_LABELS[s] || s
 const position = () => nextTick(() => {
   const btn = document.querySelector('#tts-btn') as HTMLElement | null
   if (!btn || !popupRef.value) return
@@ -86,15 +104,35 @@ const ttsSettings = computed(() => settings.value?.tts)
 const voiceOptions = computed(() => {
   const current = ttsSettings.value?.voice
   const favorites = settings.value?.tts?.favoriteVoices || []
-  const list = [...voices.value.filter(v => v.isLocal), ...favorites.filter(v => !voices.value.some(local => local.name === v.name))]
-  return current && !list.some(v => v.name === current) ? [{ name: current, displayName: current, locale: '', isLocal: false }, ...list] : list
+  const list = [
+    ...voices.value.filter(v => v.isLocal),
+    ...favorites.filter(v => !voices.value.some(local => local.name === v.name)),
+    ...voices.value.filter(v => !v.isLocal && !favorites.some(f => f.name === v.name)),
+  ]
+  return current && !list.some(v => v.name === current)
+    ? [{ name: current, displayName: current, locale: '', gender: 'Female' as const, isLocal: false }, ...list]
+    : list
+})
+const voiceGroups = computed(() => {
+  const locals = voiceOptions.value.filter(v => v.isLocal)
+  const online = voiceOptions.value.filter(v => !v.isLocal)
+  const groups = [
+    ...(locals.length ? [{ locale: 'local', label: '本地', voices: locals }] : []),
+    ...groupVoicesByLocale(online),
+  ]
+  return groups.filter(g => g.voices.length)
 })
 const loadVoices = async () => {
   if (loadingVoices.value || voices.value.length) return
   loadingVoices.value = true
   try {
-    const { loadLocalVoices } = await import('@/services/TTSEngine')
-    voices.value = await loadLocalVoices()
+    const { loadLocalVoices, loadOnlineVoices, PRESET_VOICES } = await import('@/services/TTSEngine')
+    const [local, online] = await Promise.allSettled([loadLocalVoices(), loadOnlineVoices()])
+    const locals = local.status === 'fulfilled' ? local.value : []
+    const onlines = online.status === 'fulfilled' ? online.value : []
+    const merged = [...locals, ...onlines]
+    const names = new Set(merged.map(v => v.name))
+    voices.value = [...merged, ...PRESET_VOICES.filter(v => !names.has(v.name))]
   } finally { loadingVoices.value = false }
 }
 const saveSettings = () => {
@@ -111,6 +149,7 @@ const setTTS = (key: string, value: any) => {
 const setNum = (key: string, e: Event) => setTTS(key, Number((e.target as HTMLInputElement).value))
 const setRate = (e: Event) => setTTS('rate', Number((e.target as HTMLInputElement).value))
 const setVoice = (e: Event) => setTTS('voice', (e.target as HTMLSelectElement).value)
+const setStyle = (e: Event) => setTTS('style', (e.target as HTMLSelectElement).value)
 const setCheck = (key: 'autoTurnPage' | 'highlightText', e: Event) => setTTS(key, (e.target as HTMLInputElement).checked)
 
 watch(tts.isActive, active => {

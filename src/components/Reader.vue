@@ -45,6 +45,9 @@
         <button v-if="ttsEnabled&&!isEmbedPdfMode" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying}" @click.stop="toggleTTS" :aria-label="ttsPlaying?(i18n.ttsPause||'暂停朗读'):(i18n.ttsPlay||'开始朗读')"><svg><use :xlink:href="ttsPlaying?'#iconPause':'#iconPlay'"/></svg></button>
         <button v-if="isMobile()" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleClose" aria-label="Close"><svg><use xlink:href="#iconClose"/></svg></button>
       </div>
+      <div v-else-if="ttsEnabled" class="reader-toolbar is-visible">
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying}" @click.stop="toggleTTS" :aria-label="ttsPlaying?(i18n.ttsPause||'暂停朗读'):(i18n.ttsPlay||'开始朗读')"><svg><use :xlink:href="ttsPlaying?'#iconPause':'#iconPlay'"/></svg></button>
+      </div>
     </div>
   </div>
   <MarkPanel v-if="!isEmbedPdfMode" ref="markPanelRef" :root="containerRef" :book-url="getBookUrl()" :manager="markManager" :reader="reader" :current-view="currentView" :read-only="false" :i18n="i18n" :tts-controller="ttsController" :tts-config="currentSettings?.tts" :quick-mark-mode="quickMarkMode" :quick-mark-color="COLORS[quickMarkColor].color" :quick-mark-style="quickMarkStyle" :can="can" :show-upgrade="showUpgrade" @copy="(text,sel)=>handleCopy({text,cfi:sel?.cfi,page:sel?.page,section:sel?.section,rects:sel?.rects,textOffset:sel?.textOffset})" @dict="handleOpenDict" @copy-mark-only="handleCopyToClipboard" />
@@ -163,9 +166,32 @@ let reader: FoliateReader | null = null
 const ttsController = getTTSController()
 const ttsEnabled = computed(() => currentSettings.value?.tts?.enabled || false)
 const ttsPlaying = computed(() => ttsController.isActive.value && !ttsController.paused.value)
-const clearReadingSelection=()=>{try{reader?.getView?.()?.renderer?.getContents?.()?.forEach(({doc}:any)=>doc.defaultView?.getSelection()?.removeAllRanges());document.getSelection()?.removeAllRanges()}catch{}}
-const toggleTTS = () => {if (!can.value('tts')) return showUpgrade('TTS朗读'); clearReadingSelection(); ttsController.toggle(() => reader, currentSettings.value?.tts, undefined, getBookName())}
-const syncTTS = async () => ttsController.sync(currentSettings.value?.tts?.enabled || false)
+const getReadingSelection=()=>{
+  try{
+    for(const{doc}of reader?.getView?.()?.renderer?.getContents?.()||[]){
+      const sel=doc.defaultView?.getSelection?.()
+      if(sel&&!sel.isCollapsed&&sel.rangeCount){const text=sel.toString().trim();if(text)return{text,range:sel.getRangeAt(0).cloneRange()}}
+    }
+    const sel=document.getSelection()
+    if(sel&&!sel.isCollapsed&&sel.rangeCount){const text=sel.toString().trim();if(text)return{text,range:sel.getRangeAt(0).cloneRange()}}
+  }catch{}
+}
+const toggleTTS=async()=>{
+  if(!can.value('tts'))return showUpgrade('TTS朗读')
+  if(ttsController.isActive.value)return ttsController.togglePause()
+  const tts=currentSettings.value?.tts
+  if(isEmbedPdfMode.value){
+    const selected=await currentView.value?.getSelectionText?.()
+    if(selected?.trim())return ttsController.speak(selected.trim(),tts)
+    const page=embedPdfPages.value?.getCurrentPage?.()||1
+    const text=await currentView.value?.getPageText?.(page)
+    if(!text?.trim())return showMessage(i18n.value.ttsNoText||'当前页无文本',2000,'info')
+    return ttsController.playText(text.trim(),tts,getBookName(),false)
+  }
+  const selection=getReadingSelection()
+  ttsController.toggle(()=>reader,tts,selection?.range?{text:selection.text,range:selection.range}:undefined,getBookName())
+}
+const syncTTS=async()=>ttsController.sync(currentSettings.value?.tts)
 const marks=computed(()=>markManager.value)
 const isEmbedPdfMode=computed(()=>currentView.value?.engine==='embedpdf')
 const hasSearchResults=computed(()=>searchResults.value.length>0)
@@ -233,9 +259,15 @@ const handleEmbedPdfReady=(registry:any)=>{
     const pageNumber=Number(page)||1
     if(!pageTextCache.has(pageNumber))pageTextCache.set(pageNumber,(async()=>{
       const doc=registry.getPlugin('document-manager')?.provides?.().getDocument(documentId)
-      return doc ? await registry.getEngine().extractText(doc,[pageNumber-1]).toPromise() : ''
+      const raw=doc ? await registry.getEngine().extractText(doc,[pageNumber-1]).toPromise() : ''
+      return typeof raw==='string'?raw:(Array.isArray(raw)?raw.join('\n'):String(raw||''))
     })())
     return pageTextCache.get(pageNumber)!
+  }
+  currentView.value.getSelectionText=async()=>{
+    const selection=registry.getPlugin('selection')?.provides?.()?.forDocument?.(documentId)
+    const lines=await taskToPromise<string[]>(selection?.getSelectedText?.()).catch(()=>[])
+    return (Array.isArray(lines)?lines.join('\n'):String(lines||'')).trim()
   }
   currentView.value.getBookmarks=()=>taskToPromise<any>(registry.getPlugin('bookmark')?.provides?.()?.forDocument?.(documentId)?.getBookmarks?.()).then((result:any)=>result?.bookmarks||[])
   window.dispatchEvent(new CustomEvent('sireader:tab-switched'))
@@ -412,6 +444,7 @@ defineExpose({ resize })
 onMounted(()=>{init();containerRef.value?.focus();events.forEach(([e,h])=>window.addEventListener(e,h as any));window.addEventListener('keydown',handleKeydown);window.addEventListener('unhandledrejection',suppressError);window.addEventListener('blur',handleWindowBlur);window.addEventListener('focus',handleWindowFocus);document.addEventListener('visibilitychange',handleVisibilityChange);setupTabObserver();const c=containerRef.value;c&&(c.addEventListener('focusin',handleFocusIn),c.addEventListener('focusout',handleFocusOut));bindTouchPaging(c);bindTouchPaging(viewerContainerRef.value);window.dispatchEvent(new CustomEvent('reader:open',{detail:{bookUrl:getBookUrl()}}));syncReaderFocus(true)})
 onUnmounted(async()=>{
   const view=currentView.value,c=containerRef.value
+  ttsController.destroy()
   syncReaderFocus(false);window.dispatchEvent(new CustomEvent('reader:close'));savePosition();readerSplashRef.value?.cleanup();clearActiveReader(view);closeMediaMenu()
   events.forEach(([e,h])=>window.removeEventListener(e,h as any));window.removeEventListener('keydown',handleKeydown);window.removeEventListener('unhandledrejection',suppressError);window.removeEventListener('blur',handleWindowBlur);window.removeEventListener('focus',handleWindowFocus);document.removeEventListener('visibilitychange',handleVisibilityChange);(c as any)?.__observer?.disconnect();c&&(c.removeEventListener('focusin',handleFocusIn),c.removeEventListener('focusout',handleFocusOut));unbindTouchPaging()
   try{await reader?.destroy();view?.cleanup?.()}catch{}
