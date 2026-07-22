@@ -372,7 +372,7 @@
   "dictFormatHint": "支持 StarDict 和 dictd 格式",
   "downloadDict": "下载词典",
   "resetDefault": "重置为默认",
-  "ttsSettings": "TTS朗读设置",
+  "ttsSettings": "TTS朗读",
   "ttsNotConfigured": "TTS未配置",
   "ttsEnabled": "启用TTS",
   "ttsEnabledDesc": "开启后可使用文本转语音朗读功能",
