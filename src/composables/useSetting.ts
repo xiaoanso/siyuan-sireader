@@ -19,8 +19,27 @@ export interface TextSettings { fontFamily: string; fontSize: number; fontWeight
 export interface ParagraphSettings { lineHeight: number; paragraphSpacing: number; textIndent: number }
 export interface LayoutSettings { gap: number; headerFooterMargin: number; maxInlineSize?: number; maxBlockSize?: number }
 export interface VisualSettings { brightness: number; contrast: number; sepia: number; saturate: number; invert: boolean }
-export interface TTSVoice { name: string; displayName: string; locale: string; isLocal?: boolean }
-export interface TTSSettings { enabled: boolean; voice: string; rate: number; pitch: number; sentenceGap: number; paragraphGap: number; autoTurnPage: boolean; highlightText: boolean; favoriteVoices: TTSVoice[] }
+export interface TTSVoice { name: string; displayName: string; locale: string; isLocal?: boolean; gender?: 'Male' | 'Female' }
+export interface TTSSettings { enabled: boolean; voice: string; rate: number; pitch: number; volume: number; style: string; sentenceGap: number; paragraphGap: number; autoTurnPage: boolean; highlightText: boolean; favoriteVoices: TTSVoice[] }
+export const TTS_STYLE_OPTIONS = ['general', 'assistant', 'chat', 'customerservice', 'newscast', 'affectionate', 'calm', 'cheerful', 'gentle', 'lyrical', 'serious'] as const
+/** Migrate legacy pitch multiplier (0.5–2) → Hz offset (-50…50). */
+export const migrateTtsPitch = (pitch: unknown) => {
+  const n = Number(pitch)
+  if (!Number.isFinite(n)) return 0
+  if (n > 0 && n <= 2) return Math.round((n - 1) * 50)
+  return Math.max(-50, Math.min(50, Math.round(n)))
+}
+export const DEFAULT_TTS_SETTINGS: TTSSettings = { enabled: false, voice: 'zh-CN-XiaoxiaoNeural', rate: 1.0, pitch: 0, volume: 0, style: 'general', sentenceGap: 0, paragraphGap: 0.3, autoTurnPage: true, highlightText: true, favoriteVoices: [] }
+export const normalizeTtsSettings = (tts?: Partial<TTSSettings> | null): TTSSettings => {
+  const merged = { ...DEFAULT_TTS_SETTINGS, ...(tts || {}) }
+  return {
+    ...merged,
+    pitch: migrateTtsPitch(merged.pitch),
+    volume: Math.max(-50, Math.min(50, Math.round(Number(merged.volume) || 0))),
+    style: TTS_STYLE_OPTIONS.includes(merged.style as any) ? merged.style : 'general',
+    favoriteVoices: Array.isArray(merged.favoriteVoices) ? merged.favoriteVoices : [],
+  }
+}
 export interface TranslationSettings { autoOnSelection: boolean; engine: 'google' | 'azure' | 'yandex' | 'ai-free' | 'ai' }
 export interface ReaderSettings { enabled: boolean; openMode: 'newTab' | 'rightTab' | 'bottomTab' | 'newWindow'; navPosition: NavPosition; pageAnimation: PageAnimation; viewMode: ViewMode; theme: string; customTheme: ReadTheme; notebookId?: string; parentDoc?: DocInfo; noteInsertTarget: NoteInsertTarget; noteInsertMode: NoteInsertMode; linkFormat: string; annotationTagPresets: string; annotationSyncOnAdd: boolean; annotationSyncOnDelete: boolean; bookshelfCoverSize: number; bookshelfHiddenItems: string[]; openDocAssets: boolean; showWereadTopBar: boolean; epubOpeningSplash: boolean; toolbarOpacity: number; pdfZoomLevel?: 'automatic' | 'fit-page' | 'fit-width' | number; quickSendDocs?: DocInfo[]; navItems?: NavItem[]; textSettings: TextSettings; paragraphSettings: ParagraphSettings; layoutSettings: LayoutSettings; visualSettings: VisualSettings; translation: TranslationSettings; tts?: TTSSettings }
 
@@ -38,7 +57,7 @@ export const applyTheme = (el: HTMLElement, s: ReaderSettings) => { const t = ge
 export const applyPageStyles = (iframe: HTMLIFrameElement, s: ReaderSettings) => { const doc = iframe.contentDocument; if (!doc?.body) return; const { textSettings: t, paragraphSettings: p } = s; const { font, fontFace } = getFont(t), css = `${fontFace}body{font-family:${font}!important;font-size:${t.fontSize}px!important;font-weight:${t.fontWeight}!important;letter-spacing:${t.letterSpacing}em!important}p,div{line-height:${p.lineHeight}!important;margin:${p.paragraphSpacing}em 0!important}p{text-indent:${p.textIndent}em!important}`; const style = doc.querySelector('style[data-sireader-page]') || doc.head.appendChild(Object.assign(doc.createElement('style'), { textContent: '' })); style.setAttribute('data-sireader-page', 'true'); if (style.textContent !== css) style.textContent = css; };
 
 // ===== 默认配置 =====
-const DEFAULT_SETTINGS: ReaderSettings = { enabled: true, openMode: 'newTab', navPosition: 'top', pageAnimation: 'slide', viewMode: 'single', theme: 'auto', customTheme: { name: 'custom', color: '#202124', bg: '#ffffff' }, notebookId: '', parentDoc: undefined, noteInsertTarget: 'clipboard', noteInsertMode: 'insertBlock', linkFormat: '> [!NOTE] 📑 书名\n> [章节](链接) 文本\n> 图片\n> 笔记', annotationTagPresets: '未分组:', annotationSyncOnAdd: false, annotationSyncOnDelete: false, bookshelfCoverSize: 120, bookshelfHiddenItems: [], openDocAssets: true, showWereadTopBar: true, epubOpeningSplash: false, toolbarOpacity: 70, quickSendDocs: [], textSettings: { fontFamily: 'inherit', fontSize: 16, fontWeight: 400, letterSpacing: 0, customFont: { fontFamily: '', fontFile: '' } }, paragraphSettings: { lineHeight: 1.6, paragraphSpacing: 0.8, textIndent: 0 }, layoutSettings: { gap: 0, headerFooterMargin: 0 }, visualSettings: { brightness: 1, contrast: 1, sepia: 0, saturate: 1, invert: false }, translation: { autoOnSelection: false, engine: 'azure' }, tts: { enabled: false, voice: 'zh-CN-XiaoxiaoNeural', rate: 1.0, pitch: 1.0, sentenceGap: 0, paragraphGap: 0.3, autoTurnPage: true, highlightText: true, favoriteVoices: [] } }
+const DEFAULT_SETTINGS: ReaderSettings = { enabled: true, openMode: 'newTab', navPosition: 'top', pageAnimation: 'slide', viewMode: 'single', theme: 'auto', customTheme: { name: 'custom', color: '#202124', bg: '#ffffff' }, notebookId: '', parentDoc: undefined, noteInsertTarget: 'clipboard', noteInsertMode: 'insertBlock', linkFormat: '> [!NOTE] 📑 书名\n> [章节](链接) 文本\n> 图片\n> 笔记', annotationTagPresets: '未分组:', annotationSyncOnAdd: false, annotationSyncOnDelete: false, bookshelfCoverSize: 120, bookshelfHiddenItems: [], openDocAssets: true, showWereadTopBar: true, epubOpeningSplash: false, toolbarOpacity: 70, quickSendDocs: [], textSettings: { fontFamily: 'inherit', fontSize: 16, fontWeight: 400, letterSpacing: 0, customFont: { fontFamily: '', fontFile: '' } }, paragraphSettings: { lineHeight: 1.6, paragraphSpacing: 0.8, textIndent: 0 }, layoutSettings: { gap: 0, headerFooterMargin: 0 }, visualSettings: { brightness: 1, contrast: 1, sepia: 0, saturate: 1, invert: false }, translation: { autoOnSelection: false, engine: 'azure' }, tts: { ...DEFAULT_TTS_SETTINGS } }
 export const LINK_FORMAT_PRESETS: Record<LinkFormatPreset, string> = {
   simple: '[书名](链接) 文本',
   heading: '## 书名\n- [章节](链接) 文本\n- 位置\n- 笔记\n- 图片',
@@ -51,7 +70,7 @@ const splitTags = (value = '') => value.split(/[#;,\uFF1B\uFF0C\u3001\n]/).map(t
 
 // ===== UI配置常量 =====
 const r = (k: string, min: number, max: number, step: number, unit = '') => ({ key: k, type: 'range' as const, min, max, step, unit })
-export const UI_CONFIG = { interfaceItems: [{ key: 'openMode', opts: ['newTab', 'rightTab', 'bottomTab', 'newWindow'] }, { key: 'openDocAssets', type: 'checkbox' as const }, { key: 'showWereadTopBar', type: 'checkbox' as const }, { key: 'epubOpeningSplash', type: 'checkbox' as const }, { key: 'navPosition', opts: ['left', 'right', 'top', 'bottom'] }, { key: 'viewMode', opts: ['single', 'double', 'scroll'] }, { key: 'pageAnimation', opts: ['slide', 'none'] }, r('bookshelfCoverSize', 80, 160, 10, 'px'), r('toolbarOpacity', 0, 100, 5, '%')], customThemeItems: [{ key: 'color', label: 'textColor', type: 'color' }, { key: 'bg', label: 'bgColor', type: 'color' }, { key: 'bgImg', label: 'bgImage', type: 'text' }], appearanceGroups: [{ title: 'textSettings', items: [r('fontSize', 12, 32, 1, 'px'), r('fontWeight', 300, 900, 100), r('letterSpacing', 0, 0.2, 0.01, 'em')] }, { title: 'paragraphSettings', items: [r('lineHeight', 1.0, 3.0, 0.1), r('paragraphSpacing', 0, 2, 0.1, 'em'), r('textIndent', 0, 4, 0.5, 'em')] }, { title: 'layoutSettings', items: [r('gap', 0, 20, 1, '%'), r('headerFooterMargin', 0, 60, 5, 'px'), r('maxInlineSize', 0, 2000, 50, 'px'), r('maxBlockSize', 0, 3000, 50, 'px')] }, { title: 'visualSettings', items: [r('brightness', 0.5, 1.5, 0.05), r('contrast', 0.5, 1.5, 0.05), r('sepia', 0, 1, 0.05), r('saturate', 0, 2, 0.1), { key: 'invert', type: 'checkbox' as const }] }], ttsItems: [{ key: 'enabled', type: 'checkbox' as const }, r('rate', 0.5, 2.0, 0.1, 'x'), r('pitch', 0.5, 1.5, 0.1), r('sentenceGap', 0, 3, 0.1, 's'), r('paragraphGap', 0, 5, 0.1, 's')], ttsOptions: [{ key: 'autoTurnPage', type: 'checkbox' as const }, { key: 'highlightText', type: 'checkbox' as const }] }
+export const UI_CONFIG = { interfaceItems: [{ key: 'openMode', opts: ['newTab', 'rightTab', 'bottomTab', 'newWindow'] }, { key: 'openDocAssets', type: 'checkbox' as const }, { key: 'showWereadTopBar', type: 'checkbox' as const }, { key: 'epubOpeningSplash', type: 'checkbox' as const }, { key: 'navPosition', opts: ['left', 'right', 'top', 'bottom'] }, { key: 'viewMode', opts: ['single', 'double', 'scroll'] }, { key: 'pageAnimation', opts: ['slide', 'none'] }, r('bookshelfCoverSize', 80, 160, 10, 'px'), r('toolbarOpacity', 0, 100, 5, '%')], customThemeItems: [{ key: 'color', label: 'textColor', type: 'color' }, { key: 'bg', label: 'bgColor', type: 'color' }, { key: 'bgImg', label: 'bgImage', type: 'text' }], appearanceGroups: [{ title: 'textSettings', items: [r('fontSize', 12, 32, 1, 'px'), r('fontWeight', 300, 900, 100), r('letterSpacing', 0, 0.2, 0.01, 'em')] }, { title: 'paragraphSettings', items: [r('lineHeight', 1.0, 3.0, 0.1), r('paragraphSpacing', 0, 2, 0.1, 'em'), r('textIndent', 0, 4, 0.5, 'em')] }, { title: 'layoutSettings', items: [r('gap', 0, 20, 1, '%'), r('headerFooterMargin', 0, 60, 5, 'px'), r('maxInlineSize', 0, 2000, 50, 'px'), r('maxBlockSize', 0, 3000, 50, 'px')] }, { title: 'visualSettings', items: [r('brightness', 0.5, 1.5, 0.05), r('contrast', 0.5, 1.5, 0.05), r('sepia', 0, 1, 0.05), r('saturate', 0, 2, 0.1), { key: 'invert', type: 'checkbox' as const }] }], ttsItems: [{ key: 'enabled', type: 'checkbox' as const }, r('rate', 0.5, 2.0, 0.1, 'x'), r('pitch', -50, 50, 5, 'Hz'), r('volume', -50, 50, 5, '%'), { key: 'style', opts: [...TTS_STYLE_OPTIONS], labels: TTS_STYLE_OPTIONS.map(s => `ttsStyle_${s}`) }, r('sentenceGap', 0, 3, 0.1, 's'), r('paragraphGap', 0, 5, 0.1, 's')], ttsOptions: [{ key: 'autoTurnPage', type: 'checkbox' as const }, { key: 'highlightText', type: 'checkbox' as const }] }
 export const DEFAULT_NAV_ITEMS: NavItem[] = [
   { id: 'bookshelf', icon: 'lucide-library-big', tip: 'bookshelf', enabled: true, order: 0 },
   { id: 'search', icon: 'lucide-book-search', tip: 'search', enabled: true, order: 1 },
@@ -67,9 +86,14 @@ export const SETTING_SECTION_ICONS = {
   sub: { navItems: '#lucide-list-tree', customFont: '#lucide-book-text' },
   appearance: { textSettings: '#lucide-book-open-text', paragraphSettings: '#lucide-scroll-text', layoutSettings: '#lucide-layout-template', visualSettings: '#lucide-sliders-horizontal' },
   dictionary: { offlineDict: '#lucide-hard-drive', onlineDict: '#lucide-wifi' },
-  voice: { ttsFavorites: '#lucide-star', ttsVoices: '#lucide-radio' }
-} as const
-export const settingSectionIcon = (group: keyof typeof SETTING_SECTION_ICONS, key: string) => (SETTING_SECTION_ICONS[group] as Record<string, string>)[key] || '#lucide-settings-2'
+  voice: { ttsFavorites: '#lucide-star', ttsVoices: '#lucide-radio', ttsLocale: '#lucide-languages' }
+}
+export const settingSectionIcon = (group: keyof typeof SETTING_SECTION_ICONS, key: string) => {
+  const icons = SETTING_SECTION_ICONS[group] as Record<string, string>
+  if (icons[key]) return icons[key]
+  if (group === 'voice' && key.startsWith('ttsLocale:')) return icons.ttsLocale || '#lucide-languages'
+  return '#lucide-settings-2'
+}
 export const SectionTitle = defineComponent({
   props: { title: { type: String, required: true }, icon: { type: String, required: true }, open: Boolean, ariaLabel: String },
   emits: ['toggle'],
@@ -96,7 +120,11 @@ export const SettingItem = defineComponent({
     const checked = (e: Event) => (e.target as HTMLInputElement).checked
     const control = () => {
       const item = props.item as any
-      if (item.opts) return h('select', { value: props.modelValue, class: 'b3-select sr-control', onChange: (e: Event) => emit('change', value(e)) }, item.opts.map((opt: string, i: number) => h('option', { key: opt, value: opt }, item.labels?.[i] ? (props.i18n as any)[item.labels[i]] : (props.i18n as any)[opt])))
+      if (item.opts) return h('select', { value: props.modelValue, class: 'b3-select sr-control', onChange: (e: Event) => emit('change', value(e)) }, item.opts.map((opt: string, i: number) => {
+        const labelKey = item.labels?.[i]
+        const label = (labelKey && (props.i18n as any)?.[labelKey]) || (props.i18n as any)?.[opt] || opt
+        return h('option', { key: opt, value: opt }, label)
+      }))
       if (item.type === 'checkbox') return h('label', { class: 'fn__flex-center' }, [h('input', { checked: props.modelValue, type: 'checkbox', class: 'b3-switch', onChange: (e: Event) => emit('change', checked(e)) })])
       if (item.type === 'color' || item.type === 'text') return h('input', { value: props.modelValue, type: item.type, class: item.type === 'color' ? 'sr-control' : 'b3-text-field sr-control', onChange: (e: Event) => emit('change', value(e)) })
       return h('input', { value: props.modelValue, type: 'range', class: 'b3-slider sr-control b3-tooltips b3-tooltips__n', min: item.min, max: item.max, step: item.step, 'aria-label': `${props.modelValue}${item.unit || ''}`, onInput: (e: Event) => emit('input', Number(value(e))) })
@@ -205,8 +233,20 @@ export const useConfirm = (f: () => void) => { const c = ref(false); return { co
 // ===== 设置管理 =====
 const merge = (d: any, s: any): any => { const r = { ...d }; for (const k in s) if (s[k] !== undefined && s[k] !== null) r[k] = typeof s[k] === 'object' && !Array.isArray(s[k]) && d[k] ? merge(d[k], s[k]) : s[k]; return r; };
 export const settingsManager = {
-  get: async (): Promise<ReaderSettings> => { const s = await bookshelfManager.getSetting('reader_settings'); const v = s ? merge(DEFAULT_SETTINGS, s) : { ...DEFAULT_SETTINGS }; v.linkFormat = normalizeLinkFormat(v.linkFormat); return (window as any).__sireader_settings = v; },
-  save: async (settings: ReaderSettings) => { const v = JSON.parse(JSON.stringify(toRaw(settings))); await bookshelfManager.saveSetting('reader_settings', v); (window as any).__sireader_settings = v; window.dispatchEvent(new CustomEvent('sireaderSettingsUpdated', { detail: v })); }
+  get: async (): Promise<ReaderSettings> => {
+    const s = await bookshelfManager.getSetting('reader_settings')
+    const v = s ? merge(DEFAULT_SETTINGS, s) : { ...DEFAULT_SETTINGS }
+    v.linkFormat = normalizeLinkFormat(v.linkFormat)
+    v.tts = normalizeTtsSettings(v.tts)
+    return (window as any).__sireader_settings = v
+  },
+  save: async (settings: ReaderSettings) => {
+    const v = JSON.parse(JSON.stringify(toRaw(settings)))
+    v.tts = normalizeTtsSettings(v.tts)
+    await bookshelfManager.saveSetting('reader_settings', v)
+    ;(window as any).__sireader_settings = v
+    window.dispatchEvent(new CustomEvent('sireaderSettingsUpdated', { detail: v }))
+  }
 };
 export const collectAnnotationTagPresets = async (tags: unknown[] = []) => {
   const settings = (window as any).__sireader_settings as ReaderSettings

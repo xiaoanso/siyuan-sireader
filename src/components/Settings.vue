@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showMessage } from 'siyuan'
 import type { ReaderSettings, FontFileInfo } from '@/composables/useSetting'
 import { DEFAULT_NAV_ITEMS, LINK_FORMAT_PRESETS, NOTE_MODE_LABELS, NOTE_MODE_OPTIONS, NOTE_TARGET_OPTIONS, PRESET_THEMES, SectionTitle, SettingItem, SettingRows, SettingSection, UI_CONFIG, getLicenseMedia, setCustomBackgroundFromInput, settingSectionIcon, useSetting, useConfirm, useDocSearch, useNotebooks } from '@/composables/useSetting'
+import { groupVoicesByLocale } from '@/services/TTSEngine'
 import { bookshelfManager } from '@/core/bookshelf'
 import { offlineDictManager, onlineDictManager } from '@/utils/dictionary'
 import { usePlugin } from '@/main'
@@ -28,9 +29,13 @@ const loadTTS = async () => {
   if (loadingTTS.value||ttsVoices.value.length) return
   loadingTTS.value = true
   try {
-    const {loadOnlineVoices,loadLocalVoices} = await import('@/services/TTSEngine')
+    const {loadOnlineVoices,loadLocalVoices,PRESET_VOICES} = await import('@/services/TTSEngine')
     const [local,online] = await Promise.allSettled([loadLocalVoices(),loadOnlineVoices()])
-    ttsVoices.value = [...(local.status==='fulfilled'?local.value:[]),...(online.status==='fulfilled'?online.value:[])]
+    const locals = local.status==='fulfilled'?local.value:[]
+    const onlines = online.status==='fulfilled'?online.value:[]
+    const merged = [...locals, ...onlines]
+    const names = new Set(merged.map(v => v.name))
+    ttsVoices.value = [...merged, ...PRESET_VOICES.filter(v => !names.has(v.name))]
     if (!ttsVoices.value.length) showMessage(props.i18n.loadVoicesFailed||'加载失败',3000,'error')
   } catch (e:any) { showMessage(e.message||props.i18n.loadVoicesFailed||'加载失败',3000,'error') } finally { loadingTTS.value = false }
 }
@@ -50,6 +55,17 @@ const toggleFav = (voice:any) => {
 const isFav = (name:string) => (settings.value.tts?.favoriteVoices||[]).some(v => v.name===name)
 const myVoices = computed(() => [...ttsVoices.value.filter(v => v.isLocal),...(settings.value.tts?.favoriteVoices||[]).filter(v => !v.isLocal)])
 const onlineVoices = computed(() => ttsVoices.value.filter(v => !v.isLocal))
+const voiceRow = (v:any, isLocal:boolean) => ({
+  key: v.name,
+  text: v.displayName,
+  meta: isLocal
+    ? (props.i18n.localVoice || '本地')
+    : [v.locale, v.gender === 'Male' ? (props.i18n.ttsMale || '男') : v.gender === 'Female' ? (props.i18n.ttsFemale || '女') : ''].filter(Boolean).join(' · '),
+  active: settings.value.tts?.voice === v.name,
+  pick: () => selectVoice(v.name, isLocal),
+  action: isLocal ? undefined : () => toggleFav(v),
+  actionTitle: isLocal ? undefined : (isFav(v.name) ? (props.i18n.unfavorite || '取消收藏') : (props.i18n.favorite || '收藏')),
+})
 watch(() => props.modelValue,v => settings.value=v,{immediate:true})
 const syncAnnotationTagPresets = (e: Event) => {
   const value = (e as CustomEvent).detail?.annotationTagPresets
@@ -106,18 +122,35 @@ const dictSections = computed(() => [
     key: 'onlineDict', title: props.i18n.onlineDict||'在线词典', items: onlineDicts.value, empty: '', manager: onlineDictManager, desc: (d:any) => d.desc, drop: (e:DragEvent,i:number) => dragDrop(e,i,'dict',onlineDicts,onlineDictManager)
   }
 ])
-const voiceSections = computed(() => [
-  {
-    key: 'ttsFavorites', title: props.i18n.ttsFavoriteVoices||'我的语音', hint: `${props.i18n.ttsCurrentVoice||'当前'}: ${settings.value.tts?.voice||''}`,
-    rows: myVoices.value.map((v:any) => ({ key: v.name, text: v.displayName, meta: v.isLocal ? (props.i18n.localVoice || '本地') : v.locale, active: settings.value.tts?.voice === v.name, pick: () => selectVoice(v.name,v.isLocal), action: v.isLocal ? undefined : () => toggleFav(v), actionTitle: props.i18n.delete || '删除' })),
-    empty: props.i18n.ttsNoFavorites||'暂无，请点击下方加载'
-  },
-  {
-    key: 'ttsVoices', title: props.i18n.ttsVoiceList||'在线语音', hint: props.i18n.ttsOnlineHint||'点击语音名称选择，点击星号收藏',
-    rows: onlineVoices.value.map((v:any) => ({ key: v.name, text: v.displayName, meta: v.locale, active: settings.value.tts?.voice === v.name, pick: () => selectVoice(v.name,false), action: () => toggleFav(v), actionTitle: isFav(v.name)?'取消收藏':'收藏' })),
-    empty: props.i18n.ttsNoVoices||'暂无语音', loadLabel: props.i18n.ttsLoadVoices || '加载语音'
+const voiceSections = computed(() => {
+  const fav = {
+    key: 'ttsFavorites',
+    title: props.i18n.ttsFavoriteVoices || '我的语音',
+    hint: `${props.i18n.ttsCurrentVoice || '当前'}: ${settings.value.tts?.voice || ''}`,
+    rows: myVoices.value.map((v: any) => voiceRow(v, !!v.isLocal)),
+    empty: props.i18n.ttsNoFavorites || '暂无，请点击下方加载',
   }
-])
+  if (!onlineVoices.value.length) {
+    return [fav, {
+      key: 'ttsVoices',
+      title: props.i18n.ttsVoiceList || '在线语音',
+      hint: props.i18n.ttsOnlineHint || '按语种分组；点击名称选择，点击星号收藏',
+      rows: [] as any[],
+      empty: props.i18n.ttsNoVoices || '暂无语音',
+      loadLabel: props.i18n.ttsLoadVoices || '加载语音',
+    }]
+  }
+  return [
+    fav,
+    ...groupVoicesByLocale(onlineVoices.value).map(g => ({
+      key: `ttsLocale:${g.locale}`,
+      title: `${g.label} · ${g.voices.length}`,
+      hint: g.locale === 'other' ? '' : g.locale,
+      rows: g.voices.map((v: any) => voiceRow(v, false)),
+      empty: '',
+    })),
+  ]
+})
 const noteFields = computed(() => [
   checkboxField('annotationSyncOnAdd', props.i18n.annotationSyncOnAdd || '添加时同步', settings.value.annotationSyncOnAdd, value => (settings.value.annotationSyncOnAdd = value, save()), true, props.i18n.annotationSyncOnAddDesc || '新增标注时自动同步到已绑定文档'),
   checkboxField('annotationSyncOnDelete', props.i18n.annotationSyncOnDelete || '删除时同步', settings.value.annotationSyncOnDelete, value => (settings.value.annotationSyncOnDelete = value, save()), true, props.i18n.annotationSyncOnDeleteDesc || '删除标注时同步删除已绑定块'),
@@ -138,7 +171,8 @@ const toggleAccordion = (key:string) => openGroups.value[key] = !openGroups.valu
 const toggleSub = async (key:string) => {
   openSubs.value[key] = !openSubs.value[key]
   if (key === 'customFont' && !fontsLoaded.value && openSubs.value[key]) return await loadCustomFonts(), void (fontsLoaded.value = true)
-  if (['ttsFavorites','ttsVoices'].includes(key) && openSubs.value[key] && !ttsVoices.value.length) await loadTTS()
+  const needsVoices = openSubs.value[key] && !ttsVoices.value.length && (key === 'ttsFavorites' || key === 'ttsVoices' || key.startsWith('ttsLocale:'))
+  if (needsVoices) await loadTTS()
 }
 watch(openGroups, groups => groups.other && loadNotebooks(), { deep: true })
 const handleUpload = async (e:Event) => {
