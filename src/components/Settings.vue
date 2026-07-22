@@ -14,7 +14,7 @@ const props = defineProps<{modelValue:ReaderSettings;i18n:any;onSave:()=>Promise
 const emit = defineEmits<{'update:modelValue':[value:ReaderSettings]}>()
 // 基础状态
 const settings = ref<ReaderSettings>(props.modelValue),
-  openGroups = ref<Record<string, boolean>>({ license: true }),
+  openGroups = ref<Record<string, boolean>>({ license: false }),
   openSubs = ref<Record<string, boolean>>({}),
   licenseRef = ref<HTMLElement>()
 const plugin = usePlugin()
