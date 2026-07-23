@@ -56,5 +56,7 @@
     "pcss",
     "postcss"
   ],
-  "kiroAgent.configureMCP": "Disabled"
+"kiroAgent.configureMCP": "Disabled",
+"terminal.integrated.tabs.defaultColor": "terminal.ansiBlack",
+"terminal.integrated.tabs.defaultIcon": "symbol-folder"
 }
