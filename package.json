@@ -25,6 +25,7 @@
     "fflate": "^0.8.2",
     "foliate-js": "github:readest/foliate-js#dd71f2be356563c16a23272686189fcfb45d0b82",
     "jszip": "^3.10.1",
+    "openai": "^4.104.0",
     "vue": "^3.3.8"
   },
   "devDependencies": {
