@@ -19,6 +19,17 @@ Professional eBook reader for EPUB/PDF/MOBI/TXT/online novels. PDFs support high
 
 ## 📝 Latest Updates
 
+### v2.2.6 (2026.7.29)
+
+### Improved
+
+- Optimized loading, section indexing, and persistence for EPUB books with large annotation datasets, preventing repeated full scans, redundant writes, and concurrent record overwrites from freezing SiYuan.
+- Annotation saves now use dirty checks and single-pass batch merging, skip unchanged data, and serialize writes for the same book.
+
+### Fixed
+
+- Fixed long UI stalls caused by specific EPUB/JSON annotation data repeatedly triggering section calculation and persistence work.
+
 ### v2.2.5 (2026.7.28)
 
 ### Added
