@@ -172,6 +172,7 @@ onUnmounted(() => {
 .tts-mini-state{font-size:11px;color:var(--b3-theme-on-surface-variant)}
 .tts-mini-tools{display:flex;align-items:center;gap:2px;flex-shrink:0}
 .tts-mini-tools .block__icon{width:26px;height:26px}
+.tts-mini-tools .block__icon svg{width:14px;height:14px}
 .tts-mini-text{margin:0 10px 10px;padding:8px;border-radius:6px;background:var(--b3-theme-background);font-size:12px;line-height:1.55;color:var(--b3-theme-on-surface-variant);max-height:140px;overflow:auto;word-break:break-word}
 .tts-mini-controls{border-top:1px solid var(--b3-border-color);padding:8px 10px 10px;display:grid;gap:8px;font-size:12px;color:var(--b3-theme-on-surface-variant)}
 .tts-mini-line{display:grid;grid-template-columns:minmax(0,1fr) 118px;align-items:center;gap:8px;min-width:0}

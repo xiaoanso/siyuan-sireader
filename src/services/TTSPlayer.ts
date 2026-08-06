@@ -134,6 +134,10 @@ export class EdgeTTSPlayer {
     return this.isLocal ? this.playLocal(text, ticket) : this.playOnline(text, ticket)
   }
 
+  private notifySpeakStart() {
+    this.config.onSpeakStart?.()
+  }
+
   private playLocal(text: string, ticket: number) {
     return new Promise<void>((resolve) => {
       if (this.stopped || ticket !== this.ticket) return resolve()
@@ -145,6 +149,7 @@ export class EdgeTTSPlayer {
       utterance.pitch = Math.max(0.5, Math.min(2, 1 + pitchHz / 100))
       this.currentSource = utterance
       utterance.onend = utterance.onerror = () => (this.currentSource = null, resolve())
+      this.notifySpeakStart()
       window.speechSynthesis.speak(utterance)
     })
   }
@@ -176,11 +181,18 @@ export class EdgeTTSPlayer {
       if (this.stopped || ticket !== this.ticket) return resolve()
       this.currentSource = source
       source.addEventListener('ended', () => (this.currentSource = null, resolve()), { once: true })
-      try { source.start(0) } catch { this.currentSource = null; resolve() }
+      try {
+        this.notifySpeakStart()
+        source.start(0)
+      } catch { this.currentSource = null; resolve() }
     })
   }
 
   private async playFrom(ssml: string, ticket: number) {
+    if (!ssml) {
+      this.config.onSpeakStart?.()
+      return
+    }
     while (!this.stopped && ticket === this.ticket && ssml) {
       await this.playSSML(ssml, ticket)
       if (this.stopped || ticket !== this.ticket) break
@@ -224,7 +236,10 @@ export class EdgeTTSPlayer {
   }
 
   jump(delta: number) {
-    if (!this.foliateTTS) return
+    if (!this.foliateTTS) {
+      this.config.onSpeakStart?.()
+      return
+    }
     const ticket = ++this.ticket
     const seek = delta < 0 ? this.markSSML(this.foliateTTS.prevMark(true)) : this.nextSSML(true)
     this.stopped = this.paused = false
@@ -254,6 +269,7 @@ export class TTSController {
   private player: EdgeTTSPlayer | null = null
   private loopText: string | null = null
   public isActive = ref(false)
+  public isLoading = ref(false)
   public paused = ref(false)
   public title = ref('')
   public currentText = ref('')
@@ -265,11 +281,15 @@ export class TTSController {
   async playText(text: string, config: any, title = '朗读中', loop = false) {
     if (!config?.enabled || !text?.trim()) return
     if (this.isActive.value) return this.togglePause()
-    this.stop()
+    return this.restartText(text, config, title, loop)
+  }
+
+  /** Always stop and restart plain-text / loop playback (ignores pause toggle). */
+  async restartText(text: string, config: any, title = '朗读中', loop = false) {
+    if (!config?.enabled || !text?.trim()) return
+    this.beginPlayback(title)
     const trimmed = text.trim()
     this.loopText = loop ? trimmed : null
-    this.title.value = title
-    this.isActive.value = true
     try {
       if (loop) await this.playLoop(config)
       else await this.playDocument(trimmed, config)
@@ -278,11 +298,27 @@ export class TTSController {
     finally { if (!this.loopText && !this.paused.value) this.reset() }
   }
 
+  private playerConfig(config: any) {
+    return {
+      ...config,
+      onBlock: (text: string) => this.currentText.value = text,
+      onSpeakStart: () => { this.isLoading.value = false },
+    }
+  }
+
+  private beginPlayback(title: string) {
+    this.stop()
+    this.paused.value = false
+    this.isLoading.value = true
+    this.isActive.value = true
+    this.title.value = title
+  }
+
   private async playDocument(text: string, config: any) {
     const doc = document.implementation.createHTMLDocument(), p = doc.createElement('p')
     p.textContent = text
     doc.body.appendChild(p)
-    this.player = new EdgeTTSPlayer(doc, { ...config, onBlock: (block: string) => this.currentText.value = block })
+    this.player = new EdgeTTSPlayer(doc, this.playerConfig(config))
     await this.player.play()
   }
 
@@ -303,7 +339,7 @@ export class TTSController {
       const doc = document.implementation.createHTMLDocument(), p = doc.createElement('p')
       p.textContent = this.loopText
       doc.body.appendChild(p)
-      this.player = new EdgeTTSPlayer(doc, { ...config, onBlock: (text: string) => this.currentText.value = text })
+      this.player = new EdgeTTSPlayer(doc, this.playerConfig(config))
       await this.player.play()
       if (!this.loopText) break
     }
@@ -312,14 +348,18 @@ export class TTSController {
   async toggle(getReader: () => any, config: any, selection?: { text: string; range?: Range }, title = '朗读中') {
     if (!config?.enabled) return
     if (this.isActive.value) return this.togglePause()
-    this.stop()
+    return this.restart(getReader, config, selection, title)
+  }
+
+  /** Always stop and restart from selection or current visible page (ignores pause toggle). */
+  async restart(getReader: () => any, config: any, selection?: { text: string; range?: Range }, title = '朗读中') {
+    if (!config?.enabled) return
+    this.beginPlayback(title)
     try {
       const { view, doc, renderer, location } = this.getDocument(getReader)
       if (!view && !doc?.body) throw new Error('无法获取文档内容')
       const startRange = selection?.range || (renderer && doc && this.getVisibleRange(renderer, doc, location))
-      this.title.value = title
-      this.player = new EdgeTTSPlayer(view || doc, { ...config, onBlock: (text: string) => this.currentText.value = text }, startRange)
-      this.isActive.value = true
+      this.player = new EdgeTTSPlayer(view || doc, this.playerConfig(config), startRange)
       await this.player.play()
       if (!this.paused.value) this.reset()
     } catch (error) { this.reset(); showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error') }
@@ -327,9 +367,24 @@ export class TTSController {
 
   cancelLoop() { this.loopText && this.destroy() }
   updateConfig(config: any) { this.player?.updateConfig(config) }
-  jump(delta: number) { if (this.isActive.value) this.paused.value = false, this.player?.jump(delta) }
-  togglePause() { if (this.isActive.value) this.paused.value = !this.paused.value, this.paused.value ? this.player?.pause() : this.player?.resume() }
-  stop() { this.loopText = null; this.player?.stop(); this.player = null; this.currentText.value = '' }
+  jump(delta: number) {
+    if (!this.isActive.value) return
+    this.paused.value = false
+    this.isLoading.value = true
+    this.player?.jump(delta)
+  }
+  togglePause() {
+    if (!this.isActive.value || this.isLoading.value) return
+    this.paused.value = !this.paused.value
+    this.paused.value ? this.player?.pause() : this.player?.resume()
+  }
+  stop() {
+    this.loopText = null
+    this.player?.stop()
+    this.player = null
+    this.currentText.value = ''
+    this.isLoading.value = false
+  }
   destroy() { this.stop(); this.reset() }
   sync(tts: { enabled?: boolean } | boolean | null | undefined) {
     if (tts === false || tts == null) return this.destroy()
@@ -359,7 +414,12 @@ export class TTSController {
     } catch {}
   }
 
-  private reset() { this.isActive.value = this.paused.value = false; this.player = null; this.title.value = ''; this.currentText.value = '' }
+  private reset() {
+    this.isActive.value = this.paused.value = this.isLoading.value = false
+    this.player = null
+    this.title.value = ''
+    this.currentText.value = ''
+  }
 }
 
 let globalTTSController: TTSController | null = null

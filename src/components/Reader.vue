@@ -1,5 +1,5 @@
 ﻿<template>
-  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity':(1-((currentSettings?.toolbarOpacity??70)/100))*.55}">
+  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity': ttsActive ? 1 : (1-((currentSettings?.toolbarOpacity??70)/100))*.55}">
     <ReaderSplash v-if="showOpeningSplash" ref="readerSplashRef" :book-info="props.bookInfo" :file-name="props.file?.name" status="opening" />
     <div v-if="loading" class="reader-loading"><div class="spinner"></div><div>{{ error || 'Loading...' }}</div></div>
     <div v-if="showToc&&!loading" class="reader-overlay" @click="closePanels"/>
@@ -12,7 +12,7 @@
         </DockShell>
       </div>
     </Transition>
-    <div v-if="!loading" class="reader-toolbar-group">
+    <div v-if="!loading" class="reader-toolbar-group" :class="{'is-tts': ttsActive}">
       <div v-if="showSearch" class="reader-panel" @click.stop>
         <input v-model="searchQuery" class="search-input" :placeholder="i18n.searchPlaceholder||'搜索...'" @keydown.enter="handleSearch" @keydown.esc="showSearch=false" ref="searchInputRef">
         <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click="handleSearch" aria-label="搜索"><svg><use xlink:href="#iconSearch"/></svg></button>
@@ -32,21 +32,33 @@
           </button>
         </div>
       </div>
-      <div v-if="!isEmbedPdfMode" class="reader-toolbar" :class="{'is-visible':toolbarVisible}">
-        <button v-if="!isEmbedPdfMode" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handlePrev" :aria-label="i18n.prevChapter||'上一章'"><svg><use xlink:href="#iconLeft"/></svg></button>
-                <button v-if="!isEmbedPdfMode" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleNext" :aria-label="i18n.nextChapter||'下一章'"><svg><use xlink:href="#iconRight"/></svg></button>
-        <button v-if="!isEmbedPdfMode" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="openToc" :aria-label="i18n.toc||'目录'"><svg><use xlink:href="#iconList"/></svg></button>
-        <button v-if="!isEmbedPdfMode" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:hasBookmark}" @click.stop="toggleBookmark" :aria-label="hasBookmark?(i18n.removeBookmark||'删除书签'):(i18n.addBookmark||'添加书签')"><svg><use xlink:href="#iconBookmark"/></svg></button>
-        <button v-if="!isEmbedPdfMode" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:showSearch}" @click.stop="toggleSearch" :aria-label="i18n.search||'搜索'"><svg><use xlink:href="#iconSearch"/></svg></button>
-        <button v-if="!isEmbedPdfMode" class="toolbar-btn toolbar-mark-btn b3-tooltips b3-tooltips__n" :class="{active:quickMarkMode}" @click.stop="toggleQuickMark" :aria-label="quickMarkMode?'退出快速标注':'快速标注'">
+      <!-- 朗读专用条：替换阅读工具栏 -->
+      <div v-if="ttsEnabled&&ttsActive" class="reader-toolbar is-visible is-tts-bar">
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="jumpTTS(-1)" :aria-label="i18n.prevChapter||'上一章'"><svg><use xlink:href="#iconLeft"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying&&!ttsLoading}" :disabled="ttsLoading" @click.stop="toggleTTS" :aria-label="ttsLoading?(i18n.ttsPreparing||'准备中'):(ttsPaused?(i18n.ttsResume||'继续朗读'):(i18n.ttsPause||'暂停朗读'))">
+          <span v-if="ttsLoading" class="toolbar-spinner"/>
+          <svg v-else><use :xlink:href="ttsPaused?'#iconPlay':'#iconPause'"/></svg>
+        </button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="jumpTTS(1)" :aria-label="i18n.nextChapter||'下一章'"><svg><use xlink:href="#iconRight"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" :disabled="ttsLoading" @click.stop="restartTTS" :aria-label="i18n.ttsRestart||'从当前页朗读'"><svg><use xlink:href="#iconRefresh"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="stopTTS" :aria-label="i18n.ttsStop||'停止朗读'"><svg><use xlink:href="#iconClose"/></svg></button>
+      </div>
+      <!-- 阅读工具栏（未朗读） -->
+      <div v-else-if="!isEmbedPdfMode" class="reader-toolbar" :class="{'is-visible':toolbarVisible}">
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handlePrev" :aria-label="i18n.prevChapter||'上一章'"><svg><use xlink:href="#iconLeft"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleNext" :aria-label="i18n.nextChapter||'下一章'"><svg><use xlink:href="#iconRight"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="openToc" :aria-label="i18n.toc||'目录'"><svg><use xlink:href="#iconList"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:hasBookmark}" @click.stop="toggleBookmark" :aria-label="hasBookmark?(i18n.removeBookmark||'删除书签'):(i18n.addBookmark||'添加书签')"><svg><use xlink:href="#iconBookmark"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:showSearch}" @click.stop="toggleSearch" :aria-label="i18n.search||'搜索'"><svg><use xlink:href="#iconSearch"/></svg></button>
+        <button class="toolbar-btn toolbar-mark-btn b3-tooltips b3-tooltips__n" :class="{active:quickMarkMode}" @click.stop="toggleQuickMark" :aria-label="quickMarkMode?'退出快速标注':'快速标注'">
           <svg><use xlink:href="#iconMark"/></svg>
           <span class="mark-indicator" :style="{background:COLORS[quickMarkColor].bg}"></span>
         </button>
-        <button v-if="ttsEnabled&&!isEmbedPdfMode" class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying}" @click.stop="toggleTTS" :aria-label="ttsPlaying?(i18n.ttsPause||'暂停朗读'):(i18n.ttsPlay||'开始朗读')"><svg><use :xlink:href="ttsPlaying?'#iconPause':'#iconPlay'"/></svg></button>
+        <button v-if="ttsEnabled" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="toggleTTS" :aria-label="i18n.ttsPlay||'开始朗读'"><svg><use xlink:href="#iconPlay"/></svg></button>
         <button v-if="isMobile()" class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="handleClose" aria-label="Close"><svg><use xlink:href="#iconClose"/></svg></button>
       </div>
       <div v-else-if="ttsEnabled" class="reader-toolbar is-visible">
-        <button class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{active:ttsPlaying}" @click.stop="toggleTTS" :aria-label="ttsPlaying?(i18n.ttsPause||'暂停朗读'):(i18n.ttsPlay||'开始朗读')"><svg><use :xlink:href="ttsPlaying?'#iconPause':'#iconPlay'"/></svg></button>
+        <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="toggleTTS" :aria-label="i18n.ttsPlay||'开始朗读'"><svg><use xlink:href="#iconPlay"/></svg></button>
       </div>
     </div>
   </div>
@@ -165,7 +177,10 @@ const searchCurrentIndex = ref(0)
 let reader: FoliateReader | null = null
 const ttsController = getTTSController()
 const ttsEnabled = computed(() => currentSettings.value?.tts?.enabled || false)
-const ttsPlaying = computed(() => ttsController.isActive.value && !ttsController.paused.value)
+const ttsActive = computed(() => ttsController.isActive.value)
+const ttsLoading = computed(() => ttsController.isLoading.value)
+const ttsPaused = computed(() => ttsController.paused.value)
+const ttsPlaying = computed(() => ttsController.isActive.value && !ttsController.paused.value && !ttsController.isLoading.value)
 const getReadingSelection=()=>{
   try{
     for(const{doc}of reader?.getView?.()?.renderer?.getContents?.()||[]){
@@ -176,21 +191,40 @@ const getReadingSelection=()=>{
     if(sel&&!sel.isCollapsed&&sel.rangeCount){const text=sel.toString().trim();if(text)return{text,range:sel.getRangeAt(0).cloneRange()}}
   }catch{}
 }
-const toggleTTS=async()=>{
-  if(!can.value('tts'))return showUpgrade('TTS朗读')
-  if(ttsController.isActive.value)return ttsController.togglePause()
+const startTTS=async(fromPageOnly=false)=>{
   const tts=currentSettings.value?.tts
   if(isEmbedPdfMode.value){
-    const selected=await currentView.value?.getSelectionText?.()
-    if(selected?.trim())return ttsController.speak(selected.trim(),tts)
+    if(!fromPageOnly){
+      const selected=await currentView.value?.getSelectionText?.()
+      if(selected?.trim())return ttsController.restartText(selected.trim(),tts,'选中文本',true)
+    }
     const page=embedPdfPages.value?.getCurrentPage?.()||1
     const text=await currentView.value?.getPageText?.(page)
     if(!text?.trim())return showMessage(i18n.value.ttsNoText||'当前页无文本',2000,'info')
-    return ttsController.playText(text.trim(),tts,getBookName(),false)
+    return ttsController.restartText(text.trim(),tts,getBookName(),false)
   }
-  const selection=getReadingSelection()
-  ttsController.toggle(()=>reader,tts,selection?.range?{text:selection.text,range:selection.range}:undefined,getBookName())
+  const selection=fromPageOnly?undefined:getReadingSelection()
+  return ttsController.restart(()=>reader,tts,selection?.range?{text:selection.text,range:selection.range}:undefined,getBookName())
 }
+const toggleTTS=async()=>{
+  if(!can.value('tts'))return showUpgrade('TTS朗读')
+  if(ttsController.isActive.value)return ttsController.togglePause()
+  return startTTS(false)
+}
+const restartTTS=async()=>{
+  if(!can.value('tts'))return showUpgrade('TTS朗读')
+  return startTTS(true)
+}
+const jumpTTS=async(delta:number)=>{
+  // 仅翻页浏览，不改变当前朗读进度
+  if(isEmbedPdfMode.value){
+    return embedPdfPages.value?.[delta<0?'scrollToPreviousPage':'scrollToNextPage']?.('smooth')
+  }
+  if(!reader)return
+  if(isEpubScrollMode())return delta<0?reader.prev():reader.next()
+  return delta<0?reader.goLeft():reader.goRight()
+}
+const stopTTS=()=>ttsController.destroy()
 const syncTTS=async()=>ttsController.sync(currentSettings.value?.tts)
 const marks=computed(()=>markManager.value)
 const isEmbedPdfMode=computed(()=>currentView.value?.engine==='embedpdf')
@@ -460,9 +494,10 @@ onUnmounted(async()=>{
 .reader-loading{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:16px;color:var(--b3-theme-on-background);z-index:10;pointer-events:none}
 .spinner{width:48px;height:48px;border:4px solid var(--b3-theme-primary-lighter);border-top-color:var(--b3-theme-primary);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.reader-toolbar-group{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:1001;opacity:var(--toolbar-opacity);transition:opacity .2s;&:hover{opacity:1}}
+.reader-toolbar-group{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:1001;opacity:var(--toolbar-opacity);transition:opacity .2s;&:hover,&.is-tts{opacity:1}}
 .reader-toolbar,.reader-panel{display:flex;align-items:center;gap:2px;padding:3px 4px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;transition:opacity .2s}
-.toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;svg{width:14px;height:14px}&:hover{background:var(--b3-list-hover)}&.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary)}}
+.toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;svg{width:14px;height:14px}&:hover:not(:disabled){background:var(--b3-list-hover)}&.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary)}&:disabled{opacity:.45;cursor:default}}
+.toolbar-spinner{width:14px;height:14px;border:2px solid var(--b3-theme-primary-lighter);border-top-color:var(--b3-theme-primary);border-radius:50%;animation:spin .8s linear infinite}
 .toolbar-mark-btn{position:relative;.mark-indicator{position:absolute;right:2px;bottom:2px;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--b3-theme-surface);box-shadow:0 0 0 .5px var(--b3-border-color)}}
 .search-input{width:160px;height:22px;padding:0 6px;border:none;background:var(--b3-theme-background-light);color:var(--b3-theme-on-surface);font-size:11px;border-radius:3px;transition:background .15s;&:focus{outline:none;background:var(--b3-theme-background)}}
 .search-count{font-size:11px;color:var(--b3-theme-on-surface-variant);min-width:40px;text-align:center;opacity:.7}
