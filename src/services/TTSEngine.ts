@@ -201,7 +201,7 @@ export async function loadOnlineVoices(): Promise<TTSVoice[]> {
   if (onlineVoiceTask) return onlineVoiceTask
   onlineVoiceTask = (async () => {
     try {
-      const res = await fetch(VOICES_URL)
+      const res = await fetch(VOICES_URL, { referrerPolicy: 'no-referrer' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       const voices: TTSVoice[] = data.map((v: any) => ({
@@ -343,8 +343,10 @@ async function getEndpoint() {
   }
   const clientId = uuid()
   try {
+    // Browser auto-sends Referer (e.g. http://127.0.0.1:6806/); Microsoft returns 401001 if present.
     const response = await fetch(ENDPOINT_URL, {
       method: 'POST',
+      referrerPolicy: 'no-referrer',
       headers: {
         'Accept-Language': 'zh-Hans',
         'X-ClientVersion': '4.0.530a 5fe1dc6c',
@@ -354,7 +356,6 @@ async function getEndpoint() {
         'X-MT-Signature': await sign(ENDPOINT_URL),
         'User-Agent': USER_AGENT,
         'Content-Type': 'application/json; charset=utf-8',
-        'Content-Length': '0',
       },
     })
     if (!response.ok) throw new Error(`获取 endpoint 失败: ${response.status}`)
@@ -397,6 +398,7 @@ export class EdgeTTSCore {
         const url = `https://${endpoint.r}.tts.speech.microsoft.com/cognitiveservices/v1`
         const response = await fetch(url, {
           method: 'POST',
+          referrerPolicy: 'no-referrer',
           headers: {
             Authorization: endpoint.t,
             'Content-Type': 'application/ssml+xml',
