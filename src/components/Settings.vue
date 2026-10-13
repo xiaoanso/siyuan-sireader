@@ -1,48 +1,54 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref, watch } from 'vue'
 import { showMessage } from 'siyuan'
 import type { ReaderSettings, FontFileInfo } from '@/composables/useSetting'
-import { DEFAULT_NAV_ITEMS, LINK_FORMAT_PRESETS, NOTE_MODE_LABELS, NOTE_MODE_OPTIONS, NOTE_TARGET_OPTIONS, PRESET_THEMES, SectionTitle, SettingItem, SettingRows, SettingSection, UI_CONFIG, getLicenseMedia, setCustomBackgroundFromInput, settingSectionIcon, useSetting, useConfirm, useDocSearch, useNotebooks } from '@/composables/useSetting'
-import { sortVoicesFlat, voiceDisplayLabel } from '@/services/TTSEngine'
+import { DEFAULT_NAV_ITEMS, LINK_FORMAT_PRESETS, NOTE_MODE_LABELS, NOTE_MODE_OPTIONS, NOTE_TARGET_OPTIONS, PRESET_THEMES, SectionTitle, SettingItem, SettingRows, SettingSection, UI_CONFIG, getLicenseMedia, settingSectionIcon, useSetting, useConfirm, useDocSearch, useNotebooks } from '@/composables/useSetting'
 import { bookshelfManager } from '@/core/bookshelf'
 import { offlineDictManager, onlineDictManager } from '@/utils/dictionary'
 import { usePlugin } from '@/main'
-import { useLicense } from '@/composables/useLicense'
-import { focusMobileEditable } from '@/utils/mobile'
+import { useLicense } from '@/core/license'
 import { translators } from '@/services/translator'
+import { OFFLINE_TTS_PACK, OFFLINE_TTS_VOICE, OfflineTTSManager } from '@/services/OfflineTTS'
+import { exportDiagnostics } from '@/core/diagnostics'
 
 const props = defineProps<{modelValue:ReaderSettings;i18n:any;onSave:()=>Promise<void>}>()
 const emit = defineEmits<{'update:modelValue':[value:ReaderSettings]}>()
 // 基础状态
 const settings = ref<ReaderSettings>(props.modelValue),
-  openGroups = ref<Record<string, boolean>>({ license: false }),
+  openGroups = ref<Record<string, boolean>>({ license: true }),
   openSubs = ref<Record<string, boolean>>({}),
   licenseRef = ref<HTMLElement>()
 const plugin = usePlugin()
-const {customFonts,isLoadingFonts,loadCustomFonts,resetStyles:resetStylesRaw} = useSetting(plugin)
+const {customFonts,isLoadingFonts,loadCustomFonts,loadFont,uploadCustomFonts,deleteCustomFont,backgroundImages,uploadBackground,deleteBackground,resetStyles:resetStylesRaw} = useSetting(plugin)
 const {interfaceItems,customThemeItems,appearanceGroups,ttsItems,ttsOptions} = UI_CONFIG
 const {confirming:resetConfirm,handleClick:handleReset} = useConfirm(() => {resetStylesRaw();save()})
 
 // TTS
 const ttsVoices = ref<any[]>([]), loadingTTS = ref(false)
+const offlineTTS = new OfflineTTSManager(), offlineTTSProgress = ref(0), offlineTTSInstalled = ref(false), offlineTTSLoading = ref(false)
+const loadOfflineTTS = async () => { offlineTTSInstalled.value = await offlineTTS.installed() }
+const downloadOfflineTTS = async () => {
+  if (offlineTTSLoading.value) return
+  offlineTTSLoading.value = true; offlineTTSProgress.value = 0
+  try { await offlineTTS.download(value => offlineTTSProgress.value = value); offlineTTSInstalled.value = true; showMessage('离线语音包已下载', 2000, 'info') }
+  catch (e: any) { showMessage(e.message || '离线语音包下载失败', 3000, 'error') }
+  finally { offlineTTSLoading.value = false }
+}
+const formatBytes = (size: number) => size < 1024 * 1024 ? `${Math.round(size / 1024)} KB` : `${(size / 1024 / 1024).toFixed(1)} MB`
 const loadTTS = async () => {
   if (loadingTTS.value||ttsVoices.value.length) return
   loadingTTS.value = true
   try {
-    const {loadOnlineVoices,loadLocalVoices,PRESET_VOICES} = await import('@/services/TTSEngine')
+    const {loadOnlineVoices,loadLocalVoices} = await import('@/services/TTSEngine')
     const [local,online] = await Promise.allSettled([loadLocalVoices(),loadOnlineVoices()])
-    const locals = local.status==='fulfilled'?local.value:[]
-    const onlines = online.status==='fulfilled'?online.value:[]
-    const merged = [...locals, ...onlines]
-    const names = new Set(merged.map(v => v.name))
-    ttsVoices.value = [...merged, ...PRESET_VOICES.filter(v => !names.has(v.name))]
+    ttsVoices.value = [...(local.status==='fulfilled'?local.value:[]),...(online.status==='fulfilled'?online.value:[])]
     if (!ttsVoices.value.length) showMessage(props.i18n.loadVoicesFailed||'加载失败',3000,'error')
   } catch (e:any) { showMessage(e.message||props.i18n.loadVoicesFailed||'加载失败',3000,'error') } finally { loadingTTS.value = false }
 }
-const selectVoice = (name:string,isLocal:boolean) => {
-  if (!isLocal&&!can.value('tts-online')) return showUpgrade('在线语音')
+const selectVoice = (voice:any) => {
+  if (!voice.isLocal && !voice.isOffline && !can.value('tts-online')) return showUpgrade('在线语音')
   if (!settings.value.tts) return
-  settings.value.tts.voice = name
+  settings.value.tts.voice = voice.name
   save()
 }
 const toggleFav = (voice:any) => {
@@ -53,19 +59,12 @@ const toggleFav = (voice:any) => {
   settings.value.tts.favoriteVoices = fav; showMessage(idx>=0?(props.i18n.deleted||'已删除'):(props.i18n.ttsVoiceFavorited||'已收藏'),1500,'info'); save()
 }
 const isFav = (name:string) => (settings.value.tts?.favoriteVoices||[]).some(v => v.name===name)
-const myVoices = computed(() => [...ttsVoices.value.filter(v => v.isLocal),...(settings.value.tts?.favoriteVoices||[]).filter(v => !v.isLocal)])
+const myVoices = computed(() => [
+  ...ttsVoices.value.filter(v => v.isLocal),
+  ...(offlineTTSInstalled.value ? [OFFLINE_TTS_VOICE] : []),
+  ...(settings.value.tts?.favoriteVoices||[]).filter(v => !v.isLocal && !v.isOffline),
+])
 const onlineVoices = computed(() => ttsVoices.value.filter(v => !v.isLocal))
-const voiceRow = (v:any, isLocal:boolean) => ({
-  key: v.name,
-  text: voiceDisplayLabel({ ...v, isLocal }),
-  meta: isLocal
-    ? (props.i18n.localVoice || '本地')
-    : [v.locale, v.gender === 'Male' ? (props.i18n.ttsMale || '男') : v.gender === 'Female' ? (props.i18n.ttsFemale || '女') : ''].filter(Boolean).join(' · '),
-  active: settings.value.tts?.voice === v.name,
-  pick: () => selectVoice(v.name, isLocal),
-  action: isLocal ? undefined : () => toggleFav(v),
-  actionTitle: isLocal ? undefined : (isFav(v.name) ? (props.i18n.unfavorite || '取消收藏') : (props.i18n.favorite || '收藏')),
-})
 watch(() => props.modelValue,v => settings.value=v,{immediate:true})
 const syncAnnotationTagPresets = (e: Event) => {
   const value = (e as CustomEvent).detail?.annotationTagPresets
@@ -79,13 +78,16 @@ const offlineDicts = ref<any[]>([]),
   fileInput = ref<HTMLInputElement>(),
   folderInput = ref<HTMLInputElement>(),
   bgInput = ref<HTMLInputElement>(),
+  fontInput = ref<HTMLInputElement>(),
   uploading = ref(false),
   loadingDict = ref(true),
   fontsLoaded = ref(false),
   removingDict = ref<string|null>(null)
+const removingFont = ref<string|null>(null)
+const removingBackground = ref<string|null>(null)
 const quickDoc = useDocSearch(), insertDoc = useDocSearch()
 const {notebooks,load:loadNotebooks} = useNotebooks()
-const {license,userAvatar,code:activationCode,loading:loadingLicense,processing,load:loadLicense,activate:activateLicense,recover:recoverLicense,clear:clearLicense,can,showUpgrade} = useLicense(props.i18n)
+const {license,userAvatar,qr,loading:loadingLicense,processing,load:loadLicense,bind:bindLicense,cancelBind:cancelLicenseBind,recover:recoverLicense,can,showUpgrade} = useLicense(props.i18n)
 const licenseMedia = computed(() => getLicenseMedia(license.value, userAvatar.value, props.i18n))
 const ttsFields = computed(() => [...ttsItems, ...ttsOptions.map(item => ({ ...item, desc: ttsI18nKey(item.key,'Desc') }))])
 const linkFormatPresetOptions = Object.keys(LINK_FORMAT_PRESETS) as (keyof typeof LINK_FORMAT_PRESETS)[]
@@ -122,23 +124,18 @@ const dictSections = computed(() => [
     key: 'onlineDict', title: props.i18n.onlineDict||'在线词典', items: onlineDicts.value, empty: '', manager: onlineDictManager, desc: (d:any) => d.desc, drop: (e:DragEvent,i:number) => dragDrop(e,i,'dict',onlineDicts,onlineDictManager)
   }
 ])
-const voiceSections = computed(() => {
-  const fav = {
-    key: 'ttsFavorites',
-    title: props.i18n.ttsFavoriteVoices || '我的语音',
-    hint: `${props.i18n.ttsCurrentVoice || '当前'}: ${settings.value.tts?.voice || ''}`,
-    rows: myVoices.value.map((v: any) => voiceRow(v, !!v.isLocal)),
-    empty: props.i18n.ttsNoFavorites || '暂无，请点击下方加载',
+const voiceSections = computed(() => [
+  {
+    key: 'ttsFavorites', title: props.i18n.ttsFavoriteVoices||'我的语音', hint: `${props.i18n.ttsCurrentVoice||'当前'}: ${settings.value.tts?.voice||''}`,
+    rows: myVoices.value.map((v:any) => ({ key: v.name, text: v.displayName, meta: v.isOffline ? '离线包' : (v.isLocal ? (props.i18n.localVoice || '本地') : v.locale), active: settings.value.tts?.voice === v.name, pick: () => selectVoice(v), action: v.isLocal || v.isOffline ? undefined : () => toggleFav(v), actionTitle: props.i18n.delete || '删除' })),
+    empty: props.i18n.ttsNoFavorites||'暂无，请点击下方加载'
+  },
+  {
+    key: 'ttsVoices', title: props.i18n.ttsVoiceList||'在线语音', hint: props.i18n.ttsOnlineHint||'点击语音名称选择，点击星号收藏',
+    rows: onlineVoices.value.map((v:any) => ({ key: v.name, text: v.displayName, meta: v.locale, active: settings.value.tts?.voice === v.name, pick: () => selectVoice(v), action: () => toggleFav(v), actionTitle: isFav(v.name)?'取消收藏':'收藏' })),
+    empty: props.i18n.ttsNoVoices||'暂无语音', loadLabel: props.i18n.ttsLoadVoices || '加载语音'
   }
-  return [fav, {
-    key: 'ttsVoices',
-    title: props.i18n.ttsVoiceList || '在线语音',
-    hint: props.i18n.ttsOnlineHint || '点击语音名称选择，点击星号收藏',
-    rows: sortVoicesFlat(onlineVoices.value).map((v: any) => voiceRow(v, false)),
-    empty: props.i18n.ttsNoVoices || '暂无语音',
-    loadLabel: onlineVoices.value.length ? undefined : (props.i18n.ttsLoadVoices || '加载语音'),
-  }]
-})
+])
 const noteFields = computed(() => [
   checkboxField('annotationSyncOnAdd', props.i18n.annotationSyncOnAdd || '添加时同步', settings.value.annotationSyncOnAdd, value => (settings.value.annotationSyncOnAdd = value, save()), true, props.i18n.annotationSyncOnAddDesc || '新增标注时自动同步到已绑定文档'),
   checkboxField('annotationSyncOnDelete', props.i18n.annotationSyncOnDelete || '删除时同步', settings.value.annotationSyncOnDelete, value => (settings.value.annotationSyncOnDelete = value, save()), true, props.i18n.annotationSyncOnDeleteDesc || '删除标注时同步删除已绑定块'),
@@ -147,6 +144,8 @@ const noteFields = computed(() => [
   selectField('notebookId', props.i18n.notebookId || props.i18n.notebook || '笔记本', settings.value.notebookId || '', notebooks.value.map((nb:any) => ({ value: nb.id, label: nb.name })), value => (settings.value.notebookId = value, save()), ['notebook', 'dailynote'].includes(settings.value.noteInsertTarget), props.i18n.notSelected || '未选择'),
   selectField('linkFormatPreset', props.i18n.linkFormatPreset || '模板预设', linkFormatPresetValue.value, linkFormatPresetOptions.map(value => ({ value: LINK_FORMAT_PRESETS[value], label: props.i18n[`linkFormatPreset${value.charAt(0).toUpperCase()}${value.slice(1)}`] || value })), applyLinkFormatPreset, true, props.i18n.selectPreset || '请选择'),
   { key: 'linkFormat', type: 'textarea', label: props.i18n.linkFormat || '链接格式', value: settings.value.linkFormat, set: (value:string) => (settings.value.linkFormat = value, debouncedSave()), hint: props.i18n.linkFormatDesc || '可用变量：书名 作者 章节 位置 链接 文本 笔记 图片' },
+  { key: 'wereadExportTemplate', type: 'textarea', rows: 12, label: '微信读书导出模板', value: settings.value.wereadExportTemplate || '', set: (value:string) => (settings.value.wereadExportTemplate = value, debouncedSave()), hint: '支持变量：{{书名}} {{封面}} {{作者}} {{链接}} {{详情链接}} {{bookId}} {{ISBN}} {{出版社}} {{分类}} {{出版时间}} {{字数}} {{阅读人数}} {{评分}} {{简介}} {{目录}} {{划线}} {{想法}} {{划线与想法}}' },
+  { key: 'docAssetExcludeRegex', type: 'textarea', rows: 3, label: props.i18n.docAssetExcludeRegex || '文档链接入库排除正则', value: settings.value.docAssetExcludeRegex, set: (value:string) => (settings.value.docAssetExcludeRegex = value, debouncedSave()), hint: props.i18n.docAssetExcludeRegexDesc || '匹配后仍按开关打开，但不自动加入书架；不用写外层 /.../；留空则不过滤', placeholder: props.i18n.docAssetExcludeRegexPlaceholder || '示例：^(发票|收据|报销).*\\.pdf$|.*办法.*\\.pdf$\n^ 开头；$ 结尾；| 或；() 分组；.* 任意文字；\\. 匹配普通点\n排除“2007新的编制办法-xxx.pdf”：写 .*办法.*\\.pdf$' },
   { key: 'annotationTagPresets', type: 'textarea', label: props.i18n.annotationTagPresets || '标注标签预设', value: settings.value.annotationTagPresets, set: (value:string) => (settings.value.annotationTagPresets = value, debouncedSave()), hint: props.i18n.annotationTagPresetsDesc || '每行一组：分组: 标签1, 标签2' },
   searchField('parentDoc', props.i18n.parentDoc || '父文档', settings.value.parentDoc ? [settings.value.parentDoc] : [], insertDoc.state.value.input, insertDoc.state.value.results, value => (insertDoc.state.value.input = value, !value.trim() && (insertDoc.state.value.results = [])), insertDoc.search, doc => insertDoc.select(doc, selectInsertDoc), () => clearInsertDoc(), settings.value.noteInsertTarget === 'document'),
   searchField('quickSendDocs', props.i18n.quickSendDocs || '快捷发送文档', settings.value.quickSendDocs || [], quickDoc.state.value.input, quickDoc.state.value.results, value => (quickDoc.state.value.input = value, !value.trim() && (quickDoc.state.value.results = [])), quickDoc.search, doc => quickDoc.select(doc, addQuickDoc), (_doc:any, i:number) => removeQuickDoc(i), true, props.i18n.quickSendDocsDesc || '用于快速发送标注', 'quickDoc')
@@ -159,8 +158,8 @@ const toggleAccordion = (key:string) => openGroups.value[key] = !openGroups.valu
 const toggleSub = async (key:string) => {
   openSubs.value[key] = !openSubs.value[key]
   if (key === 'customFont' && !fontsLoaded.value && openSubs.value[key]) return await loadCustomFonts(), void (fontsLoaded.value = true)
-  const needsVoices = openSubs.value[key] && !ttsVoices.value.length && (key === 'ttsFavorites' || key === 'ttsVoices')
-  if (needsVoices) await loadTTS()
+  if (['ttsFavorites','ttsVoices'].includes(key) && openSubs.value[key] && !ttsVoices.value.length) await loadTTS()
+  if (key === 'ttsOffline' && openSubs.value[key]) await loadOfflineTTS()
 }
 watch(openGroups, groups => groups.other && loadNotebooks(), { deep: true })
 const handleUpload = async (e:Event) => {
@@ -197,20 +196,68 @@ const selectInsertDoc = (doc:any) => { settings.value.parentDoc = doc; settings.
 const clearInsertDoc = () => { settings.value.parentDoc = undefined; insertDoc.reset(); save() }
 const uploadBgImage = async (e:Event) => {
   if (!can.value('reader-theme')) return showUpgrade('reader-theme')
-  try { await setCustomBackgroundFromInput(settings.value, e) && save() }
+  try {
+    const file = (e.target as HTMLInputElement).files?.[0]
+    if (file) { await uploadBackground(file); await save() }
+  }
   catch (e:any) { showMessage(e.message || props.i18n.uploadFailed || '上传失败', 3000, 'error') }
 }
-const clearBgImage = () => (settings.value.customTheme.bgImg = '', save())
-const bgImageRows = computed(() => [{
-  key: 'bgImg',
-  text: props.i18n.bgImage || '背景图片',
-  hint: settings.value.customTheme.bgImg || props.i18n.bgImageDesc || '',
-  checkbox: !!settings.value.customTheme.bgImg,
-  onCheck: (value:boolean) => value ? bgInput.value?.click() : clearBgImage(),
-  action: () => bgInput.value?.click(),
-  actionTitle: props.i18n.select || props.i18n.upload || '选择',
+const exportFile = (url:string, name:string) => { const link = document.createElement('a'); link.href = url; link.download = name; link.click() }
+const openFile = (id:string) => (document.getElementById(id) as HTMLInputElement | null)?.click()
+const removeBackground = async (name:string) => {
+  if (removingBackground.value !== name) return (removingBackground.value = name)
+  await deleteBackground(name)
+  backgroundImages.value = backgroundImages.value.filter(image => image.name !== name)
+  removingBackground.value = null
+}
+const handleFontUpload = async (e:Event) => {
+  const input = e.target as HTMLInputElement
+  if (!input.files?.length) return
+  try {
+    const count = await uploadCustomFonts(input.files)
+    showMessage(`${props.i18n.added || '已导入'} ${count} ${props.i18n.fonts || '个字体'}`, 2000, 'info')
+  } catch (e:any) { showMessage(e.message || props.i18n.uploadFailed || '上传失败', 3000, 'error') }
+  finally { input.value = '' }
+}
+const exportFont = (name:string) => {
+  exportFile(`/public/siyuan-sireader/fonts/${encodeURIComponent(name)}`, name)
+}
+const removeFont = async (font:FontFileInfo) => {
+  if (removingFont.value !== font.name) return (removingFont.value = font.name)
+  await deleteCustomFont(font.name)
+  if (settings.value.textSettings.customFont.fontFile === font.name) { settings.value.textSettings.customFont = { fontFamily: '', fontFile: '' }; settings.value.textSettings.fontFamily = 'inherit'; await save() }
+  removingFont.value = null
+}
+const clearBgImage = async () => {
+  settings.value.backgroundImage = ''
+  await save()
+}
+const exportDiagnosticLog = () => { exportDiagnostics({ source: 'settings' }); showMessage(props.i18n.diagnosticsExported || 'Diagnostic logs exported', 2000, 'info') }
+const bgNoneRows = computed(() => [{
+  key: 'bg-none',
+  text: props.i18n.none || '无',
+  hint: props.i18n.bgImageDesc || '',
+  active: !settings.value.backgroundImage,
+  pick: clearBgImage,
+  alwaysShowActions: true,
+  action: () => openFile('sr-bg-input'),
+  actionTitle: props.i18n.upload || '上传',
   actionIcon: '#iconUpload'
 }])
+const bgImageRows = computed(() => backgroundImages.value.map(image => ({
+  key: `background:${image.name}`,
+  text: image.name,
+  hint: image.url,
+  graphic: h('img', { class: 'sr-resource-preview', src: image.url, loading: 'lazy', decoding: 'async' }),
+  active: settings.value.backgroundImage === image.url,
+  pick: () => (settings.value.backgroundImage = image.url, save()),
+  alwaysShowActions: true,
+  layout: 'grid',
+  actions: [
+    { key: 'export', title: props.i18n.export || '导出', icon: '#iconDownload', onClick: () => exportFile(image.url, image.name) },
+    { key: 'delete', title: removingBackground.value === image.name ? (props.i18n.confirm || '确认') : (props.i18n.delete || '删除'), icon: '#lucide-trash-2', onClick: () => removeBackground(image.name) }
+  ]
+})))
 const applyLinkFormatPreset = (format:string) => {
   if (!format) return
   settings.value.linkFormat = format
@@ -230,7 +277,7 @@ const dragDrop = async (e:DragEvent, to:number, type:'nav'|'dict'|'quickDoc', re
 const ttsI18nKey = (key:string, suffix='') => `tts${key.charAt(0).toUpperCase()}${key.slice(1)}${suffix}`
 
 // 计算属性
-const navItems = computed(() => (settings.value.navItems || DEFAULT_NAV_ITEMS).filter(item => !['dictionary', 'weread'].includes(item.id)).sort((a, b) => a.order - b.order))
+const navItems = computed(() => (settings.value.navItems?.length ? settings.value.navItems : DEFAULT_NAV_ITEMS).map(item => ({ ...item })).filter(item => !['dictionary', 'weread'].includes(item.id)).sort((a, b) => a.order - b.order))
 const docRows = (field:any) => (field.docs || []).map((doc:any, i:number) => ({
   key: doc.id,
   text: doc.name,
@@ -256,7 +303,7 @@ const navRows = computed(() => navItems.value.map((item, idx) => ({
   drop: (e:DragEvent) => dragDrop(e, idx, 'nav'),
   checkbox: item.enabled,
   disabled: item.id === 'appearance',
-  onCheck: (value:boolean) => (item.enabled = value, save())
+  onCheck: (value:boolean) => (settings.value.navItems = navItems.value.map(v => v.id === item.id ? { ...v, enabled: value } : v), save())
 })))
 const bookshelfRows = computed(() => bookshelfHiddenFields.map(item => ({
   key: item.key,
@@ -266,22 +313,28 @@ const bookshelfRows = computed(() => bookshelfHiddenFields.map(item => ({
 })))
 const fontGuideRows = computed(() => [{
   key: 'custom-fonts',
-  text: 'data/plugins/custom-fonts/',
+  text: 'data/public/siyuan-sireader/fonts/',
   hint: isLoadingFonts.value ? (props.i18n.loadingFonts || '正在加载字体') : '',
   alwaysShowActions: true,
-  action: () => loadCustomFonts(true),
-  actionTitle: props.i18n.refresh || '刷新',
-  actionIcon: '#lucide-refresh-cw'
+  actions: [
+    { key: 'upload', title: props.i18n.import || '导入', icon: '#iconUpload', onClick: () => openFile('sr-font-input') },
+    { key: 'refresh', title: props.i18n.refresh || '刷新', icon: '#lucide-refresh-cw', onClick: () => loadCustomFonts(true) }
+  ]
 }])
 const fontRows = computed(() => customFonts.value.map(f => ({
   key: f.name,
   text: f.displayName,
   hint: f.name,
-  textStyle: { fontFamily: f.displayName },
+  textStyle: settings.value.textSettings.customFont.fontFile === f.name ? { fontFamily: f.displayName } : undefined,
   active: settings.value.textSettings.customFont.fontFile === f.name,
-  pick: () => setFont(f),
+  pick: () => pickFont(f),
   checkbox: settings.value.textSettings.customFont.fontFile === f.name,
-  onCheck: (value:boolean) => value ? setFont(f) : setFont()
+  onCheck: (value:boolean) => value ? pickFont(f) : setFont(),
+  alwaysShowActions: true,
+  actions: [
+    { key: 'export', title: props.i18n.export || '导出', icon: '#iconDownload', onClick: () => exportFont(f.name) },
+    { key: 'delete', title: removingFont.value === f.name ? (props.i18n.confirm || '确认') : (props.i18n.delete || '删除'), icon: '#lucide-trash-2', onClick: () => removeFont(f) }
+  ]
 })))
 const dictAddRows = computed(() => [{
   key: 'add-dict',
@@ -294,10 +347,12 @@ const dictAddRows = computed(() => [{
   ]
 }])
 const confirmDeleteHint = (text:string, id:string) => removingDict.value === id ? `${text} · ${props.i18n.confirmDelete || '再次点击删除'}` : text
+const dictNameKey: Record<string, string> = { youdao: 'dictYoudao', bing: 'dictBing', cambridge: 'dictCambridge', haici: 'dictHaici', mxnzp: 'dictMxnzp', ciyu: 'dictCiyu', zdic: 'dictZdic' }
+const dictDescKey: Record<string, string> = { youdao: 'dictYoudaoDesc', bing: 'dictBingDesc', cambridge: 'dictCambridgeDesc', haici: 'dictHaiciDesc', mxnzp: 'dictMxnzpDesc', ciyu: 'dictCiyuDesc', zdic: 'dictZdicDesc' }
 const dictRows = (section:any) => section.items.map((d:any, idx:number) => ({
   key: d.id,
-  text: d.name,
-  hint: confirmDeleteHint(section.desc(d), d.id),
+  text: props.i18n[dictNameKey[d.id]] || d.name,
+  hint: confirmDeleteHint(props.i18n[dictDescKey[d.id]] || section.desc(d), d.id),
   graphic: '⋮⋮',
   draggable: true,
   dragstart: (e:DragEvent) => dragStart(e, idx),
@@ -308,16 +363,17 @@ const dictRows = (section:any) => section.items.map((d:any, idx:number) => ({
   onCheck: () => toggleDict(section.manager, d.id),
   action: section.extra ? () => removingDict.value === d.id ? removeDict(d.id) : (removingDict.value = d.id) : undefined,
   actionTitle: removingDict.value === d.id ? (props.i18n.confirm || '确认') : (props.i18n.delete || '删除'),
-  actionIcon: removingDict.value === d.id ? '#lucide-trash-2' : '#iconTrashcan'
+  actionIcon: removingDict.value === d.id ? '#lucide-trash-2' : '#iconTrashcan',
+  actions: section.extra ? [{ key: 'export', title: props.i18n.export || '导出', icon: '#iconDownload', onClick: () => Object.values(d.files || {}).forEach((path:any) => exportFile(path, path.split('/').pop() || 'dictionary')) }] : undefined
 }))
 // 保存
 const save = async () => (emit('update:modelValue',settings.value),await props.onSave())
 const debouncedSave = (() => {let t:any;return () => (clearTimeout(t),t=setTimeout(save,300))})()
 const setFont = (f?:FontFileInfo) => (settings.value.textSettings.fontFamily=f?'custom':'inherit',settings.value.textSettings.customFont=f?{fontFamily:f.displayName,fontFile:f.name}:{fontFamily:'',fontFile:''},f?debouncedSave():save())
+const pickFont = (f:FontFileInfo) => { loadFont(f); setFont(f) }
 const saveTheme = () => { if (!can.value('reader-theme')) return settings.value.theme='default', showUpgrade('主题配色'); save() }
 const openPage = (url:string) => window.open(url,'_blank')
 const dictHelpUrl = `https://github.com/mm-o/siyuan-sireader/blob/main/docs/${encodeURIComponent('离线词典使用说明.md')}`
-const openPurchasePage = () => openPage('https://pay.ldxp.cn/shop/J7MJJ8YR/lillyt')
 const openMembershipInfo = () => openPage('https://sireader.745201.xyz')
 
 // 打开授权面板
@@ -351,9 +407,9 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
           </SectionTitle>
           <template v-if="isOpen('license')">
             <SettingRows v-if="loadingLicense" :rows="[]" :loading="true" :i18n="i18n" />
-            <li v-else class="b3-list-item">
+            <li v-else class="b3-list-item sr-license-card">
               <span class="b3-list-item__toggle fn__hidden"></span>
-              <div class="fn__flex-1 fn__flex" style="gap:12px;align-items:flex-start">
+              <div class="fn__flex-1 fn__flex sr-license-info" style="gap:12px;align-items:flex-start">
                 <div class="fn__flex-center">
                   <div style="position:relative;width:48px;height:48px;display:inline-block;overflow:visible">
                     <img v-if="licenseMedia.avatar" :src="licenseMedia.avatar" loading="lazy" style="width:48px;height:48px;border-radius:50%;object-fit:cover;display:block">
@@ -363,34 +419,24 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
                 </div>
                 <div class="fn__flex-1 fn__flex-column">
                   <div class="fn__flex-1">
-                    {{ license?.userName || i18n.membership || '会员订阅' }}
+                    <strong>{{ licenseMedia.title }}</strong>
                     <div v-for="line in licenseMedia.lines" :key="line" class="ft__smaller ft__on-surface">{{ line }}</div>
-                    <input
-                      v-if="!license"
-                      v-model="activationCode"
-                      type="text"
-                      class="b3-text-field"
-                      :placeholder="i18n.enterActivationCode || '激活码'"
-                      :disabled="processing"
-                      @mousedown.stop
-                      @pointerdown.stop
-                      @touchend.stop="focusMobileEditable($event.target)"
-                    >
                   </div>
                 </div>
               </div>
-              <span class="fn__space"></span>
-              <div class="fn__flex" style="align-self:flex-end">
-                <template v-if="license">
-                  <span class="b3-list-item__action b3-tooltips b3-tooltips__nw" :aria-label="i18n.logout || '退出'" @click.stop="clearLicense"><svg><use xlink:href="#lucide-x"></use></svg></span>
-                  <span class="b3-list-item__action b3-tooltips b3-tooltips__nw" :aria-label="i18n.purchase || '购买'" @click.stop="openPurchasePage"><svg><use xlink:href="#lucide-shopping-bag"></use></svg></span>
-                </template>
-                <template v-else>
-                  <button class="b3-button b3-button--outline" :disabled="processing || !activationCode.trim()" @click.stop="activateLicense">{{ processing ? (i18n.processing || '处理中') : (i18n.activate || '激活') }}</button>
-                  <button class="b3-button b3-button--text" :disabled="processing" @click.stop="recoverLicense">{{ i18n.recover || '恢复' }}</button>
-                  <span class="b3-list-item__action b3-tooltips b3-tooltips__nw" :aria-label="i18n.purchase || '购买'" @click.stop="openPurchasePage"><svg><use xlink:href="#lucide-shopping-bag"></use></svg></span>
-                </template>
+              <span class="fn__space fn__hidden"></span>
+              <div class="fn__flex sr-license-actions">
+                <button class="b3-button b3-button--outline" :disabled="processing" @click.stop="bindLicense"><svg><use xlink:href="#lucide-qr-code"></use></svg>{{ license ? (i18n.scanQr || 'Scan to Recover') : (i18n.scanQr || 'Scan QR Code') }}</button>
+                <button class="b3-button b3-button--text" :disabled="processing" @click.stop="recoverLicense"><svg><use xlink:href="#lucide-refresh-cw"></use></svg>{{ i18n.recoverLicense || 'Recover License' }}</button>
               </div>
+            </li>
+            <li v-if="qr" class="b3-list-item sr-license-qr">
+              <div class="sr-license-qr-frame">
+                <div v-if="!qr.data" class="sr-license-qr-loading">{{ i18n.loadingQr || 'Loading QR code...' }}</div>
+                <img v-else :src="qr.data" :alt="i18n.membershipQr || 'Membership QR code'">
+              </div>
+              <span class="ft__secondary">{{ license ? (i18n.recoverLicense || 'Scan to automatically recover membership') : (i18n.scanQr || 'Scan to bind and sync membership') }}</span>
+              <button class="b3-button b3-button--text" @click.stop="cancelLicenseBind">{{ i18n.cancel || 'Cancel' }}</button>
             </li>
           </template>
         </ul>
@@ -430,7 +476,11 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
                 :i18n="i18n"
                 @change="value => (settings.customTheme[item.key] = value, can('reader-theme') ? save() : showUpgrade('reader-theme'))"
               />
-              <input ref="bgInput" type="file" accept="image/*" class="fn__none" @change="uploadBgImage">
+            </template>
+            <SectionTitle :title="i18n.bgImage || '背景图片'" icon="#lucide-image" :open="isSubOpen('backgroundImage')" @toggle="toggleSub('backgroundImage')" />
+            <template v-if="isSubOpen('backgroundImage')">
+              <input id="sr-bg-input" ref="bgInput" type="file" accept="image/*" class="fn__none" @change="uploadBgImage">
+              <SettingRows :rows="bgNoneRows" :i18n="i18n" />
               <SettingRows :rows="bgImageRows" :i18n="i18n" />
             </template>
         </SettingSection>
@@ -447,9 +497,11 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
               @change="value => (settings[group.title][item.key] = value, item.type === 'checkbox' ? save() : debouncedSave())"
               @input="value => (settings[group.title][item.key] = value, debouncedSave())"
             />
+            <SettingItem v-if="group.title === 'textSettings'" :item="{key:'overrideFont',type:'checkbox'}" :model-value="settings.textSettings.overrideFont || false" :label="i18n.overrideFont || 'Override book font'" :hint="i18n.overrideFontDesc || ''" :i18n="i18n" @change="value => (settings.textSettings.overrideFont = value, save())" />
             <template v-if="group.title === 'textSettings'">
               <SectionTitle :title="i18n.customFont || '自定义字体'" :icon="settingSectionIcon('sub', 'customFont')" :open="isSubOpen('customFont')" @toggle="toggleSub('customFont')" />
               <template v-if="isSubOpen('customFont')">
+                <input id="sr-font-input" ref="fontInput" type="file" multiple accept=".ttf,.otf,.woff,.woff2" class="fn__none" @change="handleFontUpload">
                 <SettingRows :rows="fontGuideRows" :i18n="i18n" />
                 <SettingRows :rows="fontRows" :loading="isLoadingFonts" :empty="i18n.noCustomFonts || '暂无自定义字体'" :i18n="i18n" />
               </template>
@@ -486,7 +538,7 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
                   </select>
                   <label v-else-if="field.type === 'checkbox'" class="fn__flex-center"><input :checked="field.value" type="checkbox" class="b3-switch" @change="field.set(($event.target as HTMLInputElement).checked)"></label>
                 </div>
-                <textarea v-if="field.type === 'textarea'" :value="field.value" class="b3-text-field sr-textarea-control" rows="4" @input="field.set(($event.target as HTMLTextAreaElement).value)"></textarea>
+                <textarea v-if="field.type === 'textarea'" :value="field.value" class="b3-text-field sr-textarea-control" :rows="field.rows || 4" :placeholder="field.placeholder || ''" @input="field.set(($event.target as HTMLTextAreaElement).value)"></textarea>
                 <template v-if="field.type === 'search'">
                   <SettingRows v-if="field.docs?.length" :rows="docRows(field)" :i18n="i18n" />
                   <div>
@@ -517,6 +569,11 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
                   <SettingRows :rows="section.rows" :empty="section.empty" :load-label="section.loadLabel" :loading="loadingTTS" :i18n="i18n" @load="!loadingTTS && loadTTS()" />
                 </template>
               </template>
+              <SectionTitle :title="i18n.ttsOfflinePack || 'Offline Voice Pack'" :icon="settingSectionIcon('voice', 'ttsOffline')" :open="isSubOpen('ttsOffline')" :aria-label="i18n.ttsOfflinePackDesc || 'Download for offline TTS'" @toggle="toggleSub('ttsOffline')" />
+              <div v-if="isSubOpen('ttsOffline')" class="sr-tts-pack">
+                <div class="ft__secondary">{{ OFFLINE_TTS_PACK.name }} · {{ formatBytes(OFFLINE_TTS_PACK.size) }}</div>
+                <button class="b3-button" :disabled="offlineTTSLoading || offlineTTSInstalled" @click="downloadOfflineTTS">{{ offlineTTSLoading ? `${i18n.downloading || 'Downloading'} ${Math.round(offlineTTSProgress)}%` : offlineTTSInstalled ? (i18n.downloaded || 'Downloaded') : (i18n.downloadVoicePack || 'Download Voice Pack') }}</button>
+              </div>
             </template>
             <SettingRows v-else :rows="[]" :empty="i18n.ttsNotConfigured || '语音未配置'" :i18n="i18n" />
         </SettingSection>
@@ -527,6 +584,7 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
           <button class="b3-button" @click="handleReset">{{ i18n.confirm || '确认' }}</button>
         </template>
         <button v-else class="b3-button" @click="handleReset">{{ i18n.resetDefault || '恢复默认' }}</button>
+        <button class="b3-button b3-button--outline" @click="exportDiagnosticLog">{{ i18n.exportDiagnostics || 'Export Diagnostic Logs' }}</button>
       </div>
     </div>
   </div>
@@ -534,6 +592,7 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
 
 <style scoped lang="scss">
 .bs-view{min-height:0;height:100%;padding:0;box-sizing:border-box}
+.sr-tts-pack{display:grid;gap:8px;padding:8px 12px 12px;font-size:12px}
 .bs-tree{overflow:hidden;--bs-tree-border:color-mix(in srgb,var(--b3-theme-on-surface-light) 30%,transparent);--b3-list-hover:color-mix(in srgb,var(--b3-theme-primary) 12%,transparent)}
 .bs-tree__scroll{display:flex;flex-direction:column;gap:6px;min-height:0;overflow:auto;scrollbar-gutter:stable;padding:8px 0 8px 8px;box-sizing:border-box}
 .bs-tree :deep(ul){padding:0;list-style:none}
@@ -544,6 +603,12 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
 .bs-tree :deep(.b3-list-item--hide-action:last-child){padding-bottom:6px}
 .bs-tree :deep(.b3-list-item__text),.bs-tree :deep(.b3-text-field){min-width:0}
 .bs-tree :deep(.b3-list-item__meta){min-width:0;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bs-tree :deep(.sr-resource-grid){display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;padding:8px}
+.bs-tree :deep(.sr-resource-tile){position:relative;aspect-ratio:4/3;min-width:0;overflow:hidden;border:1px solid var(--b3-border-color);border-radius:var(--b3-border-radius);background:var(--b3-theme-surface);cursor:pointer}
+.bs-tree :deep(.sr-resource-tile--active){border-color:var(--b3-theme-primary);box-shadow:0 0 0 1px var(--b3-theme-primary)}
+.bs-tree :deep(.sr-resource-preview){display:block;width:100%;height:100%;object-fit:cover}
+.bs-tree :deep(.sr-resource-actions){position:absolute;right:4px;bottom:4px;display:flex;gap:2px;padding:2px;border-radius:4px;background:color-mix(in srgb,var(--b3-theme-background) 80%,transparent)}
+.bs-tree :deep(.sr-resource-actions .b3-list-item__action){display:flex;margin:0}
 .bs-tree :deep(.b3-text-field){width:100%;max-width:100%;box-sizing:border-box}
 .sr-textarea-control{width:100%;min-height:96px;margin-top:6px;resize:vertical}
 .bs-tree :deep(ul.b3-list.b3-list--background){border:1px solid var(--bs-tree-border);border-radius:var(--b3-border-radius)}
@@ -551,6 +616,13 @@ onUnmounted(() => window.removeEventListener('sireaderSettingsUpdated', syncAnno
 .bs-tree :deep(.sr-section-title:hover > svg.b3-list-item__graphic){color:inherit;opacity:1}
 .sr-control{width:80px}
 .sr-settings-actions{display:flex;justify-content:center;align-items:center;gap:8px;padding:8px 0 0}
+.sr-license-actions{align-self:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.sr-license-card{display:flex;flex-direction:column;align-items:stretch;gap:10px}
+.sr-license-info{width:100%;align-items:flex-start}
+.sr-license-actions .b3-button{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.sr-license-actions svg{width:14px;height:14px}
+.sr-license-qr{display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 12px 12px!important}
+.sr-license-qr-frame{display:flex;align-items:center;justify-content:center;width:220px;height:220px;overflow:hidden;border-radius:12px;background:var(--b3-theme-surface)}.sr-license-qr-frame img,.sr-license-qr-loading{display:block;width:100%;height:100%;object-fit:contain}.sr-license-qr-loading{display:flex;align-items:center;justify-content:center;color:var(--b3-theme-on-surface-light)}
 .bs-tree :deep(input[type="color"].sr-control){height:24px;padding:0;border:none;background:transparent}
 .license-highlight{animation:license-pulse 2s ease}
 @keyframes license-pulse {

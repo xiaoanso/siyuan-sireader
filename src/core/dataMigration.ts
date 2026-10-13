@@ -1,8 +1,8 @@
-import type { BookRecord, EmbedPdfProgress } from './bookStore'
+import type { BookRecord, EmbedPdfProgress } from './storage'
 
 type PdfMigrationIO = {
   readRecord: (url: string) => Promise<BookRecord | null>
-  writeRecord: (url: string, record: BookRecord) => Promise<any>
+  writeRecord: (url: string, record: BookRecord, base?: BookRecord | null) => Promise<BookRecord>
   readLegacyBlob: (url: string) => Promise<Blob | null>
   removeLegacy: (url: string) => Promise<any>
 }
@@ -31,7 +31,7 @@ export const PDF_MIGRATION_VERSION = 'embedpdf-text-v3'
 const DEFAULT_HIGHLIGHT = '#FFCD45'
 const DEFAULT_STROKE = '#E44234'
 const DEFAULT_TEXT = '#000000'
-const pageHeightsMap = (heights: number[] = []) => new Map(heights.map((height, index) => [index, Number(height) || 0]).filter(([, height]) => height > 0))
+const pageHeightsMap = (heights: number[] = []) => new Map<number, number>(heights.map((height, index) => [index, Number(height) || 0] as [number, number]).filter(([, height]) => height > 0))
 const rect = (value: any = {}, pageHeight = 0) => Array.isArray(value)
   ? { origin: { x: Math.min(Number(value[0] || 0), Number(value[2] ?? value[0] ?? 0)), y: Math.min(Number(value[1] || 0), Number(value[3] ?? value[1] ?? 0)) }, size: { width: Math.abs(Number(value[2] ?? value[0] ?? 0) - Number(value[0] || 0)) || 1, height: Math.abs(Number(value[3] ?? value[1] ?? 0) - Number(value[1] || 0)) || 1 } }
   : ((x, y, w, h) => ({
@@ -211,9 +211,9 @@ const mergeLegacyRecord = async (url: string, record: BookRecord | null, io: Pdf
   if (!legacy) return record
   const merged = mergeAnnotations(record?.annotations, legacy.annotations)
   const next = { version: 1 as const, book: { ...(legacy.book || {}), ...(record?.book || {}) }, annotations: merged.annotations, progress: record?.progress || legacy.progress, migration: record?.migration, updatedAt: Date.now() }
-  await io.writeRecord(url, next)
-  if (merged.complete) await io.removeLegacy(url).catch(() => {})
-  return next
+  const committed = await io.writeRecord(url, next, record)
+  // Keep the source intact. The migration marker prevents repeated imports.
+  return committed
 }
 
 export const migratePdfRecord = async (record: BookRecord, pageHeights: number[] = [], batchSize = 500, budgetMs = 8, onProgress?: (done: number, total: number) => void) => {
@@ -247,7 +247,9 @@ export const migratePdfRecord = async (record: BookRecord, pageHeights: number[]
   }
   onProgress?.(source.length, source.length)
   const progress = record.progress || (record.book?.chapter ? { pageNumber: record.book.chapter, totalPages: record.book.total || 0, updatedAt: record.book.read || Date.now() } as EmbedPdfProgress : undefined)
-  const migration = { ...(record.migration || {}), pdfAnnotations: PDF_MIGRATION_VERSION }
+  const complete = annotations.every(item => isEmbedItem(item))
+  const migration = { ...(record.migration || {}) }
+  if (complete) migration.pdfAnnotations = PDF_MIGRATION_VERSION
   return { record: { ...record, annotations, progress, migration, updatedAt: changed || !migrationDone(record) ? Date.now() : record.updatedAt }, changed: changed || !migrationDone(record) }
 }
 
@@ -257,11 +259,10 @@ export const ensurePdfRecordMigrated = (url: string, io: PdfMigrationIO, pageHei
   if (running) return running
   const task = (async () => {
     const current = await io.readRecord(url)
-    if (migrationDone(current)) return current
+    if (migrationDone(current) && isStandardEmbedPdfRecord(current)) return current
     if (isStandardEmbedPdfRecord(current)) {
-      const next = { ...current, annotations: normalizeEmbedPdfAnnotations(current.annotations || []), migration: { ...(current.migration || {}), pdfAnnotations: PDF_MIGRATION_VERSION } }
-      await io.writeRecord(url, next)
-      return next
+      const next = { ...current, migration: { ...(current.migration || {}), pdfAnnotations: PDF_MIGRATION_VERSION } }
+      return await io.writeRecord(url, next, current)
     }
     emitMigration({ url, phase: 'start', done: 0, total: 0 })
     const record = await mergeLegacyRecord(url, current, io)
@@ -270,7 +271,7 @@ export const ensurePdfRecordMigrated = (url: string, io: PdfMigrationIO, pageHei
       return null
     }
     const migrated = await migratePdfRecord(record, pageHeights, 500, 8, (done, total) => emitMigration({ url, phase: 'progress', done, total }))
-    if (migrated.changed) await io.writeRecord(url, { ...migrated.record, annotations: normalizeEmbedPdfAnnotations(migrated.record.annotations) })
+    if (migrated.changed) migrated.record = await io.writeRecord(url, migrated.record, record)
     emitMigration({ url, phase: 'done', done: migrated.record.annotations.length, total: migrated.record.annotations.length })
     return migrated.record
   })().finally(() => tasks.delete(taskKey))

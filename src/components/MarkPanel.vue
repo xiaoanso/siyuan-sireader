@@ -3,7 +3,7 @@
     <div v-if="state.showMenu || state.showPanel || state.showSendMenu" class="mark-overlay" @click="closeAll" />
 
     <div v-if="state.showMenu" class="mark-menu" :style="menuPosition" @click.stop>
-      <button v-if="!readOnly" @click="openSelectionEditor" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.note || '笔记'"><svg><use xlink:href="#lucide-square-pen" /></svg></button>
+      <button v-if="!readOnly" @pointerdown.stop.prevent="startSelectionEditor" @click.stop="startSelectionEditor" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.note || '笔记'"><svg><use xlink:href="#lucide-square-pen" /></svg></button>
       <button v-if="!readOnly" @click="() => handleCopy()" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.mark || '标注'"><svg><use xlink:href="#iconMark" /></svg></button>
       <button v-if="!readOnly" @click="toggleSendMenu" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.sendTo || '发送到'"><svg><use xlink:href="#lucide-send" /></svg></button>
       <button @click="handleCopyText" class="b3-tooltips b3-tooltips__s" :aria-label="i18n?.copy || '复制'"><svg><use xlink:href="#iconCopy" /></svg></button>
@@ -22,7 +22,7 @@
 
     <div v-if="state.showPanel" v-motion :initial="{ opacity: 0, y: 5 }" :enter="{ opacity: 1, y: 0 }" :class="['sr-popup sr-popup-panel',{ 'is-above': cardPlacement.dir === 'down' }]" :style="cardPosition" @click.stop>
       <div class="sr-main">
-        <Translate v-if="state.panel === 'translate'" :text="state.selection?.text || ''" />
+        <Translate v-if="state.panel === 'translate'" :text="state.selection?.text || ''" :i18n="i18n" />
         <MarkCard
           v-else
           :time="formatDateTime(state.currentMark?.timestamp || Date.now())"
@@ -70,11 +70,11 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { showMessage } from 'siyuan'
 import type { HighlightColor, Mark, MarkManager } from '@/core/MarkManager'
-import { COLORS, STYLES } from '@/core/MarkManager'
+import { COLORS, STYLES, collectMarkTagGroups, formatMarkTags, getMarkTags, parseMarkTags, toggleMarkTags } from '@/core/MarkManager'
 import { hideFloat, openBlock, showFloat } from '@/utils/copy'
 import { jump } from '@/utils/jump'
 import { isMobile } from '@/utils/mobile'
-import MarkCard, { collectMarkTagGroups, formatMarkTags, getMarkTags, parseMarkTags, toggleMarkTags } from './MarkCard.vue'
+import MarkCard from './MarkCard.vue'
 import Translate from './Translate.vue'
 
 interface MarkSelection {
@@ -113,6 +113,7 @@ const emit = defineEmits<{
 
 const sendSearch = ref('')
 const sendDocs = ref<any[]>([])
+let selectionEditorPending = false
 let quickMarkCooldown = false
 let selectionDoc: Document | null = null
 
@@ -206,12 +207,13 @@ const markData = (mark: any, extra: Record<string, any> = {}) => ({
   style: mark.style || 'highlight',
   ...extra,
 })
+const markExportCtx = () => ({ bookUrl: getBookUrl(), isPdf: isPdf.value, showMsg: (msg: string, type?: string) => showMessage(msg, type === 'error' ? 2000 : 1500, type as any), i18n: props.i18n, marks: props.manager })
 const selectionArgs = () => {
   const loc = state.selection?.location
   const pos = loc?.cfi || loc?.page || loc?.section
   return pos && loc ? [pos, state.text.trim(), state.color, state.style, loc.rects, (loc as any).textOffset] as const : null
 }
-const addSelectionMark = async (text: string, color: HighlightColor, style: typeof state.style) => {
+const addSelectionMark = async (text: string, color: HighlightColor = state.color, style: typeof state.style = state.style) => {
   const args = selectionArgs()
   return args && props.manager ? await props.manager.addHighlight(args[0], text.trim(), color, style, args[4], args[5]) : null
 }
@@ -245,6 +247,11 @@ const openSelectionEditor = async () => {
   window.getSelection()?.removeAllRanges()
   selectionDoc = null
   setPanelState('card', markData(mark, { x: state.x, y: state.y, panelY: state.panelY, selection: null, isEditing: true }))
+}
+const startSelectionEditor = () => {
+  if (selectionEditorPending) return
+  selectionEditorPending = true
+  void openSelectionEditor().finally(() => { selectionEditorPending = false })
 }
 const closeAll = () => {
   resetSendState()
@@ -282,6 +289,10 @@ const getSelectionKey = (selection: MarkSelection) => `${selection.location.form
 const openMarkAtRect = (mark: Mark, rect: DOMRect, doc: Document, center = true, edit = false) => {
   const anchor = getSelectionAnchor(rect, doc, center)
   openMarkPanel(mark, anchor.x, anchor.panelY || anchor.y, edit)
+}
+const handleScroll = () => {
+  if (state.isEditing || selectionEditorPending) return
+  closeAll()
 }
 const checkSelection = (doc?: Document, e?: Event) => {
   if (props.quickMarkMode && e && !['mouseup', 'touchend'].includes(e.type)) return
@@ -339,12 +350,12 @@ const handleGlobalEdit = (e: Event) => {
 onMounted(() => {
   window.addEventListener('sireader:edit-mark', handleGlobalEdit)
   if (!isMobile()) window.addEventListener('resize', closeAll)
-  window.addEventListener('scroll', closeAll, true)
+  window.addEventListener('scroll', handleScroll, true)
 })
 onUnmounted(() => {
   window.removeEventListener('sireader:edit-mark', handleGlobalEdit)
   if (!isMobile()) window.removeEventListener('resize', closeAll)
-  window.removeEventListener('scroll', closeAll, true)
+  window.removeEventListener('scroll', handleScroll, true)
 })
 
 defineExpose({
@@ -362,7 +373,7 @@ defineExpose({
 const handleCopy = async (color?: HighlightColor, style?: typeof state.style) => {
   if (readOnly.value) return
   if (!state.selection) return
-  await addSelectionMark(state.selection.text, color || 'blue', style || 'highlight')
+  await addSelectionMark(state.selection.text, color, style)
   if (!props.quickMarkMode) return closeAll()
   quickMarkCooldown = true
   setTimeout(() => { quickMarkCooldown = false }, 300)
@@ -385,8 +396,8 @@ const handleSendToDoc = async (docId: string) => {
   if (readOnly.value) return
   if (props.can && !props.can('quick-send')) return props.showUpgrade?.('快捷发送')
   if (!docId) return
-  const mark = state.selection ? await addSelectionMark(state.selection.text, props.quickMarkColor || 'blue', props.quickMarkStyle || 'highlight') : null
-  if (mark) await (await import('@/utils/copy')).sendMarkToDoc(mark, docId, { bookUrl: getBookUrl(), isPdf: isPdf.value, showMsg: (msg: string, type?: string) => showMessage(msg, type === 'error' ? 2000 : 1500, type as any), i18n: props.i18n, marks: props.manager })
+  const mark = state.selection ? await addSelectionMark(state.selection.text, props.quickMarkColor, props.quickMarkStyle) : state.currentMark
+  if (mark) await (await import('@/utils/copy')).sendMarkToDoc(mark, docId, markExportCtx())
   closeAll()
 }
 const handleCopyText = () => {
@@ -431,10 +442,10 @@ const handleSave = async () => {
       const updates: any = { note: state.note.trim() || undefined, color: state.color, tags: parseMarkTags(state.tags) }
       Object.assign(updates, { text: state.text.trim(), style: state.style })
       const { saveMarkEdit } = await import('@/utils/copy')
-      await saveMarkEdit(state.currentMark, updates, { marks: props.manager, bookUrl: getBookUrl(), isPdf: isPdf.value, reader: props.reader })
+      void saveMarkEdit(state.currentMark, updates, { ...markExportCtx(), reader: props.reader })
       Object.assign(state.currentMark, updates)
       showMessage(props.i18n?.saved || '已保存', 1000)
-      state.isEditing = false
+      closeAll()
       return
     }
     const args = selectionArgs()
@@ -465,7 +476,7 @@ const handleImport = async () => {
   if (readOnly.value) return
   if (!state.currentMark) return
   const { importMark } = await import('@/utils/copy')
-  await importMark(state.currentMark, { bookUrl: getBookUrl(), isPdf: isPdf.value, showMsg: (msg: string, type?: string) => showMessage(msg, type === 'error' ? 2000 : 1500, type as any), i18n: props.i18n, marks: props.manager })
+  await importMark(state.currentMark, markExportCtx())
 }
 </script>
 

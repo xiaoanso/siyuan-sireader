@@ -69,17 +69,18 @@
       <slot name="meta" />
     </div>
 
-    <textarea
-      v-if="editing"
+    <textarea v-if="editing"
+      :class="['b3-text-field', 'sr-note-edit', { 'sr-note-edit--hidden': !editing }]"
+      ref="noteInput"
       :value="note"
-      class="b3-text-field sr-note-edit"
+      :tabindex="editing ? 0 : -1"
       :placeholder="props.i18n?.inputNote || props.i18n?.note || 'Note'"
       rows="4"
       @input="emit('update:note', ($event.target as HTMLTextAreaElement).value)"
       @keydown.ctrl.enter.prevent="emit('save')"
       @keydown.meta.enter.prevent="emit('save')"
     />
-    <div v-else-if="note" class="sr-note" :title="note">{{ note }}</div>
+    <div v-if="!editing && note" class="sr-note" :title="note">{{ note }}</div>
 
     <slot name="extra" />
 
@@ -89,11 +90,11 @@
         <button class="sr-text-btn sr-text-btn--primary" @click.stop="emit('save')">{{ props.i18n?.save || 'Save' }}</button>
       </template>
       <template v-else>
-        <button class="sr-text-btn" @click.stop="emit('edit')">
+        <button class="sr-text-btn" @pointerdown.stop.prevent="beginEdit" @click.stop="beginEdit">
           <svg><use xlink:href="#iconTags" /></svg>
           <span>{{ props.i18n?.inputTags || 'Tags' }}</span>
         </button>
-        <button class="sr-text-btn sr-text-btn--primary" @click.stop="emit('edit')">
+        <button class="sr-text-btn sr-text-btn--primary" @pointerdown.stop.prevent="beginEdit" @click.stop="beginEdit">
           <svg><use xlink:href="#iconEdit" /></svg>
           <span>{{ props.i18n?.note || 'Note' }}</span>
         </button>
@@ -103,36 +104,13 @@
 </template>
 
 <script lang="ts">
-const normalizeMarkTags = (tags?: unknown[]) => Array.from(new Set((tags || []).map(tag => String(tag || '').trim()).filter(Boolean)))
-export const parseMarkTags = (value = '') => normalizeMarkTags(value.split(/[#;\uFF1B,\uFF0C\u3001\n]/))
-export const formatMarkTags = (tags?: unknown[]) => normalizeMarkTags(tags).join(', ')
-export const getMarkTags = (item: any) => normalizeMarkTags(item?.tags || [])
-export const collectMarkTags = (source: any[] | any = [], extra: unknown[] = []) => {
-  const items = Array.isArray(source) ? source : source?.getAll?.() || []
-  return [...new Set([...items.flatMap(getMarkTags), ...normalizeMarkTags(extra)])].sort((a, b) => a.localeCompare(b)).slice(0, 24)
-}
-export const toggleMarkTags = (tags: unknown[] = [], next: unknown[] = []) => {
-  const base = normalizeMarkTags(tags), items = normalizeMarkTags(next)
-  return normalizeMarkTags(items.every(tag => base.includes(tag)) ? base.filter(tag => !items.includes(tag)) : [...base, ...items])
-}
-export type MarkTagGroup = { name: string; tags: string[] }
-const UNGROUPED_TAG_GROUP = '\u672A\u5206\u7EC4'
-export const parseMarkTagPresets = (value = ''): MarkTagGroup[] => value.split('\n').map(line => {
-  const [name, tags = ''] = line.split(/[:\uFF1A]/)
-  return { name: name?.trim(), tags: parseMarkTags(tags) }
-}).filter(group => group.name && (group.tags.length || group.name === UNGROUPED_TAG_GROUP))
-export const collectMarkTagGroups = (source: any[] | any = [], extra: unknown[] = [], preset = (globalThis as any).window?.__sireader_settings?.annotationTagPresets || '') => {
-  const presetGroups = parseMarkTagPresets(preset)
-  const groups = presetGroups.filter(group => group.name !== UNGROUPED_TAG_GROUP), ungroupedPreset = presetGroups.find(group => group.name === UNGROUPED_TAG_GROUP)
-  const used = collectMarkTags(source, extra)
-  const presetTags = new Set(groups.flatMap(group => group.tags))
-  const ungrouped = normalizeMarkTags([...(ungroupedPreset?.tags || []), ...used.filter(tag => !presetTags.has(tag))])
-  return [...groups, { name: UNGROUPED_TAG_GROUP, tags: ungrouped }]
-}
+export * from '@/core/MarkManager'
 </script>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { focusMobileEditable } from '@/utils/mobile'
+import type { MarkTagGroup } from '@/core/MarkManager'
 
 type ColorOption = { key: string; value: string; bg: string }
 type StyleOption = { value: string; label: string; icon?: string }
@@ -173,6 +151,15 @@ const props = withDefaults(defineProps<{
 })
 
 const titleClass = computed(() => props.kind === 'note' ? 'sr-title--note' : 'sr-title--primary')
+const noteInput = ref<HTMLTextAreaElement | null>(null)
+const beginEdit = () => {
+  if (props.editing || noteInput.value === document.activeElement) return
+  noteInput.value?.focus({ preventScroll: true })
+  emit('edit')
+}
+watch(() => props.editing, editing => {
+  if (editing) nextTick(() => noteInput.value !== document.activeElement && focusMobileEditable(noteInput.value))
+}, { immediate: true })
 const isGroupActive = (tags: string[]) => !!tags.length && tags.every(tag => props.selectedTags.includes(tag))
 
 const emit = defineEmits<{

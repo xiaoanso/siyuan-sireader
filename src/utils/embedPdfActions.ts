@@ -1,60 +1,28 @@
 import { LicenseManager } from '@/core/license'
+import pluginInfo from '@/../plugin.json'
 import { inlineLinkText, sendMarkToDoc } from '@/utils/copy'
+import { cloneStorageValue } from '@/core/storage'
 
-const PDF_ASSET_DATA_DIR = '/data/public/siyuan-sireader/embedpdf'
-const PDF_WASM_DATA_PATH = `${PDF_ASSET_DATA_DIR}/pdfium.wasm`
-const PDF_WASM_PUBLIC_URL = '/public/siyuan-sireader/embedpdf/pdfium.wasm'
-const PDF_WASM_SOURCE_URL = 'https://cdn.jsdelivr.net/npm/@embedpdf/pdfium@2.14.4/dist/pdfium.wasm'
-const PDF_RUNTIME_DATA_DIR = `${PDF_ASSET_DATA_DIR}/snippet`
-const PDF_RUNTIME_PUBLIC_DIR = '/public/siyuan-sireader/embedpdf/snippet'
-const PDF_RUNTIME_PUBLIC_URL = `${PDF_RUNTIME_PUBLIC_DIR}/embedpdf.js`
-const PDF_RUNTIME_SOURCE_BASE = 'https://cdn.jsdelivr.net/npm/@embedpdf/snippet@2.14.4/dist'
-const PDF_RUNTIME_FILES = ['embedpdf.js', 'embedpdf-7TNsu-EA.js', 'worker-engine-BkD2-rJn.js', 'direct-engine-BA2WfEti.js', 'browser-BKLM0ThC-CkSOgtCM.js']
-const STAMP_LOCALES = ['zh-CN', 'en']
-const STAMP_PUBLIC_MANIFEST = '/public/siyuan-sireader/embedpdf/stamps/{locale}/manifest.json'
-const STAMP_SOURCE_MANIFEST = 'https://cdn.jsdelivr.net/npm/@embedpdf/default-stamps/{locale}/manifest.json'
-let pdfWasmUrlPromise: Promise<string> | undefined
+// EmbedPDF's uncommitted update carries the old annotation plus its patch.
+export const snapshotPdfAnnotationEvent = (event: any, previous?: any) => cloneStorageValue({
+  type: event.type,
+  annotation: event.type === 'update' ? { ...event.annotation, ...event.patch } : event.annotation,
+  ...((event.ctx || previous?.ctx) ? { ctx: event.ctx || previous.ctx } : {}),
+})
+
+const PDF_PLUGIN_DIR = `/plugins/${pluginInfo.name}/embedpdf`
+const PDF_PLUGIN_WASM_URL = `${PDF_PLUGIN_DIR}/pdfium.wasm`
+const PDF_PLUGIN_RUNTIME_URL = `${PDF_PLUGIN_DIR}/snippet/embedpdf.js`
+const STAMP_PLUGIN_MANIFEST = `${PDF_PLUGIN_DIR}/stamps/{locale}/manifest.json`
 let pdfRuntimePromise: Promise<any> | undefined
-let stampManifestsPromise: Promise<any[]> | undefined
 
 const absoluteUrl = (path: string) => typeof location === 'undefined' ? path : new URL(path, location.origin).href
 const dynamicImport = (url: string) => new Function('url', 'return import(url)')(url)
 
-const publicReady = async (path: string) =>
-  await fetch(absoluteUrl(path), { method: 'HEAD', cache: 'no-store' }).then(res => res.ok).catch(() => false)
-const fetchBlob = async (url: string, error: string) => {
-  const res = await fetch(url, { cache: 'no-store' })
-  if (!res.ok) throw new Error(error)
-  return res.blob()
-}
-
-export const ensureEmbedPdfWasmUrl = () =>
-  pdfWasmUrlPromise ||= (async () => {
-    const wasmUrl = absoluteUrl(PDF_WASM_PUBLIC_URL)
-    if (!await publicReady(PDF_WASM_PUBLIC_URL)) {
-      const { putFile } = await import('@/api')
-      const blob = await fetchBlob(PDF_WASM_SOURCE_URL, 'PDFium wasm download failed')
-      if (!blob.size) throw new Error('PDFium wasm is empty')
-      await putFile(PDF_ASSET_DATA_DIR, true, new File([], ''))
-      await putFile(PDF_WASM_DATA_PATH, false, new File([blob], 'pdfium.wasm', { type: 'application/wasm' }))
-      if (!await publicReady(PDF_WASM_PUBLIC_URL)) throw new Error('PDFium wasm public cache is not readable')
-    }
-    return wasmUrl
-  })().catch((error) => {
-    pdfWasmUrlPromise = undefined
-    throw error
-  })
+export const ensureEmbedPdfWasmUrl = async () => absoluteUrl(PDF_PLUGIN_WASM_URL)
 
 export const ensureEmbedPdfRuntime = () =>
-  pdfRuntimePromise ||= (async () => {
-    if (!await Promise.all(PDF_RUNTIME_FILES.map(file => publicReady(`${PDF_RUNTIME_PUBLIC_DIR}/${file}`))).then(items => items.every(Boolean))) {
-      const { putFile } = await import('@/api')
-      const files = await Promise.all(PDF_RUNTIME_FILES.map(async file => [file, await fetchBlob(`${PDF_RUNTIME_SOURCE_BASE}/${file}`, `EmbedPDF runtime download failed: ${file}`)] as const))
-      await putFile(PDF_RUNTIME_DATA_DIR, true, new File([], ''))
-      await Promise.all(files.map(([file, blob]) => putFile(`${PDF_RUNTIME_DATA_DIR}/${file}`, false, new File([blob], file, { type: 'text/javascript' }))))
-    }
-    return await dynamicImport(absoluteUrl(PDF_RUNTIME_PUBLIC_URL))
-  })().catch((error) => {
+  pdfRuntimePromise ||= dynamicImport(absoluteUrl(PDF_PLUGIN_RUNTIME_URL)).catch((error: any) => {
     pdfRuntimePromise = undefined
     throw error
   })
@@ -62,29 +30,8 @@ export const ensureEmbedPdfRuntime = () =>
 export const initEmbedPdfViewer = async (target: HTMLElement, config: Record<string, any>) =>
   (await ensureEmbedPdfRuntime()).default.init({ type: 'container', target, ...config })
 
-export const ensureEmbedPdfStampManifests = () =>
-  stampManifestsPromise ||= (async () => {
-    const { putFile } = await import('@/api')
-    for (const locale of STAMP_LOCALES) {
-      const dir = `${PDF_ASSET_DATA_DIR}/stamps/${locale}`
-      const publicBase = `/public/siyuan-sireader/embedpdf/stamps/${locale}`
-      if (await publicReady(`${publicBase}/manifest.json`) && await publicReady(`${publicBase}/stamps.pdf`)) continue
-      const manifestUrl = STAMP_SOURCE_MANIFEST.replace('{locale}', locale)
-      const manifestText = await fetch(manifestUrl, { cache: 'no-store' }).then(res => {
-        if (!res.ok) throw new Error(`PDF stamp manifest download failed: ${locale}`)
-        return res.text()
-      })
-      const pdfUrl = new URL(JSON.parse(manifestText).pdf || 'stamps.pdf', manifestUrl).href
-      const pdfBlob = await fetchBlob(pdfUrl, `PDF stamp file download failed: ${locale}`)
-      await putFile(dir, true, new File([], ''))
-      await putFile(`${dir}/manifest.json`, false, new File([manifestText], 'manifest.json', { type: 'application/json' }))
-      await putFile(`${dir}/stamps.pdf`, false, new File([pdfBlob], 'stamps.pdf', { type: 'application/pdf' }))
-    }
-    return [{ url: STAMP_PUBLIC_MANIFEST, fallbackLocale: 'en' }]
-  })().catch((error) => {
-    stampManifestsPromise = undefined
-    throw error
-  })
+export const ensureEmbedPdfStampManifests = async () =>
+  [{ url: STAMP_PLUGIN_MANIFEST, fallbackLocale: 'en' }]
 
 export const createEmbedPdfDocumentSource = async (documentId: string, source: File | Blob | string, fallbackName = 'document.pdf') => {
   const name = typeof source === 'string'
@@ -100,6 +47,78 @@ export const taskToPromise = <T>(task: any) => new Promise<T>((resolve, reject) 
   task.wait(resolve, reject)
 })
 
+export const waitForPdfDocument = (registry: any, documentId: string) => new Promise<any>((resolve, reject) => {
+  const documents = registry?.getPlugin?.('document-manager')?.provides?.()
+  const finish = () => {
+    const doc = documents?.getDocument?.(documentId)
+    if (!doc) return false
+    cleanup()
+    resolve(doc)
+    return true
+  }
+  let offOpen: (() => void) | undefined
+  let offError: (() => void) | undefined
+  const timer = setTimeout(() => {
+    cleanup()
+    reject(new Error('PDF cover render timed out'))
+  }, 15000)
+  const cleanup = () => {
+    clearTimeout(timer)
+    offOpen?.()
+    offError?.()
+  }
+  if (finish()) return
+  offOpen = documents?.onDocumentOpened?.((state: any) => (state?.id === documentId || state?.documentId === documentId) && finish())
+  offError = documents?.onDocumentError?.((event: any) => {
+    if (event?.documentId !== documentId) return
+    cleanup()
+    reject(new Error(event.message || 'PDF cover render failed'))
+  })
+})
+
+export const renderPdfFirstPage = async (source: File | Blob | string): Promise<Blob | undefined> => {
+  if (typeof document === 'undefined') return undefined
+  const host = document.createElement('div')
+  host.style.cssText = 'position:fixed;left:-100000px;top:0;width:1px;height:1px;visibility:hidden;pointer-events:none'
+  document.body.appendChild(host)
+  const documentId = `sireader-cover-${Date.now()}-${Math.random().toString(36).slice(2)}`
+  let viewer: any
+  try {
+    const [wasmUrl, documentSource] = await Promise.all([
+      ensureEmbedPdfWasmUrl(),
+      createEmbedPdfDocumentSource(documentId, source),
+    ])
+    const config = {
+      tabBar: 'never',
+      worker: true,
+      wasmUrl,
+      documentManager: { initialDocuments: [documentSource] },
+      fonts: { ui: null, signature: null },
+      stamp: { manifests: [] },
+    }
+    try {
+      viewer = await initEmbedPdfViewer(host, config)
+      await viewer?.registry
+    } catch {
+      viewer?.remove?.()
+      viewer = await initEmbedPdfViewer(host, { ...config, worker: false })
+    }
+    const registry = await viewer?.registry
+    await waitForPdfDocument(registry, documentId)
+    const render = registry?.getPlugin?.('render')?.provides?.()?.forDocument?.(documentId)
+    if (!render?.renderPage) return undefined
+    return await taskToPromise<Blob>(render?.renderPage?.({
+      pageIndex: 0,
+      options: { imageType: 'image/png', scaleFactor: 0.5, withAnnotations: true },
+    }))
+  } catch {
+    return undefined
+  } finally {
+    viewer?.remove?.()
+    host.remove()
+  }
+}
+
 export const makePdfSelectionMark = (text: string, selection: any[] = []) => {
   const first = selection[0] || {}
   const page = Number(first.pageIndex ?? 0) + 1
@@ -114,11 +133,42 @@ export const makePdfSelectionMark = (text: string, selection: any[] = []) => {
   }
 }
 
+const rectLeft = (rect: any) => Number(rect?.origin?.x ?? 0)
+const rectRight = (rect: any) => rectLeft(rect) + Number(rect?.size?.width ?? 0)
+const rectHeight = (rect: any) => Number(rect?.size?.height ?? 0)
+
+/** Keep the column containing the start of a selection on multi-column pages. */
+export const filterPdfSelectionColumns = (selection: any[] = []) => selection.map(item => {
+  const rects = Array.isArray(item?.segmentRects) ? item.segmentRects.filter(Boolean) : []
+  if (rects.length < 2) return item
+  const sorted = [...rects].sort((a, b) => rectLeft(a) - rectLeft(b))
+  const medianHeight = [...rects].map(rectHeight).sort((a, b) => a - b)[Math.floor(rects.length / 2)] || 1
+  let split = -1
+  let largestGap = 0
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = rectLeft(sorted[i]) - rectRight(sorted[i - 1])
+    if (gap > largestGap) { largestGap = gap; split = i }
+  }
+  if (split < 0 || largestGap < medianHeight * 2) return item
+  const start = rects[0]
+  const startColumn = rectLeft(start) <= rectLeft(sorted[split - 1]) ? sorted.slice(0, split) : sorted.slice(split)
+  if (!startColumn.length || startColumn.length === rects.length) return item
+  const minX = Math.min(...startColumn.map(rectLeft))
+  const minY = Math.min(...startColumn.map(rect => Number(rect?.origin?.y ?? 0)))
+  const maxX = Math.max(...startColumn.map(rectRight))
+  const maxY = Math.max(...startColumn.map(rect => Number(rect?.origin?.y ?? 0) + rectHeight(rect)))
+  return { ...item, rect: { origin: { x: minX, y: minY }, size: { width: maxX - minX, height: maxY - minY } }, segmentRects: startColumn }
+})
+
 export const getPdfSelectionMark = async (selectionScope: any) => {
   const lines = await taskToPromise<string[]>(selectionScope?.getSelectedText?.()).catch(() => [])
   const text = inlineLinkText((lines || []).join('\n'))
-  return text ? makePdfSelectionMark(text, selectionScope?.getFormattedSelection?.() || []) : null
+  return text ? makePdfSelectionMark(text, filterPdfSelectionColumns(selectionScope?.getFormattedSelection?.() || [])) : null
 }
+
+export const restorePdfAnnotationTool = (scope: any, toolId: string) => queueMicrotask(() => {
+  if (!scope?.getActiveTool?.()) scope?.setActiveTool?.(toolId)
+})
 
 export const pdfAnnotationNote = (item: any) => item?.annotation?.custom?.note || item?.annotation?.contents || ''
 
@@ -135,6 +185,12 @@ export const pdfMarkFromAnnotation = (annotation: any, annotations: any[] = []) 
   const page = Number(annotation.pageIndex || 0) + 1
   return { id: annotation.id, type: 'note', format: 'pdf', page, cfi: `#page-${page}`, chapter: `Page ${page}`, text: pdfAnnotationText(item), note: pdfAnnotationNote(item) }
 }
+
+export const isPdfImageAnnotation = (annotation: any) => annotation?.rect && [4, 5, 6, 8, 15].includes(Number(annotation.type))
+export const capturePdfAnnotationImage = (renderScope: any, annotation: any) =>
+  isPdfImageAnnotation(annotation)
+    ? taskToPromise<Blob>(renderScope?.renderPageRect?.({ pageIndex: annotation.pageIndex, rect: annotation.rect, options: { imageType: 'image/png', scaleFactor: 2, withAnnotations: true } })).catch(() => null)
+    : null
 
 export const pdfSelectionFromAnnotation = (annotation: any) => {
   const page = Number(annotation.pageIndex || 0) + 1

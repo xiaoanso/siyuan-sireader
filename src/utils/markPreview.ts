@@ -2,7 +2,7 @@
 
 import { sameBookUrl } from '@/core/bookshelf'
 import { extractText } from '@/services/TTSExtractor'
-import { createEmbedPdfDocumentSource, ensureEmbedPdfWasmUrl, initEmbedPdfViewer } from '@/utils/embedPdfActions'
+import { createEmbedPdfDocumentSource, ensureEmbedPdfWasmUrl, initEmbedPdfViewer, waitForPdfDocument } from '@/utils/embedPdfActions'
 import { pdfPageFromCfi } from '@/utils/jump'
 
 type PreviewContext = {
@@ -70,43 +70,13 @@ const getOfflineView = async (ctx: PreviewContext) => {
       const view = document.createElement('foliate-view') as any
       host.appendChild(view)
       document.body.appendChild(host)
-      await view.open((ctx.book?.format || '').toLowerCase() === 'txt' ? await createTxtBook(file) : file)
+      const source = file instanceof Blob && !(file instanceof File) ? new File([file], 'preview.epub', { type: file.type }) : file
+      await view.open((ctx.book?.format || '').toLowerCase() === 'txt' ? await createTxtBook(source) : source)
       return view
     })())
   }
   return offlineViewCache.get(bookUrl)!
 }
-
-const waitPdfDocument = (registry: any, documentId: string) => new Promise<any>((resolve, reject) => {
-  const documents = registry.getPlugin('document-manager')?.provides?.()
-  const done = () => {
-    const doc = documents?.getDocument?.(documentId)
-    if (doc) {
-      offOpen?.()
-      offError?.()
-      clearTimeout(timer)
-      resolve(doc)
-      return true
-    }
-    return false
-  }
-  let offOpen: any
-  let offError: any
-  const timer = setTimeout(() => {
-    offOpen?.()
-    offError?.()
-    reject(new Error('PDF preview load timeout'))
-  }, 10000)
-  if (done()) return
-  offOpen = documents?.onDocumentOpened?.((state: any) => (state.id === documentId || state.documentId === documentId) && done())
-  offError = documents?.onDocumentError?.((event: any) => {
-    if (event.documentId !== documentId) return
-    offOpen?.()
-    offError?.()
-    clearTimeout(timer)
-    reject(new Error(event.message || 'PDF preview load failed'))
-  })
-})
 
 const disposeOfflinePdfSession = () => {
   offlinePdfSession?.then(({ host }) => host?.remove?.()).catch(() => {})
@@ -132,12 +102,11 @@ const getOfflinePdfSession = async (ctx: PreviewContext) => {
           worker: true,
           wasmUrl,
           documentManager: { initialDocuments: [documentSource] },
-          fontFallback: null,
           fonts: { ui: null, signature: null },
           stamp: { manifests: [] },
         })
         if (!viewer) throw new Error('PDF preview load failed')
-        viewer.registry?.then((registry: any) => waitPdfDocument(registry, documentId)
+        viewer.registry?.then((registry: any) => waitForPdfDocument(registry, documentId)
           .then((doc: any) => resolve({ registry, documentId, doc, host }))
           .catch(reject),
         )
@@ -229,7 +198,7 @@ export const getPreviewAround = (text: string, needle = '') => {
 }
 const renderContext = (mark: any, text: string, title: string) => {
   const { before, hit, after } = getPreviewAround(text, mark?.text || mark?.title || '')
-  const note = mark?.note ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--b3-border-color);color:var(--b3-theme-on-surface);line-height:1.6">${esc(mark.note)}</div>` : ''
+  const note = mark?.note ? `<blockquote class="bq" data-subtype="note" style="margin:10px 0 0;padding:8px 10px;border-left:4px solid var(--b3-theme-primary);border-radius:6px;background:var(--b3-theme-primary-lightest);color:var(--b3-theme-on-surface);line-height:1.6"><div style="font-weight:600;margin-bottom:4px">NOTE</div><div>${esc(mark.note)}</div></blockquote>` : ''
   const meta = [mark?.bookTitle, mark?.chapter, mark?.page ? `Page ${mark.page}` : ''].filter(Boolean).join(' - ')
   const body = `
     <div class="protyle-wysiwyg" style="padding:12px 14px;max-height:320px;overflow:auto;font-size:13px;line-height:1.75;color:var(--b3-theme-on-surface);user-select:text;word-break:break-word">
@@ -372,7 +341,7 @@ export const showLinkedMarkPreview = (parsed: { bookUrl: string; cfi: string; id
       const bookUrl = book?.url || parsed.bookUrl
       let mark: any = null
       if (pdfPageFromCfi(parsed.cfi)) {
-        const stored = await (await import('@/core/bookStore')).readEmbedPdfAnnotations(book?.dataId || bookUrl).catch(() => []) || []
+        const stored = await (await import('@/core/storage')).readEmbedPdfAnnotations(book?.dataId || bookUrl).catch(() => []) || []
         mark = embedPdfTransferMark(stored, parsed, book)
       } else {
         const annotations = await (await (await import('@/core/database')).getDatabase()).getAnnotations(bookUrl)

@@ -6,6 +6,7 @@ import fg from "fast-glob"
 import minimist from "minimist"
 import livereload from "rollup-plugin-livereload"
 import {
+  build as viteBuild,
   defineConfig,
   loadEnv,
 } from "vite"
@@ -14,8 +15,22 @@ import zipPack from "vite-plugin-zip-pack"
 
 const pluginInfo = require("./plugin.json")
 const PRIVATE_SOURCES_ID = "@private-sources"
+
+function buildKernelPlugin(outDir: string) {
+  return {
+    name: 'build-siyuan-kernel',
+    async closeBundle() {
+      await viteBuild({ configFile: false, build: { outDir, emptyOutDir: false, sourcemap: false, minify: false, lib: { entry: resolve(__dirname, 'src/kernel/index.js'), name: 'SiReaderKernel', formats: ['iife'], fileName: () => 'kernel.js' } } })
+    },
+  }
+}
 const VIRTUAL_PRIVATE_SOURCES_ID = "\0@private-sources"
 const FOLIATE_PDF_STUB_ID = "\0foliate-pdf-stub"
+const FOLIATE_CUSTOM_ELEMENTS = {
+  view: ["foliate-view", "View"],
+  "fixed-layout": ["foliate-fxl", "FixedLayout"],
+  paginator: ["foliate-paginator", "Paginator"],
+} as const
 const PUBLIC_PRIVATE_SOURCES_STUB = `
 export const registerPrivateSources = () => {}
 export const createPrivateSearchAccess = () => ({
@@ -27,6 +42,15 @@ export const createWereadOnlineBookInfo = () => { throw new Error('微信读书�
 export const getWereadReadUrl = bookId => bookId ? 'https://weread.qq.com/web/reader/' + encodeURIComponent(bookId) : ''
 export const testWereadAgentKey = async () => { throw new Error('微信读书私密模块未安装') }
 `
+
+export const guardFoliateCustomElements = (code: string, id: string) => {
+  const matched = id.replace(/\\/g, "/").match(/\/foliate-js\/(view|fixed-layout|paginator)\.js(?:\?.*)?$/)
+  if (!matched) return code
+  const [tag, constructor] = FOLIATE_CUSTOM_ELEMENTS[matched[1] as keyof typeof FOLIATE_CUSTOM_ELEMENTS]
+  const original = `customElements.define('${tag}', ${constructor})`
+  if (!code.includes(original)) throw new Error(`Expected Foliate custom-element registration in ${id}: ${original}`)
+  return code.replace(original, `if (!customElements.get('${tag}')) ${original}`)
+}
 
 export default defineConfig(({
   mode,
@@ -50,9 +74,15 @@ export default defineConfig(({
   const privateSources = resolve(__dirname, "private-sources/src/privateSources.ts")
 
   return {
+    test: {
+      include: ['tests/**/*.test.ts'],
+      exclude: ['node_modules/**', 'dist/**', 'dev/**', 'docs/**'],
+    },
+
     resolve: {
       alias: {
         "@": resolve(__dirname, "src"),
+        ...(process.env.VITEST ? { siyuan: resolve(__dirname, "tests/stubs/siyuan.ts") } : {}),
       },
     },
 
@@ -60,6 +90,18 @@ export default defineConfig(({
       {
         name: "private-sources",
         enforce: "pre",
+        transform(code, id) {
+          if (id.replace(/\\/g, "/").endsWith("/src/libs/sherpa-onnx/sherpa-onnx-wasm.js")) {
+            return code.replace(
+              "function run(){if(runDependencies>0)",
+              "function run(){if(wasmExports instanceof Promise){wasmExports.then(()=>run());return}if(runDependencies>0)",
+            )
+          }
+          const matched = id.replace(/\\/g, "/").match(/\/foliate-js\/(view|fixed-layout|paginator)\.js(?:\?.*)?$/)
+          if (!matched) return null
+          const next = guardFoliateCustomElements(code, id)
+          return next === code ? null : { code: next, map: null }
+        },
         resolveId(id, importer) {
           if (/[\\/]foliate-js[\\/]pdf\.js$/.test(id) || id === "foliate-js/pdf.js" || (id === "./pdf.js" && /[\\/]foliate-js[\\/]view\.js$/.test(importer || ""))) return FOLIATE_PDF_STUB_ID
           if (id !== PRIVATE_SOURCES_ID) return null
@@ -93,6 +135,35 @@ export default defineConfig(({
           {
             src: "./src/i18n/*.json",
             dest: "./i18n/",
+          },
+          {
+            src: [
+              "./node_modules/@embedpdf/snippet/dist/embedpdf*.js",
+              "./node_modules/@embedpdf/snippet/dist/worker-engine*.js",
+              "./node_modules/@embedpdf/snippet/dist/direct-engine*.js",
+              "./node_modules/@embedpdf/snippet/dist/browser*.js",
+            ],
+            dest: "./embedpdf/snippet/",
+          },
+          {
+            src: "./node_modules/@embedpdf/snippet/dist/pdfium.wasm",
+            dest: "./embedpdf/",
+          },
+          {
+            src: "./node_modules/@embedpdf/default-stamps/zh-CN/*",
+            dest: "./embedpdf/stamps/zh-CN/",
+          },
+          {
+            src: "./node_modules/@embedpdf/default-stamps/en/*",
+            dest: "./embedpdf/stamps/en/",
+          },
+          {
+            src: "./node_modules/bzip2-wasm/bzip2-1.0.8/bzip2.wasm",
+            dest: "./bzip2-wasm/",
+          },
+          {
+            src: "./src/libs/sherpa-onnx/sherpa-onnx.wasm",
+            dest: "./sherpa-onnx/",
           },
         ],
       }),
@@ -130,6 +201,7 @@ export default defineConfig(({
       },
       rollupOptions: {
         plugins: [
+          buildKernelPlugin(distDir),
           ...(isWatch
             ? [
                 ...(useLiveReload ? [livereload(devDistDir)] : []),

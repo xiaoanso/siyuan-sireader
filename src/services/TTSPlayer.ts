@@ -4,6 +4,7 @@ import { TTS } from 'foliate-js/tts.js'
 import { textWalker } from 'foliate-js/text-walker.js'
 import { EdgeTTSCore, loadLocalVoices, toArrayBuffer } from './TTSEngine'
 import { ttsNodeFilter } from './TTSExtractor'
+import { OFFLINE_TTS_VOICE, synthesizeOfflineTTS } from './OfflineTTS'
 
 declare const window: any
 const BLOCK_SELECTOR = 'article,aside,blockquote,div,dl,dt,dd,figure,footer,form,h1,h2,h3,h4,h5,h6,header,li,main,ol,p,pre,section,tr'
@@ -36,7 +37,10 @@ export class EdgeTTSPlayer {
   }
 
   private async checkLocalVoice(voiceName: string) {
-    if (!voiceName) return
+    if (!voiceName || voiceName === OFFLINE_TTS_VOICE.name) {
+      this.isLocal = false
+      return
+    }
     const locals = await loadLocalVoices()
     this.isLocal = locals.some(v => v.name === voiceName)
   }
@@ -131,6 +135,7 @@ export class EdgeTTSPlayer {
     this.config.onBlock?.(text)
     const range = this.foliateTTS?.getLastRange?.()
     this.config.highlightText && range && this.renderer?.scrollToAnchor?.(range, true)
+    if (this.config.voice === OFFLINE_TTS_VOICE.name) return this.playOfflineText(text, ticket)
     return this.isLocal ? this.playLocal(text, ticket) : this.playOnline(text, ticket)
   }
 
@@ -176,6 +181,30 @@ export class EdgeTTSPlayer {
     this.stopCurrent()
     const source = this.audioCtx.createBufferSource()
     source.buffer = audioBuffer
+    source.connect(this.audioCtx.destination)
+    return new Promise<void>((resolve) => {
+      if (this.stopped || ticket !== this.ticket) return resolve()
+      this.currentSource = source
+      source.addEventListener('ended', () => (this.currentSource = null, resolve()), { once: true })
+      try {
+        this.notifySpeakStart()
+        source.start(0)
+      } catch { this.currentSource = null; resolve() }
+    })
+  }
+
+  private async playOfflineText(text: string, ticket: number) {
+    if (!text) return
+    const audio = await synthesizeOfflineTTS(text, this.config.rate || 1)
+    if (this.stopped || ticket !== this.ticket) return
+    while (this.paused && !this.stopped && ticket === this.ticket) await this.waitWhilePaused(ticket)
+    if (this.stopped || ticket !== this.ticket) return
+    if (this.audioCtx.state !== 'running') await this.audioCtx.resume()
+    const buffer = this.audioCtx.createBuffer(1, audio.samples.length, audio.sampleRate)
+    buffer.copyToChannel(audio.samples, 0)
+    this.stopCurrent()
+    const source = this.audioCtx.createBufferSource()
+    source.buffer = buffer
     source.connect(this.audioCtx.destination)
     return new Promise<void>((resolve) => {
       if (this.stopped || ticket !== this.ticket) return resolve()
