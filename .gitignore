@@ -25,3 +25,4 @@ tts/*
 scripts
 .agents/skills
 skills-lock.json
+patches/*
