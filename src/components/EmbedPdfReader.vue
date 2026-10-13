@@ -25,6 +25,7 @@ import { trackPending } from '@/core/storage'
 import { cloneStorageValue } from '@/core/storage'
 import { snapshotPdfAnnotationEvent } from '@/utils/embedPdfActions'
 import { embedPdfLocale } from '@/utils/embedPdfLocale'
+import { pdfSpeakCommand } from '@/fork/tts/pdfSpeakCommand'
 
 type EmbedPdfContainer = any
 type PluginRegistry = any
@@ -540,11 +541,7 @@ const setupPdfCommands = (registry: PluginRegistry) => {
   ;[
     ['dict', props.i18n?.dict || 'Dictionary', 'book', async (mark: any) => (await import('@/utils/dictionary')).openDict(mark.text, innerWidth / 2, innerHeight / 2, mark)],
     ['translate', props.i18n?.translate || 'Translate', 'text', (mark: any) => openPdfTranslate(mark.text, translation => createPdfTranslationAnnotation(registry, mark.text, translation))],
-    ['speak', props.i18n?.ttsPlay || '朗读', 'volume', async (mark: any) => {
-      const { getTTSController } = await import('@/services/TTSPlayer')
-      const tts = props.settings?.tts || (window as any).__sireader_settings?.tts
-      getTTSController().speak(mark.text, tts)
-    }],
+    pdfSpeakCommand(props), // fork hook
   ].forEach(([id, label, icon, run]: any) => commands?.registerCommand?.({ id: `sireader:${id}-selection`, label, icon, action: async () => { const mark = await selectedMark(); if (mark?.text) run(mark) } }))
   docs.forEach((doc: any) => commands?.registerCommand?.({
     id: pdfQuickSendCommandId('selection', doc.id),

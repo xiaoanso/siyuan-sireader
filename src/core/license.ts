@@ -66,9 +66,11 @@ export class LicenseManager {
     }
   }
 
-  /** All features unlocked (VIP restrictions removed). */
-  static can(_feature: string, _license: LicenseInfo | null): boolean {
-    return true
+  static can(feature: string, license: LicenseInfo | null): boolean {
+    const required = PAID_FEATURES[feature]
+    if (!required) return true
+    if (!license || !this.isUsable(license)) return false
+    return (LEVELS[license.type] || 0) >= (LEVELS[required] || 0)
   }
 
   private static licenseTask: Promise<LicenseInfo | null> | null = null

@@ -23,3 +23,4 @@ siyuan-sireader.code-workspace
 tts/*
 scripts
 .agents/skills
+skills-lock.json

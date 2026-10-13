@@ -8,6 +8,7 @@ import { setPlugin } from '@/utils/copy'
 import { flushStorage, storageEngine, recoverBackupRecords } from '@/core/storage'
 import { drainPendingTasks, trackPending } from '@/core/storage'
 import { installDiagnostics, diagnosticLog, disposeDiagnostics } from '@/core/diagnostics'
+import { applyFork } from '@/fork'
 
 let plugin: Plugin | null = null
 let app: any = null
@@ -37,6 +38,7 @@ export async function init(p: Plugin) {
   mountReaderIconSprite(div)
   document.body.appendChild(div)
   registerReaderIcons(p)
+  applyFork()
   app = createApp(App)
   app.mount(div)
   diagnosticLog('info', 'plugin.init.done', { plugin: p.name })
