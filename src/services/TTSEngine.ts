@@ -13,28 +13,77 @@ const NodeURL = urlMod?.URL
 
 const CHROMIUM_VERSION = '143.0.3650.75'
 const TRUSTED_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
-const WINDOWS_EPOCH = 11644473600n
+const WINDOWS_EPOCH = 11644473600
 const OUTPUT_FORMAT = 'audio-24khz-48kbitrate-mono-mp3'
 const VOICES_URL = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=${TRUSTED_TOKEN}`
 const CACHE_TTL = 24 * 60 * 60 * 1000
 const SSML_NS = 'http://www.w3.org/2001/10/synthesis'
 const XML_NS = 'http://www.w3.org/XML/1998/namespace'
+// CUSTOM: Edge Read Aloud now requires Sec-MS-GEC v2 (v1 → HTTP 403)
+const EDGE_COPYRIGHT = 'Copyright (C) Microsoft Corporation. All rights reserved.'
+const SWAP_FIRST = { word: 0xEF0569FB, sum: 0x76F50F34, product: 0xC3EFEA97 }
+const SWAP_SECOND = { word: 0xC31713DB, sum: 0x1881CE3C, product: 0x35BD1EC9 }
+const MIX_FIRST = [0xCF98B111, 0x87085B9F, 0x12CEB96D, 0x257E1D83]
+const MIX_SECOND = [0xA27416F5, 0xD38396FF, 0x7C932B89, 0xBFA49F69]
 const ensureNodeEnv = () => {
   if (!randomBytes || !createHash || !NodeURL || !net || !tls) {
     throw new Error('Node runtime is unavailable in current environment')
   }
 }
 
-// 生成令牌
+const swapHalves = (value: number) => ((value << 16) | (value >>> 16)) >>> 0
+const swapTerm = (word: number, key: number, m: { word: number; sum: number; product: number }) => {
+  const sum = Math.imul(word, key) + Math.imul(swapHalves(word), m.word)
+  const product = Math.imul(swapHalves(sum), m.sum) >>> 0
+  return (Math.imul(swapHalves(product), m.product) + product) >>> 0
+}
+const swapAndMultiply = (value: number, multipliers: number[]) => {
+  for (const multiplier of multipliers) value = Math.imul(swapHalves(value), multiplier) >>> 0
+  return value
+}
+const toUpperHex = (bytes: Uint8Array) => Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
+const cs64 = (message: Uint8Array, digest: Uint8Array) => {
+  const digestView = new DataView(digest.buffer, digest.byteOffset, digest.byteLength)
+  const firstKey = (digestView.getUint32(0, true) | 1) >>> 0
+  const secondKey = (digestView.getUint32(4, true) | 1) >>> 0
+  const padded = new Uint8Array(Math.ceil(message.length / 8) * 8)
+  padded.set(message)
+  const words = new DataView(padded.buffer)
+  let swapSum = 0, lastSwap = 0, mix = 0, mixSum = 0
+  for (let offset = 0; offset < padded.length; offset += 8) {
+    const firstWord = words.getUint32(offset, true)
+    const secondWord = words.getUint32(offset + 4, true)
+    const firstSwap = swapTerm(firstWord, firstKey, SWAP_FIRST)
+    lastSwap = swapTerm(secondWord, secondKey, SWAP_SECOND)
+    swapSum = (swapSum + firstSwap + lastSwap) >>> 0
+    mix = swapAndMultiply(Math.imul(mix + firstWord, firstKey), MIX_FIRST)
+    mixSum = (mixSum + mix) >>> 0
+    mix = swapAndMultiply(Math.imul(mix + secondWord, secondKey), MIX_SECOND)
+    mixSum = (mixSum + mix) >>> 0
+  }
+  const checksum = new Uint8Array(8)
+  const view = new DataView(checksum.buffer)
+  view.setUint32(0, lastSwap ^ mix, true)
+  view.setUint32(4, swapSum ^ mixSum, true)
+  return checksum
+}
+
+/** Sec-MS-GEC v2: `<CS64>-<SHA256>` over Edge copyright + rounded Windows ticks + token. */
 const generateToken = () => {
   ensureNodeEnv()
-  const ticks = BigInt(Math.floor(Date.now() / 1000 + Number(WINDOWS_EPOCH))) * 10000000n
-  return createHash('sha256').update(`${ticks - (ticks % 3000000000n)}${TRUSTED_TOKEN}`, 'ascii').digest('hex').toUpperCase()
+  let ticks = Date.now() / 1000 + WINDOWS_EPOCH
+  ticks -= ticks % 300
+  ticks *= 1e9 / 100
+  const ticksAndToken = `${Math.trunc(ticks)}${TRUSTED_TOKEN}`
+  const message = Buffer.from(EDGE_COPYRIGHT + ticksAndToken, 'ascii')
+  const digest = createHash('sha256').update(message).digest()
+  return `${toUpperHex(cs64(message, digest))}-${toUpperHex(digest)}`
 }
 
 // 组合 URL
-const combineUrl = (url: string, connectionId = randomBytes(16).toString('hex')) => `${url}?TrustedClientToken=${TRUSTED_TOKEN}&ConnectionId=${connectionId}&Sec-MS-GEC=${generateToken()}&Sec-MS-GEC-Version=1-${CHROMIUM_VERSION}`
+const combineUrl = (url: string, connectionId = randomBytes(16).toString('hex')) => `${url}?TrustedClientToken=${TRUSTED_TOKEN}&ConnectionId=${connectionId}&Sec-MS-GEC=${generateToken()}&Sec-MS-GEC-Version=2-${CHROMIUM_VERSION}`
 const generateMuid = () => randomBytes(16).toString('hex').toUpperCase()
+const voicesListUrl = () => `${VOICES_URL}&Sec-MS-GEC=${generateToken()}&Sec-MS-GEC-Version=2-${CHROMIUM_VERSION}`
 
 // Buffer 转 ArrayBuffer
 export const toArrayBuffer = (buf: Buffer) => {
@@ -244,7 +293,7 @@ export async function loadOnlineVoices(): Promise<TTSVoice[]> {
   if (onlineVoiceTask) return onlineVoiceTask
   onlineVoiceTask = (async () => {
   try {
-    const res = await fetch(VOICES_URL, { referrerPolicy: 'no-referrer' }) // CUSTOM: fork referrerPolicy
+    const res = await fetch(voicesListUrl(), { referrerPolicy: 'no-referrer' }) // CUSTOM: fork referrerPolicy + Sec-MS-GEC v2
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     const voices: TTSVoice[] = data.map((v: any) => ({

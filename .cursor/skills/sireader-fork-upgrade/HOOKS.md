@@ -10,7 +10,7 @@ Keep this table updated when二次开发 hooks change. Agent must re-check after
 | `src/fork/index.ts` | `applyFork()` | Orchestrates overlay |
 | `src/fork/license.ts` | `unlockAllFeatures()` | `LicenseManager.can = () => true` |
 | `src/fork/icons.ts` | `injectForkIcons()` | TTS chevron icons |
-| `src/services/TTSEngine.ts` | `referrerPolicy: 'no-referrer'` | Edge voices fetch |
+| `src/services/TTSEngine.ts` | `referrerPolicy: 'no-referrer'` + **Sec-MS-GEC v2** (`Sec-MS-GEC-Version=2-…`) | Edge voices/WS; v1 token → HTTP 403 |
 | `src/services/TTSPlayer.ts` | `isLoading`, `restartText`, `restart`, speak→restartText | Compatible with Reader/PDF fork controls; keep upstream Offline TTS |
 | `src/components/Reader.vue` | `ReaderTtsBar`, `createReaderTtsControls` | TTS toolbar / restart / loading |
 | `src/components/EmbedPdfReader.vue` | `pdfSpeakCommand(props)` + `sireader-speak-selection` | PDF selection speak |
