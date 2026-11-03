@@ -1,11 +1,11 @@
 import type { Plugin } from 'siyuan'
-import { getFile, putFile, removeFile } from '@/api'
+import { forwardProxy, getFile } from '@/api'
+import { removeManagedFileTransactionally, writeManagedFile } from '@/core/storage'
 
 const BASE_URL='https://dictionary.cambridge.org'
 const MXNZP_ID='guuhjloujpkfenn1',MXNZP_SECRET='izYrfPlqfRMxrXHUCf5vEbD4WSxnjSow'
 const DICT_PUBLIC_ROOT='/public/siyuan-sireader/dictionaries'
-const DICT_DATA_ROOT='/data/public/siyuan-sireader/dictionaries'
-const CONFIG_PATH=`${DICT_DATA_ROOT}/config.json`
+const CONFIG_PATH=`${DICT_PUBLIC_ROOT}/config.json`
 
 // ===== 类型定义 =====
 export interface DictResult{word:string;phonetics:{ipa:string;audio:string;region:'us'|'uk'}[];parts:{part:string;means:string[]}[];examples:{en:string;zh:string}[]}
@@ -23,7 +23,7 @@ export const POS_MAP:Record<string,{name:string;color:string}>={n:{name:'n.',col
 export const ONLINE_DICTS:OnlineDict[]=[{id:'youdao',name:'有道',icon:'https://shared.ydstatic.com/images/favicon.ico',enabled:true,desc:'英汉词典，简洁快速'},{id:'bing',name:'必应',icon:'https://cn.bing.com/favicon.ico',enabled:true,url:'https://cn.bing.com/dict/search?q={{word}}',desc:'必应词典网页版'},{id:'cambridge',name:'剑桥',icon:'#iconLanguage',enabled:true,desc:'英汉双解，支持发音'},{id:'haici',name:'海词',icon:'https://dict.cn/favicon.ico',enabled:true,desc:'英汉词典，例句丰富'},{id:'mxnzp',name:'汉字',icon:'#iconA',enabled:true,desc:'汉字字典，详细解释'},{id:'ciyu',name:'词语',icon:'#iconFont',enabled:true,desc:'汉语词语，成语典故'},{id:'zdic',name:'汉典',icon:'https://www.zdic.net/favicon.ico',enabled:true,desc:'汉字词语查询'}]
 
 let plugin:Plugin|null=null,onlineDicts=[...ONLINE_DICTS]
-const publicToDataPath=(path='')=>path.startsWith('/public/')?path.replace('/public/','/data/public/'):path
+const apiPath=(path='')=>path.startsWith('/public/')?path.replace('/public/','/data/public/'):path
 const safePathPart=(name='dict')=>name.replace(/[\\/:*?"<>|#%{}^~[\]`]/g,'_').replace(/\s+/g,'_').replace(/^_+|_+$/g,'')||'dict'
 const getRelativePath=(file:File)=>((file as any).webkitRelativePath||file.name).replace(/\\/g,'/')
 const getDictFileKey=(name:string):OfflineDictFileKey|null=>{
@@ -83,8 +83,8 @@ const decompressFile=async(file:File,format='gzip')=>{
   return new File([await new Response(stream).blob()],file.name.replace(/\.gz$/i,''),{type:'application/octet-stream'})
 }
 const readIfoName=async(file?:File)=>file?extractIfoName(await readDictionaryFileText(file).catch(()=>'')):''
-const readDictConfig=async():Promise<DictConfig>=>await getFile(CONFIG_PATH).catch(()=>null)||{dicts:[]}
-const writeDictConfig=(config:DictConfig)=>putFile(CONFIG_PATH,false,new File([JSON.stringify(config,null,2)],'config.json',{type:'application/json'}))
+const readDictConfig=async():Promise<DictConfig>=>await getFile(apiPath(CONFIG_PATH)).catch(()=>null)||{dicts:[]}
+const writeDictConfig=(config:DictConfig)=>writeManagedFile(new Blob([JSON.stringify(config,null,2)],{type:'application/json'}),apiPath(CONFIG_PATH),'config.json')
 
 // ===== 离线词典管理器 =====
 class OfflineDictManager{
@@ -98,8 +98,7 @@ class OfflineDictManager{
     plugin=p
     this.initialized=true
     try{
-      await putFile(DICT_DATA_ROOT,true,new File([],''))
-      const config=await getFile(CONFIG_PATH)
+      const config=await getFile(apiPath(CONFIG_PATH))
       if(config?.dicts?.length){
         this.dicts=config.dicts.map(cfg=>({id:cfg.id,name:cfg.name,type:cfg.type as any,enabled:cfg.enabled,files:cfg.files||{}}))
         await this.refreshNames()
@@ -201,12 +200,11 @@ class OfflineDictManager{
     for(const[groupKey,group]of groups){
       if(!isUsableDictGroup(group))continue
       try{
-        const id=`dict_${Date.now()}_${Math.random().toString(36).slice(2,9)}`,dictPath=`${DICT_PUBLIC_ROOT}/${id}`,dataDir=publicToDataPath(dictPath),savedFiles:OfflineDict['files']={}
-        await putFile(dataDir,true,new File([],''))
+        const id=`dict_${Date.now()}_${Math.random().toString(36).slice(2,9)}`,dictPath=`${DICT_PUBLIC_ROOT}/${id}`,savedFiles:OfflineDict['files']={}
         for(const[key,file]of Object.entries(group)){
           if(file){
             const publicPath=`${dictPath}/${safePathPart(file.name)}`
-            await putFile(publicToDataPath(publicPath),false,file)
+            await writeManagedFile(file,apiPath(publicPath),file.name)
             savedFiles[key as OfflineDictFileKey]=publicPath
           }
         }
@@ -222,11 +220,11 @@ class OfflineDictManager{
   async removeDict(id:string){
     const idx=this.dicts.findIndex(d=>d.id===id)
     if(idx>=0){
-      await removeFile(`${DICT_DATA_ROOT}/${id}`).catch(()=>{})
       this.dicts.splice(idx,1)
       this.loaded.delete(id)
       this.dictDataLoaded.delete(id)
       await this.saveConfig()
+      await removeManagedFileTransactionally(apiPath(`${DICT_PUBLIC_ROOT}/${id}`)).catch(()=>{})
     }
   }
   
@@ -237,11 +235,9 @@ class OfflineDictManager{
   
   private async saveConfig(){
     if(!plugin)return
-    try{
-      const config=await readDictConfig()
-      config.dicts=this.dicts.map(({id,name,type,enabled,files})=>({id,name,type,enabled,files}))
-      await writeDictConfig(config)
-    }catch{}
+    const config=await readDictConfig()
+    config.dicts=this.dicts.map(({id,name,type,enabled,files})=>({id,name,type,enabled,files}))
+    await writeDictConfig(config)
   }
 }
 
@@ -287,7 +283,7 @@ export function initDictModule(p:Plugin){
 }
 
 // ===== 查询函数 =====
-const fetchHTML=async(url:string)=>new DOMParser().parseFromString(await(await fetch(url)).text(),'text/html')
+const fetchHTML=async(url:string)=>new DOMParser().parseFromString((await forwardProxy(url,'GET',{},[],15000,'text/html')).body,'text/html')
 const getTexts=(doc:Document,selector:string)=>Array.from(doc.querySelectorAll(selector)).map(el=>el.textContent?.trim()).filter(Boolean)
 
 // 智能解析文本，自动提取词性、标签、注释等信息并分类
@@ -337,7 +333,7 @@ const queryWithParse=async(fetchFn:()=>Promise<{entry:string;phonetic?:string;au
 }
 
 export async function queryYoudao(word:string){
-  const{data}=await(await fetch(`https://dict.youdao.com/suggest?q=${encodeURIComponent(word)}&le=en&num=5&doctype=json`)).json().catch(()=>({data:null}))
+  const{data}=await (async()=>{try{return JSON.parse((await forwardProxy(`https://dict.youdao.com/suggest?q=${encodeURIComponent(word)}&le=en&num=5&doctype=json`)).body)}catch{return {data:null}}})()
   const entries=data?.entries||[]
   if(!entries.length)return null
   const allExtras:{label:string;text:string}[][]=[]
@@ -356,7 +352,7 @@ export const queryHaici=(word:string)=>queryWithParse(async()=>{
 
 export async function queryMxnzp(word:string){
   try{
-    const json=await(await fetch(`https://www.mxnzp.com/api/convert/dictionary?content=${encodeURIComponent(word)}&app_id=${MXNZP_ID}&app_secret=${MXNZP_SECRET}`)).json()
+    const json=JSON.parse((await forwardProxy(`https://www.mxnzp.com/api/convert/dictionary?content=${encodeURIComponent(word)}&app_id=${MXNZP_ID}&app_secret=${MXNZP_SECRET}`)).body)
     if(json.code!==1||!json.data?.length)return null
     const d=json.data[0],meanings=d.explanation?d.explanation.split('\n').filter((s:string)=>s.trim()).slice(0,10).map((text:string)=>({pos:'',text})):[]
     return{word:d.word+(d.traditional!==d.word?`（繁：${d.traditional}）`:''),phonetic:d.pinyin||'',badges:[d.radicals?{text:`部首: ${d.radicals}`,gradient:false}:null,d.strokes?{text:`笔画: ${d.strokes}画`,gradient:false}:null].filter(Boolean)as any,meanings,extras:[{label:'来源',text:'汉字词典'}]}
@@ -420,7 +416,7 @@ export async function queryCambridge(w:string):Promise<DictResult|null>{
       })
       return{word,phonetics,parts:Array.from(partMap).map(([part,means])=>({part,means})),examples}
     }
-    const fetchDict=async(path:string)=>{try{const res=await fetch(`${BASE_URL}/${path}/${w.split(' ').join('-')}`);return res.ok?parseHTML(await res.text()):null}catch{return null}}
+    const fetchDict=async(path:string)=>{try{const res=await forwardProxy(`${BASE_URL}/${path}/${w.split(' ').join('-')}`);return res.status>=200&&res.status<300?parseHTML(res.body):null}catch{return null}}
     return await fetchDict('dictionary/english-chinese-simplified')||await fetchDict('dictionary/english')
   }catch{return null}
 }
@@ -482,14 +478,13 @@ function parseOfflineDict(results:any[]):DictCardData{
 }
 
 // ===== 查询窗口 =====
-import{Dialog,showMessage}from'siyuan'
+import{Dialog}from'siyuan'
 
 let dialog:Dialog|null=null
 let state:{word:string;dictId:string;data?:DictCardData}={word:'',dictId:''}
-let selectionInfo:{cfi?:string;section?:number;page?:number;rects?:any[];text:string}|null=null
 export async function openDict(word:string,_x?:number,_y?:number,selection?:{cfi?:string;section?:number;page?:number;rects?:any[];text:string}){
+  void selection
   state={word,dictId:'',data:undefined}
-  selectionInfo=selection||null
   dialog?.destroy()
   
   const offlineDicts=offlineDictManager.getDicts().filter(d=>d.enabled)

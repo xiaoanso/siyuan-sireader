@@ -14,6 +14,12 @@ async function request(url: string, data: any) {
   return res;
 }
 
+async function checkedRequest(url: string, data: any) {
+  const response: IWebSocketData = await fetchSyncPost(url, data);
+  if (response.code !== 0) throw new Error(response.msg || `SiYuan API failed (${response.code}): ${url}`);
+  return response.data;
+}
+
 // **************************************** Noteboook ****************************************
 
 export async function lsNotebooks(): Promise<IReslsNotebooks> {
@@ -371,25 +377,41 @@ export async function putFile(path: string, isDir: boolean, file: any) {
   let form = new FormData();
   form.append("path", path);
   form.append("isDir", isDir.toString());
-  form.append("modTime", Math.floor(Date.now() / 1000).toString());
+  form.append("modTime", fileModificationTime().toString());
   form.append("file", file);
-  return request("/api/file/putFile", form);
+  form.append("app", (window as any).siyuan?.appId || "");
+  return checkedRequest("/api/file/putFile", form);
 }
+
+export const fileModificationTime = () => Date.now()
 
 export async function removeFile(path: string) {
-  let data = {
-    path: path,
-  };
-  let url = "/api/file/removeFile";
-  return request(url, data);
+  const response: IWebSocketData = await fetchSyncPost('/api/file/removeFile', {
+    path,
+    app: (window as any).siyuan?.appId || '',
+  })
+  if (response.code !== 0 && !/path does not exist|not found|404/i.test(response.msg || '')) throw new Error(response.msg || `SiYuan API failed (${response.code}): /api/file/removeFile`)
+  return response.data
 }
 
-export async function readDir(path: string): Promise<IResReadDir> {
+export async function renameFile(path: string, newPath: string) {
+  return checkedRequest('/api/file/renameFile', {
+    path,
+    newPath,
+    app: (window as any).siyuan?.appId || '',
+  })
+}
+
+export async function readDir(path: string, strict = false): Promise<IResReadDir> {
   let data = {
     path: path,
   };
   let url = "/api/file/readDir";
-  return request(url, data);
+  if (!strict) return request(url, data);
+  const response = await fetchSyncPost(url, data);
+  if (response.code === 404) return [] as any;
+  if (response.code !== 0) throw new Error(response.msg || `Cannot list directory: ${path}`);
+  return response.data;
 }
 
 // **************************************** Export ****************************************
@@ -461,17 +483,22 @@ export async function forwardProxy(
   timeout: number = 7000,
   contentType: string = "text/html"
 ): Promise<IResForwardProxy> {
-  let data = {
-    url: url,
-    method: method,
-    timeout: timeout,
-    contentType: contentType,
-    headers: headers,
-    payload: payload,
-  };
-  let url1 = "/api/network/forwardProxy";
-  return request(url1, data);
+  const response = await fetch('/plugin/private/siyuan-sireader/api/network/forwardProxy', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, method, timeout, contentType, headers, payload }),
+  })
+  const envelope = await response.json().catch(() => null)
+  const result = envelope?.code === 0
+    ? envelope.data
+    : envelope?.data?.code === 0
+      ? envelope.data.data
+      : null
+  if (!response.ok || !result) throw new Error(envelope?.msg || envelope?.data?.msg || `Network request failed: ${url}`)
+  return result
 }
+
+export const kernelDownloadUrl = (url: string, headers: Array<{ name: string; value: string }> = []) =>
+  `/plugin/private/siyuan-sireader/api/network/download?url=${encodeURIComponent(url)}&headers=${encodeURIComponent(JSON.stringify(Object.fromEntries(headers.map(header => [header.name, header.value]))))}`
 
 // **************************************** System ****************************************
 

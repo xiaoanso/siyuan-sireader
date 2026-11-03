@@ -6,6 +6,11 @@ SiReader uses EmbedPDF as the only PDF reader path.
 - Runtime package: `@embedpdf/snippet`
 - License: MIT
 
+The bundled runtime is pinned to `@embedpdf/snippet@2.15.1`, the latest stable
+2.x release. The upstream 3.0.0-next line is preview-only. EmbedPDF's
+annotation API remains compatible with 2.14.4; 2.15.x primarily refreshes the
+PDFium/runtime and rendering fixes.
+
 ## Runtime
 
 PDF files open through [`src/components/EmbedPdfReader.vue`](../src/components/EmbedPdfReader.vue).
@@ -16,18 +21,17 @@ Current loading path:
 
 - SiReader fetches/reads the PDF into an `ArrayBuffer`.
 - EmbedPDF receives it through `documentManager.initialDocuments`.
-- `worker: true` is intentional. PDFium wasm is cached once into SiYuan `/data/public`, then loaded by the worker from `/public/siyuan-sireader/embedpdf/pdfium.wasm`.
-- `pdfium.wasm` is downloaded on first PDF open from EmbedPDF's official `@embedpdf/pdfium@2.14.4` CDN into `/data/public/siyuan-sireader/embedpdf/pdfium.wasm`.
-- Runtime uses `/public/siyuan-sireader/embedpdf/pdfium.wasm` directly; SiReader does not convert the wasm path into a blob URL.
-- EmbedPDF snippet runtime is downloaded on first PDF open from EmbedPDF's official `@embedpdf/snippet@2.14.4` CDN into `/data/public/siyuan-sireader/embedpdf/snippet`, then imported from `/public/siyuan-sireader/embedpdf/snippet/embedpdf.js`.
-- Default stamp manifests and PDFs are downloaded from EmbedPDF's official default-stamps CDN on first PDF open, cached into `/data/public/siyuan-sireader/embedpdf/stamps/{zh-CN,en}`, then loaded from `/public/siyuan-sireader/embedpdf/stamps/{locale}/manifest.json`.
+- `worker: true` is intentional. PDFium wasm is bundled with the plugin and loaded by the worker from `/plugins/siyuan-sireader/embedpdf/pdfium.wasm`.
+- EmbedPDF snippet runtime is bundled under `/plugins/siyuan-sireader/embedpdf/snippet` and imported from `/plugins/siyuan-sireader/embedpdf/snippet/embedpdf.js`.
+- Default stamp manifests and PDFs for `zh-CN` and `en` are bundled under `/plugins/siyuan-sireader/embedpdf/stamps/{locale}`.
+- Existing `/public/siyuan-sireader/embedpdf/...` cached assets remain a compatibility fallback only; opening PDF must not require first-use CDN downloads.
 
 ## Stored State
 
 EmbedPDF state is stored at:
 
 ```txt
-records/<bookDataId>.json
+records/<hash(dataId-or-legacy-url)>.json
 ```
 
 The file is the normal SiReader per-book JSON record:
@@ -50,24 +54,40 @@ The file is the normal SiReader per-book JSON record:
 }
 ```
 
-Annotations are imported and exported only through EmbedPDF:
+Annotations keep EmbedPDF's transfer-item shape at the compatibility boundary. Initial load/repair may import or export through EmbedPDF:
 
 - `annotation.exportAnnotations()`
 - `annotation.importAnnotations()`
 
-SiReader filters exported annotations before saving so PDF-native link annotations are not duplicated into plugin storage. User annotations remain in EmbedPDF transfer format. Keep this direct round trip; do not add an adapter layer unless EmbedPDF changes its transfer shape.
+The lifecycle also uses the stable 2.15.x APIs directly:
+
+- `autoCommit: false` gives SiReader ownership of a single commit queue.
+- `committed: false` requests a queued `commit()`; only `committed: true` persists the mutation by ID.
+- Import events are excluded from user edits. Opening a PDF never replaces its stored annotations with a filtered viewer subset.
+- Closing captures any still-uncommitted user mutations before Vue destroys the engine, then drains them through the same persistence queue. These writes do not depend on a live PDF worker.
+- Stamps use `exportAnnotations({ pageIndex })` to retain their portable appearance context. ArrayBuffer payloads are encoded losslessly as base64 in JSON.
+- EmbedPDF owns appearance invalidation; SiReader does not invalidate the same page in two listeners.
+
+Batch mutation (`updateAnnotations`/`deleteAnnotations`), page appearance
+rendering, grouping, stamps, callouts, and locked-annotation predicates remain
+available upstream but are not enabled speculatively without a matching
+SiReader workflow.
+
+Normal create/update/delete events are persisted immediately as ID-based `upsert`/`delete` storage operations. They must never trigger a debounced full-array write: asynchronous exports can complete out of order and overwrite newer notes or deletions. Full replacement is allowed only during validated migration or repair. PDF-native link annotations are not duplicated into plugin storage, and user annotations remain in EmbedPDF transfer format.
+
+Per-book operations are serialized and reread current files through SiYuan's file API. Web Locks coordinate cooperating same-origin windows when available; this does not provide cross-device transactions. Progress is a field patch and never marks annotation migration complete. URL aliases are imported once and recorded in migration.pdfAliases; absent aliases remain eligible if they arrive later through sync.
 
 PDF annotations, PDF bookmarks, and PDF progress all use the same per-book JSON record. Do not reintroduce `.bin` as the active storage path.
 
 Current split:
 
-- [`src/core/bookStore.ts`](../src/core/bookStore.ts): thin storage entry for book records, PDF annotation reads/writes, and PDF progress writes.
+- [`src/core/storage.ts`](../src/core/storage.ts): thin storage entry for book records, PDF annotation reads/writes, and PDF progress writes.
 - [`src/core/dataMigration.ts`](../src/core/dataMigration.ts): legacy PDF conversion, EmbedPDF annotation normalization, migration marker, text/geometry repair.
 - [`src/components/EmbedPdfReader.vue`](../src/components/EmbedPdfReader.vue): EmbedPDF lifecycle glue only; no migration algorithm or annotation template logic.
 
 When older SiReader PDF marks are found in the same JSON record, SiReader converts them in time-sliced batches to EmbedPDF transfer items and writes the repaired record back. Items that cannot be converted are kept in the JSON record so later repair logic can try again. Concurrent PDF progress and annotation reads share one migration task per book. Completed records are marked with `migration.pdfAnnotations`; do not show migration messages or rerun migration when that marker is current.
 
-Legacy `records/embedpdf/<bookHash>.bin` records are imported into the same JSON record once and then removed only after the import count matches the legacy annotation count.
+Legacy `records/embedpdf/<bookHash>.bin` records remain intact as migration sources. Successful migration is marked in the current record. Unconverted items remain on disk and are excluded only from the viewer input.
 
 Legacy notes with selected text are migrated as normal text highlights with the note saved as the EmbedPDF comment (`contents`). Missing old style/color data falls back to the basic highlight style; do not preserve old SiReader-only style fields if EmbedPDF does not need them.
 
@@ -92,7 +112,7 @@ Saved annotation records should stay close to standard EmbedPDF transfer items:
 
 - keep `annotation` and optional `ctx`
 - dedupe by annotation `id`
-- compact/round rects enough to avoid bloated JSON
+- preserve standard geometry and fields on normal read/write; compatibility conversion applies only to legacy input
 - remove temporary migration fields after successful text alignment: `legacyType`, `legacyCoord`, `textCoord`
 - avoid duplicating the same note in both `contents` and `custom.note`
 
@@ -201,16 +221,19 @@ Current helper split:
 - [`src/utils/dictionary.ts`](../src/utils/dictionary.ts): dictionary popup.
 - [`src/components/Translate.vue`](../src/components/Translate.vue): translation dialog content.
 
+Annotation copy, quick-send, import, auto-sync, and edit-sync must all generate Markdown through [`src/utils/copy.ts`](../src/utils/copy.ts). Keep custom `linkFormat` handling there; do not capture clipboard output or rebuild annotation templates in PDF components.
+
 Quick send uses EmbedPDF's native UI model:
 
 - selection and annotation menus get one first-level `发送到` command button
 - that button opens a native EmbedPDF `menus` entry with the configured quick-send documents
 - document rows call the shared `sendMarkToDoc()` path through `sendPdfMarkToDoc()`
 - valid quick-send documents must have an `id`; the PDF menu only shows up to five
+- when an annotation already has a bound `blockId`, comment or note edits should update that block instead of inserting a duplicate
 
 Do not build custom floating quick-send menus. EmbedPDF `selectionMenus` do not expose a stable submenu item shape; use `menus + openMenu()` instead.
 
-Keyboard shortcuts should stay on EmbedPDF's native commands path. If SiReader adds shortcuts for PDF-only actions, register them through EmbedPDF command `shortcuts` instead of adding a SiReader-owned PDF `keydown` listener. The outer reader keyboard handler should not consume keys while the active reader is EmbedPDF.
+PDF actions stay on EmbedPDF's command path, while customizable shortcuts are registered through SiYuan's native `Plugin.addCommand()` API. SiYuan command callbacks dispatch the command ID to the active `Reader.vue`; only the active PDF executes it through EmbedPDF. Keep command metadata in [`src/utils/keyboard.ts`](../src/utils/keyboard.ts), prefix displayed names with `PDF`, and do not add a plugin-settings shortcut editor or a PDF-owned `keydown` listener.
 
 Screenshot copy uses EmbedPDF capture state:
 
@@ -270,16 +293,17 @@ If EmbedPDF does not expose a stable capability, SiReader leaves that PDF featur
 
 ## New Chat Checklist
 
-- Keep `buffer + worker:true + CDN-downloaded public cached PDFium wasm/stamps`.
+- Keep `buffer/URL + worker:true + plugin-bundled PDFium wasm/stamps`.
 - Keep PDF state in the normal per-book JSON record.
 - Keep EmbedPDF `exportAnnotations()` / `importAnnotations()` as the storage boundary.
 - Keep PDF annotations/bookmarks/progress on the same JSON record path; `.bin` is legacy migration input only.
-- Keep migration logic in `dataMigration.ts`; keep `bookStore.ts` as a thin read/write layer.
+- Keep migration logic in `dataMigration.ts`; keep `storage.ts` as a thin read/write layer.
 - Keep completed migration guarded by `migration.pdfAnnotations` so opening a PDF does not migrate every time.
 - Keep PDF backlinks as `sireader://open?...&cfi=%23page-N&id=...`.
+- Encode every backlink query value with `encodeURIComponent`; when parsing legacy links, preserve literal `+` as a plus sign.
 - Keep PDF click navigation on EmbedPDF page anchors, not EPUB CFI navigation.
 - Keep PDF search on EmbedPDF native search/highlight; do not add a custom PDF search renderer.
-- Keep PDF keyboard shortcuts on EmbedPDF native commands/`shortcuts`; do not add an outer PDF keydown layer.
+- Keep PDF shortcuts in SiYuan's native command/shortcut center and route them to the active EmbedPDF command registry; do not add a plugin-settings shortcut editor or a PDF-owned keydown layer.
 - Keep PDF page theme support to default/light and dark inversion only.
 - Keep custom theme background in the PDF light/dark preference decision.
 - Keep EmbedPDF UI theme mapping small; use the reader background for sidebars/comments and avoid unused full-token color maps.
@@ -292,3 +316,14 @@ If EmbedPDF does not expose a stable capability, SiReader leaves that PDF featur
 - Avoid restoring the old PDF.js shell, old toolbar, or compatibility card code.
 - Avoid patched `@embedpdf` dependencies unless upstream exposes a stable API and the patch is unavoidable.
 - Before changing annotation fields, verify both PDF rendering and the shared mark card.
+
+
+## Storage upgrades and recovery
+
+Application releases and data schema versions are independent. Keep the existing version-1 JSON record and paths compatible; do not bump a recovery marker to trigger backup merging on release. Unsupported future schemas and malformed current records fail closed before writing. An old plugin release cannot be made downgrade-safe retroactively: restore the matching data snapshot when reverting to an incompatible writer.
+
+The user-authorized 2026-09-29 repair runs before mounting readers. It supplements only current shelf records from live URL aliases and storage-v1 backups, with current values winning ID conflicts and newer backups winning over older ones. Existing records are snapshotted before writing. Successful writes include migration.backupRecovery, preventing repeated merges on later starts; ordinary releases must not change this marker. The Settings recovery button is removed. Missing shelf entries are never recreated. Recognizable records without a version field are normalized to version 1. Other read, validation, or snapshot failures are logged and isolated per book; recovery is best-effort and must never prevent plugin UI registration. Sync notifications do not run recovery. Complete synchronization before installing: backup files arriving after a record is marked recovered are not automatically merged.
+
+The database facade has no retained books/settings/daily snapshot or persisted annotation-count cache. Structured JSON uses the official getFile/putFile/removeFile/readDir endpoints under the existing plugin directory. This avoids Plugin.loadData's stale fallback on transport errors. A failed read is never treated as an absent file. There is no WAL, checksum envelope writer, or claimed cross-file atomic transaction.
+
+Verified limitations: file APIs cannot resolve offline concurrent edits across devices, an old plugin can still write incompatible data, and a fingerprint based on local path/size/mtime does not identify independently imported copies by content. Existing synced dataId values remain stable. No key/hash migration is performed in this repair.

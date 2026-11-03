@@ -2,6 +2,7 @@
 .DS_Store
 pnpm-lock.yaml
 # package.zip  # 不再忽略，需要提交到 git 用于自动发版
+# package.zip  # 不再忽略，需要提交到 git 用于自动发版
 node_modules
 dev
 dist
@@ -12,6 +13,8 @@ private-sources
 docs/*
 !docs/AGENTS.md
 !docs/embedpdf.md
+!docs/feishu-doc-sync.md
+!docs/feishu-docs.json
 !docs/离线词典使用说明.md
 src\components\backup
 .kiro
@@ -20,3 +23,6 @@ website
 siyuan-sireader.code-workspace
 tts/*
 scripts
+.agents/skills
+skills-lock.json
+patches/*

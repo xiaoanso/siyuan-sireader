@@ -139,7 +139,7 @@
 <script setup lang="ts">
 import {ref,computed,onMounted,onUnmounted,watch,nextTick,inject} from 'vue'
 import {bookshelfManager} from '@/core/bookshelf'
-import {useLicense} from '@/composables/useLicense'
+import {useLicense} from '@/core/license'
 
 const props=defineProps<{visible:boolean}>()
 const emit=defineEmits<{close:[];open:[book:any]}>()
@@ -292,7 +292,8 @@ const loadQuote=async()=>{
   setTimeout(()=>{quote.value=newQuote;quoteVisible.value=true},300)}
 
 const load=async()=>{
-  const [dbStats,books]=await Promise.all([bookshelfManager.getStats(),bookshelfManager.getBooks()])
+  const books=await bookshelfManager.getBooks()
+  const dbStats=await bookshelfManager.getStats(books)
   totalBooks.value=books.length
   finishedCount.value=dbStats.byStatus.finished||0
   annotationCount.value=dbStats.annotationCount||0
