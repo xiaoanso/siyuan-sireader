@@ -194,7 +194,7 @@
   "deleteMark": "删除标记",
   "deleteBookmark": "删除书签",
   "styleDefault": "默认",
-  "styleBorder": "边框", 
+  "styleBorder": "边框",
   "styleCard": "卡片",
   "styleThumb": "封面",
   "styleReader": "阅读器",
@@ -296,7 +296,7 @@
   "downloadEpub": "下载EPUB",
   "bookshelf": "书架",
   "viewDetail": "查看详情",
-  "addToShelf": "加入书架",
+  "addToShelf": "添加到书架",
   "inShelf": "已在书架",
   "addedToShelf": "已加入书架",
   "removed": "已移出书架",
@@ -337,7 +337,7 @@
   "nextChapter": "下一章",
   "note": "笔记",
   "mark": "标注",
-  "sendTo": "发送到",
+  "sendTo": "发送至",
   "copy": "复制",
   "copied": "已复制",
   "dict": "词典",
@@ -417,7 +417,7 @@
   "endnote": "尾注",
   "reference": "参考文献",
   "glossary": "术语",
-  "annotation": "注释",
+  "annotation": "标注",
   "clickToJump": "点击跳转",
   "float": "浮动",
   "fixed": "固定",
@@ -614,7 +614,7 @@
   "copyChapter": "复制章节",
   "pdfKeepTool": "绘制后保持当前工具",
   "copyBacklink": "复制回链",
-  "redaction": "遮蔽",
+  "redaction": "选区挖空",
   "copyScreenshot": "复制截图",
   "copyImage": "复制图片",
   "exportImage": "导出图片",
@@ -624,7 +624,6 @@
   "ttsOfflinePack": "离线语音包",
   "ttsOfflinePackDesc": "下载后可供离线 TTS 引擎使用",
   "intro": "简介",
-  "addToShelf": "添加到书架",
   "downloadAddToShelf": "下载并添加到书架",
   "pdfThumbnailsOnly": "仅 PDF 支持缩略图",
   "unnamedChapter": "未命名章节",
@@ -637,209 +636,192 @@
   "bookmarkUnavailable": "书签功能未初始化",
   "bookmarkAdded": "已添加书签",
   "bookmarkRemoved": "已移除书签",
-  "operationFailed": "操作失败"
-  ,"filterAnnotations": "筛选标注"
-  ,"reverseSort": "反向排序"
-  ,"resetFilter": "重置筛选"
-  ,"done": "完成"
-  ,"marksSearchPlaceholder": "搜索标注、笔记、书签、墨迹、形状"
-  ,"filtering": "筛选中"
-  ,"allAnnotations": "全部标注"
-  ,"showPdfAnnotations": "显示 PDF 标注"
-  ,"hidePdfAnnotations": "隐藏 PDF 标注"
-  ,"type": "类型"
-  ,"textStyle": "文本样式"
-  ,"additionalCondition": "附加条件"
-  ,"withNote": "仅带笔记"
-  ,"noBooks": "暂无书籍"
-  ,"noContent": "无内容"
-  ,"updated": "已更新"
-  ,"marksUnavailable": "标注系统未初始化"
-  ,"deleteFailed": "删除失败"
-  ,"bookNotFound": "书籍不存在"
-  ,"sortTime": "时间"
-  ,"sortDate": "日期"
-  ,"sortChapter": "章节"
-  ,"sortPage": "页码"
-  ,"sortName": "名称"
-  ,"sortCustom": "自定义"
-  ,"invalidBookLink": "无效的书籍链接"
-  ,"fileNotFound": "文件不存在"
-  ,"addFailed": "添加失败"
-  ,"ttsReading": "朗读中"
-  ,"onlineUrlEmpty": "在线阅读地址为空"
-  ,"prevPage": "上一页"
-  ,"nextPage": "下一页"
-  ,"toggleBookmark": "切换书签"
-  ,"quickNote": "快速笔记"
-  ,"unknownAuthor": "未知作者"
-  ,"unnamedBook": "未命名书籍"
-  ,"readingCompleteMotto": "读毕有得"
-  ,"openingMotto": "开卷有益"
-  ,"readingComplete": "已完成阅读"
-  ,"readyToRead": "准备阅读"
-  ,"booksUnit": "本"
-  ,"failed": "失败"
-  ,"parsing": "解析中..."
-  ,"pendingImport": "待导入"
-  ,"noContentFound": "未找到内容"
-  ,"emptyBookshelfHint": "暂无书籍，点击右上角添加内容"
-  ,"confirmDelete": "确认删除"
-  ,"deletePermanently": "彻底删除"
-  ,"confirmDeletePermanently": "确认彻底删除"
-  ,"enterLinks": "输入链接"
-  ,"importLinksPlaceholder": "每行一个本地路径、file 链接、网络直链或思盘链接"
-  ,"parseLinks": "解析链接"
-  ,"cloudPathPlaceholder": "输入思盘路径"
-  ,"keywordPlaceholder": "输入关键词搜索"
-  ,"input": "输入"
-  ,"browseAll": "浏览全部"
-  ,"selectAllImport": "全选导入"
-  ,"deselectAll": "取消全选"
-  ,"importSettings": "导入设置"
-  ,"tagsCommaPlaceholder": "添加标签，用逗号分隔"
-  ,"searchGroups": "搜索分组..."
-  ,"groupSort": "分组排序"
-  ,"existingGroups": "现有分组"
-  ,"resetOrganize": "重置整理"
-  ,"noGroups": "暂无分组"
-  ,"sourceText": "原文"
-  ,"translatedText": "译文"
-  ,"targetLanguage": "目标语言"
-  ,"translating": "翻译中..."
-  ,"translationFailed": "翻译失败"
-  ,"annotationAdded": "已添加批注"
-  ,"adding": "正在添加..."
-  ,"addAsAnnotation": "添加为批注"
-  ,"ttsControl": "朗读控制"
-  ,"expandTts": "展开朗读控制"
-  ,"cover": "封面"
-  ,"ttsReadingTitle": "朗读"
-  ,"ttsPaused": "已暂停"
-  ,"previousSentence": "上一句"
-  ,"nextSentence": "下一句"
-  ,"pause": "暂停"
-  ,"play": "播放"
-  ,"voice": "语音"
-  ,"showTopToolbar": "显示顶部工具栏"
-  ,"hideTopToolbar": "隐藏顶部工具栏"
-  ,"pdfOperationFailed": "PDF 操作失败"
-  ,"annotationMigrationDone": "标注迁移完成"
-  ,"annotationMigrating": "正在迁移标注"
-  ,"pdfAnnotationCommitFailed": "PDF 批注提交失败，请导出诊断日志"
-  ,"pdfAnnotationReadFailed": "PDF 批注读取失败，未覆盖原记录。请导出诊断日志"
-  ,"pdfAnnotationSaveFailed": "PDF 批注保存失败，请导出诊断日志"
-  ,"loadingQr": "正在获取二维码..."
-  ,"membershipQr": "思阅会员绑定小程序码"
-  ,"downloading": "下载中"
-  ,"downloaded": "已下载"
-  ,"downloadVoicePack": "下载语音包"
-  ,"previousResult": "上一个"
-  ,"nextResult": "下一个"
-  ,"jumpToProgress": "跳转到阅读进度"
-  ,"quickMark": "快速标注"
-  ,"exitQuickMark": "退出快速标注"
-  ,"sidebarToc": "目录"
-  ,"sidebarAnnotation": "标注"
-  ,"sidebarSettings": "设置"
-  ,"permanent": "永久有效"
-  ,"validUntil": "有效期至"
-  ,"copy": "复制"
-  ,"copied": "已复制"
-  ,"copyFailed": "复制失败"
-  ,"noContent": "无内容"
-  ,"translate": "翻译"
-  ,"dict": "词典"
-  ,"capture": "拖选截图区域"
-  ,"close": "关闭"
-  ,"copyScreenshot": "复制截图"
-  ,"copyBacklink": "复制回链"
-  ,"sendTo": "发送至"
-  ,"redaction": "选区挖空"
-  ,"pdfKeepTool": "绘制后保持当前工具"
-  ,"copyImage": "复制图片"
-  ,"exportImage": "导出图片"
-  ,"markImage": "标注图片"
-  ,"copyTable": "复制表格"
-  ,"locateTable": "定位表格"
-  ,"pdfCopyAnnotationLink": "复制标注回链"
-  ,"pdfDictAnnotation": "标注词典"
-  ,"pdfTranslateAnnotation": "标注翻译"
-  ,"pdfCreateHole": "选区挖空"
-  ,"pdfDictSelection": "选区词典"
-  ,"pdfTranslateSelection": "选区翻译"
-  ,"pdfSendSelection": "发送选区"
-  ,"pdfSendAnnotation": "发送标注"
-  ,"pdfCaptureCopy": "复制截图"
-  ,"pdfZoomIn": "放大"
-  ,"pdfZoomOut": "缩小"
-  ,"pdfFitPage": "适合页面"
-  ,"pdfFitWidth": "适合宽度"
-  ,"pdfMarqueeZoom": "框选缩放"
-  ,"pdfRotateClockwise": "顺时针旋转"
-  ,"pdfRotateCounterClockwise": "逆时针旋转"
-  ,"pdfPreviousPage": "上一页"
-  ,"pdfNextPage": "下一页"
-  ,"annotation": "标注"
-  ,"mark": "标注"
-  ,"operationFailed": "操作失败"
-  ,"copyImageFailed": "复制图片失败"
-  ,"jumpFailed": "跳转失败"
-  ,"bookMissing": "未提供书籍"
-  ,"pdfFileMissing": "PDF 文件不存在"
-  ,"page": "第"
-  ,"pageSuffix": "页"
-  ,"addContent": "添加内容"
-  ,"organizeBookshelf": "整理书架"
-  ,"bookDetails": "书籍详情"
-  ,"editBook": "编辑书籍"
-  ,"editGroup": "编辑分组"
-  ,"bookshelf": "书架"
-  ,"selectedCount": "选中"
-  ,"selectAll": "全选"
-  ,"invertSelection": "反选"
-  ,"exit": "退出"
-  ,"rating": "评分"
-  ,"status": "状态"
-  ,"tags": "标签"
-  ,"group": "分组"
-  ,"completingData": "补全中"
-  ,"completeData": "数据补全"
-  ,"remove": "移除"
-  ,"tagsPlaceholder": "标签，用逗号分隔"
-  ,"clearTags": "清空标签"
-  ,"tagsCleared": "已清空标签"
-  ,"add": "添加"
-  ,"replace": "替换"
-  ,"addToGroup": "加入分组"
-  ,"removeFromGroup": "移出分组"
-  ,"setGroup": "设置分组"
-  ,"removeAllGroups": "移出所有分组"
-  ,"groupsRemoved": "已移出分组"
-  ,"dictYoudaoDesc": "英汉词典，简洁快速"
-  ,"dictBingDesc": "必应词典网页版"
-  ,"dictCambridgeDesc": "英汉双解，支持发音"
-  ,"dictHaiciDesc": "英汉词典，例句丰富"
-  ,"dictMxnzpDesc": "汉字字典，详细解释"
-  ,"dictCiyuDesc": "汉语词语，成语典故"
-  ,"dictZdicDesc": "汉字词语查询"
-  ,"ttsFavoriteVoices": "我的语音"
-  ,"ttsVoiceList": "在线语音"
-  ,"ttsCurrentVoice": "当前"
-  ,"ttsOnlineHint": "点击语音名称选择，点击星号收藏"
-  ,"ttsNoFavorites": "暂无收藏，请点击下方语音添加"
-  ,"ttsNoVoices": "暂无语音"
-  ,"ttsLoadVoices": "加载语音"
-  ,"ttsFavorite": "收藏"
-  ,"ttsUnfavorite": "取消收藏"
-  ,"format": "格式"
-  ,"allRatings": "全部评分"
-  ,"fiveStarsOnly": "仅 5 星"
-  ,"stars": "星"
-  ,"sortByAdded": "最近添加"
-  ,"sortByProgress": "阅读进度"
-  ,"sortByRating": "评分"
-  ,"sortByReadTime": "阅读时长"
-  ,"recentReading": "最近阅读"
-  ,"continueReading": "继续阅读最近打开的书籍"
+  "operationFailed": "操作失败",
+  "filterAnnotations": "筛选标注",
+  "reverseSort": "反向排序",
+  "resetFilter": "重置筛选",
+  "done": "完成",
+  "marksSearchPlaceholder": "搜索标注、笔记、书签、墨迹、形状",
+  "filtering": "筛选中",
+  "allAnnotations": "全部标注",
+  "showPdfAnnotations": "显示 PDF 标注",
+  "hidePdfAnnotations": "隐藏 PDF 标注",
+  "type": "类型",
+  "textStyle": "文本样式",
+  "additionalCondition": "附加条件",
+  "withNote": "仅带笔记",
+  "noBooks": "暂无书籍",
+  "noContent": "无内容",
+  "updated": "已更新",
+  "marksUnavailable": "标注系统未初始化",
+  "deleteFailed": "删除失败",
+  "bookNotFound": "书籍不存在",
+  "sortPage": "页码",
+  "sortName": "名称",
+  "sortCustom": "自定义",
+  "invalidBookLink": "无效的书籍链接",
+  "fileNotFound": "文件不存在",
+  "ttsReading": "朗读中",
+  "onlineUrlEmpty": "在线阅读地址为空",
+  "prevPage": "上一页",
+  "nextPage": "下一页",
+  "toggleBookmark": "切换书签",
+  "quickNote": "快速笔记",
+  "unknownAuthor": "未知作者",
+  "unnamedBook": "未命名书籍",
+  "readingCompleteMotto": "读毕有得",
+  "openingMotto": "开卷有益",
+  "readingComplete": "已完成阅读",
+  "readyToRead": "准备阅读",
+  "booksUnit": "本",
+  "failed": "失败",
+  "parsing": "解析中...",
+  "pendingImport": "待导入",
+  "noContentFound": "未找到内容",
+  "emptyBookshelfHint": "暂无书籍，点击右上角添加内容",
+  "confirmDelete": "确认删除",
+  "deletePermanently": "彻底删除",
+  "confirmDeletePermanently": "确认彻底删除",
+  "enterLinks": "输入链接",
+  "importLinksPlaceholder": "每行一个本地路径、file 链接、网络直链或思盘链接",
+  "parseLinks": "解析链接",
+  "cloudPathPlaceholder": "输入思盘路径",
+  "keywordPlaceholder": "输入关键词搜索",
+  "input": "输入",
+  "browseAll": "浏览全部",
+  "selectAllImport": "全选导入",
+  "deselectAll": "取消全选",
+  "importSettings": "导入设置",
+  "tagsCommaPlaceholder": "添加标签，用逗号分隔",
+  "searchGroups": "搜索分组...",
+  "groupSort": "分组排序",
+  "existingGroups": "现有分组",
+  "resetOrganize": "重置整理",
+  "noGroups": "暂无分组",
+  "sourceText": "原文",
+  "translatedText": "译文",
+  "targetLanguage": "目标语言",
+  "translating": "翻译中...",
+  "translationFailed": "翻译失败",
+  "annotationAdded": "已添加批注",
+  "adding": "正在添加...",
+  "addAsAnnotation": "添加为批注",
+  "ttsControl": "朗读控制",
+  "expandTts": "展开朗读控制",
+  "cover": "封面",
+  "ttsReadingTitle": "朗读",
+  "ttsPaused": "已暂停",
+  "previousSentence": "上一句",
+  "nextSentence": "下一句",
+  "pause": "暂停",
+  "play": "播放",
+  "voice": "语音",
+  "showTopToolbar": "显示顶部工具栏",
+  "hideTopToolbar": "隐藏顶部工具栏",
+  "pdfOperationFailed": "PDF 操作失败",
+  "annotationMigrationDone": "标注迁移完成",
+  "annotationMigrating": "正在迁移标注",
+  "pdfAnnotationCommitFailed": "PDF 批注提交失败，请导出诊断日志",
+  "pdfAnnotationReadFailed": "PDF 批注读取失败，未覆盖原记录。请导出诊断日志",
+  "pdfAnnotationSaveFailed": "PDF 批注保存失败，请导出诊断日志",
+  "loadingQr": "正在获取二维码...",
+  "membershipQr": "思阅会员绑定小程序码",
+  "downloading": "下载中",
+  "downloaded": "已下载",
+  "downloadVoicePack": "下载语音包",
+  "previousResult": "上一个",
+  "nextResult": "下一个",
+  "jumpToProgress": "跳转到阅读进度",
+  "quickMark": "快速标注",
+  "exitQuickMark": "退出快速标注",
+  "permanent": "永久有效",
+  "validUntil": "有效期至",
+  "capture": "拖选截图区域",
+  "pdfCopyAnnotationLink": "复制标注回链",
+  "pdfDictAnnotation": "标注词典",
+  "pdfTranslateAnnotation": "标注翻译",
+  "pdfCreateHole": "选区挖空",
+  "pdfDictSelection": "选区词典",
+  "pdfTranslateSelection": "选区翻译",
+  "pdfSendSelection": "发送选区",
+  "pdfSendAnnotation": "发送标注",
+  "pdfCaptureCopy": "复制截图",
+  "pdfZoomIn": "放大",
+  "pdfZoomOut": "缩小",
+  "pdfFitPage": "适合页面",
+  "pdfFitWidth": "适合宽度",
+  "pdfMarqueeZoom": "框选缩放",
+  "pdfRotateClockwise": "顺时针旋转",
+  "pdfRotateCounterClockwise": "逆时针旋转",
+  "pdfPreviousPage": "上一页",
+  "pdfNextPage": "下一页",
+  "copyImageFailed": "复制图片失败",
+  "jumpFailed": "跳转失败",
+  "bookMissing": "未提供书籍",
+  "pdfFileMissing": "PDF 文件不存在",
+  "addContent": "添加内容",
+  "organizeBookshelf": "整理书架",
+  "editBook": "编辑书籍",
+  "editGroup": "编辑分组",
+  "selectedCount": "选中",
+  "selectAll": "全选",
+  "invertSelection": "反选",
+  "exit": "退出",
+  "rating": "评分",
+  "status": "状态",
+  "tags": "标签",
+  "completingData": "补全中",
+  "completeData": "数据补全",
+  "tagsPlaceholder": "标签，用逗号分隔",
+  "clearTags": "清空标签",
+  "tagsCleared": "已清空标签",
+  "add": "添加",
+  "replace": "替换",
+  "addToGroup": "加入分组",
+  "removeFromGroup": "移出分组",
+  "setGroup": "设置分组",
+  "removeAllGroups": "移出所有分组",
+  "groupsRemoved": "已移出分组",
+  "dictYoudaoDesc": "英汉词典，简洁快速",
+  "dictBingDesc": "必应词典网页版",
+  "dictCambridgeDesc": "英汉双解，支持发音",
+  "dictHaiciDesc": "英汉词典，例句丰富",
+  "dictMxnzpDesc": "汉字字典，详细解释",
+  "dictCiyuDesc": "汉语词语，成语典故",
+  "dictZdicDesc": "汉字词语查询",
+  "ttsFavoriteVoices": "我的语音",
+  "ttsVoiceList": "在线语音",
+  "ttsCurrentVoice": "当前",
+  "ttsOnlineHint": "点击语音名称选择，点击星号收藏",
+  "ttsNoFavorites": "暂无收藏，请点击下方语音添加",
+  "ttsNoVoices": "暂无语音",
+  "ttsLoadVoices": "加载语音",
+  "ttsFavorite": "收藏",
+  "ttsUnfavorite": "取消收藏",
+  "format": "格式",
+  "allRatings": "全部评分",
+  "fiveStarsOnly": "仅 5 星",
+  "stars": "星",
+  "sortByAdded": "最近添加",
+  "sortByProgress": "阅读进度",
+  "sortByRating": "评分",
+  "sortByReadTime": "阅读时长",
+  "recentReading": "最近阅读",
+  "continueReading": "继续阅读最近打开的书籍",
+  "ttsNext": "下一段",
+  "ttsPreparing": "准备中",
+  "ttsPrev": "上一段",
+  "ttsRestart": "从当前页朗读",
+  "ttsStyle": "风格",
+  "ttsStyle_affectionate": "亲切",
+  "ttsStyle_assistant": "助手",
+  "ttsStyle_calm": "平静",
+  "ttsStyle_chat": "聊天",
+  "ttsStyle_cheerful": "愉快",
+  "ttsStyle_customerservice": "客服",
+  "ttsStyle_general": "通用",
+  "ttsStyle_gentle": "温和",
+  "ttsStyle_lyrical": "抒情",
+  "ttsStyle_newscast": "新闻",
+  "ttsStyle_serious": "严肃"
 }

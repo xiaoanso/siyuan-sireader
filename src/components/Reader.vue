@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity':(1-((currentSettings?.toolbarOpacity??70)/100))*.55}">
+  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity': ttsActive ? 1 : (1-((currentSettings?.toolbarOpacity??70)/100))*.55}">
     <ReaderSplash v-if="showOpeningSplash" ref="readerSplashRef" :book-info="props.bookInfo" :file-name="props.file?.name" :i18n="i18n" status="opening" />
     <div v-if="loading || error" class="reader-loading"><div v-if="loading" class="spinner"></div><div>{{ error || 'Loading...' }}</div></div>
     <div v-if="showToc&&!loading" class="reader-overlay" @click="closePanels"/>
@@ -15,7 +15,20 @@
         </DockShell>
       </div>
     </Transition>
-    <div v-if="!loading" class="reader-toolbar-group">
+    <div v-if="!loading" class="reader-toolbar-group" :class="{'is-tts': ttsActive}">
+      <!-- CUSTOM: fork TTS bar -->
+      <ReaderTtsBar
+        :tts-enabled="ttsEnabled"
+        :tts-active="ttsActive"
+        :tts-playing="ttsPlaying"
+        :tts-loading="ttsLoading"
+        :tts-paused="ttsPaused"
+        :i18n="i18n"
+        @jump="jumpTTS"
+        @toggle="toggleTTS"
+        @restart="restartTTS"
+        @stop="stopTTS"
+      />
       <div v-if="showSearch" class="reader-panel" @click.stop>
         <input v-model="searchQuery" class="search-input" :placeholder="i18n.searchPlaceholder||'Search...'" @keydown.enter="handleSearch" @keydown.esc="showSearch=false" ref="searchInputRef">
         <button class="toolbar-btn ariaLabel" data-position="north" data-tooltip-encoding="none" @click="handleSearch" :aria-label="i18n.search || 'Search'"><svg><use xlink:href="#iconSearch"/></svg></button>
@@ -80,8 +93,9 @@ import { diagnosticLog } from '@/core/diagnostics'
 import { trackPending } from '@/core/storage'
 import { isUserEmbedPdfAnnotation } from '@/core/dataMigration'
 import { createKeyboardHandler, setupEpubKeyboard, shouldHandleReaderKeydown } from '@/utils/keyboard'
-import { getTTSController } from '@/services/TTSPlayer'
 import { useLicense } from '@/core/license'
+import ReaderTtsBar from '@/fork/components/ReaderTtsBar.vue' // CUSTOM: fork
+import { createReaderTtsControls } from '@/fork/tts/readerControls' // CUSTOM: fork
 import { upsertEmbedPdfAnnotation } from '@/core/storage'
 import { dispatchReaderLifecycle } from '@/integrations/lifecycle'
 const props = defineProps<{ file?: File; plugin: Plugin; settings?: ReaderSettings; url?: string; blockId?: string; bookInfo?: any; onReaderReady?: (r: FoliateReader) => void; i18n?: any }>()
@@ -180,9 +194,6 @@ const searchQuery = ref('')
 const searchResults = ref<any[]>([])
 const searchCurrentIndex = ref(0)
 let reader: FoliateReader | null = null
-const ttsController = getTTSController()
-const ttsEnabled = computed(() => currentSettings.value?.tts?.enabled || false)
-const ttsPlaying = computed(() => ttsController.isActive.value && !ttsController.paused.value)
 const clearReadingSelection=()=>{try{reader?.getView?.()?.renderer?.getContents?.()?.forEach(({doc}:any)=>doc.defaultView?.getSelection()?.removeAllRanges());document.getSelection()?.removeAllRanges()}catch{}}
 const syncReadingProgress=(detail?:any)=>{const location=detail||(reader as any)?.getProgress?.()||currentView.value?.lastLocation||reader?.getLocation?.();const f=location?.fraction??0;readingProgress.value=Number.isFinite(f)?Math.max(0,Math.min(1,f)):0;chapterTitle.value=location?.tocItem?.label||location?.tocItem?.title||props.bookInfo?.title||getBookName();const layout=currentSettings.value?.layoutSettings;const renderer=reader?.getView?.()?.renderer as any;const page=Number(renderer?.page);const pages=Number(renderer?.pages);const progress=layout?.showProgressInfo&&Number.isFinite(page)&&Number.isFinite(pages)&&pages>0?(layout.progressStyle==='percentage'?`${Math.round(((page+1)/pages)*100)}%`:layout.progressStyle==='reference'&&layout.referencePageCount>0?`${Math.max(1,Math.round(f*layout.referencePageCount))}/${layout.referencePageCount}`:`${Math.min(pages,Math.max(1,page+1))}/${pages}`):'';const minutes=Number(location?.time?.section);const remaining=layout?.showRemainingTime&&Number.isFinite(minutes)&&minutes>0?(i18n.value.chapterRemaining||'Chapter remaining: {minutes} min').replace(/\{minutes\}/g,String(Math.max(1,Math.round(minutes)))):'';const clock=layout?.showCurrentTime?new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12:layout.use24HourClock?false:undefined }):'';const level=Number(battery.value?.level);const batteryInfo=layout?.showCurrentBatteryStatus&&Number.isFinite(level)?`${i18n.value.batteryStatus||'Battery'} ${Math.round(Math.max(0,Math.min(1,level))*100)}%`:'';footerInfo.value=[remaining,clock,batteryInfo,progress].filter(Boolean).join(' · ')}
 const submitProgressJump=async()=>{
@@ -192,10 +203,25 @@ const submitProgressJump=async()=>{
   progressJump.value=String(Math.round(fraction*100))
   try{await reader?.goToFraction(fraction)}catch{showMessage(i18n.value.jumpFailed || 'Jump failed',1500,'error')}
 }
-const toggleTTS = () => {if (!can.value('tts')) return showUpgrade(i18n.value.ttsReading || 'Read aloud'); clearReadingSelection(); ttsController.toggle(() => reader, currentSettings.value?.tts, undefined, getBookName())}
-const syncTTS = async () => ttsController.sync(currentSettings.value?.tts?.enabled || false)
 const marks=computed(()=>markManager.value)
 const isEmbedPdfMode=computed(()=>currentView.value?.engine==='embedpdf')
+// CUSTOM: fork TTS controls
+const {
+  ttsController, ttsEnabled, ttsActive, ttsLoading, ttsPaused, ttsPlaying,
+  toggleTTS, restartTTS, jumpTTS, stopTTS, syncTTS,
+} = createReaderTtsControls({
+  getReader: () => reader,
+  currentView,
+  currentSettings,
+  isEmbedPdfMode,
+  embedPdfPages,
+  i18n,
+  can,
+  showUpgrade,
+  getBookName,
+  isEpubScrollMode: () => getSettings()?.viewMode === 'scroll',
+  clearReadingSelection,
+})
 const hasSearchResults=computed(()=>searchResults.value.length>0)
 const searchCount=computed(()=>searchResults.value.length?`${searchResults.value.length}`:'0')
 const browserSource=(path='')=>path.startsWith('/data/public/')?path.replace('/data/public/','/public/'):path.startsWith('/public/')||path.startsWith('/assets/')||/^https?:\/\//.test(path)?path:path.startsWith('public/')||path.startsWith('assets/')?`/${path}`:''
@@ -564,6 +590,7 @@ onBeforeUnmount(()=>{
 .spinner{width:48px;height:48px;border:4px solid var(--b3-theme-primary-lighter);border-top-color:var(--b3-theme-primary);border-radius:50%;animation:spin 1s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .reader-toolbar-group{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:1001;opacity:var(--toolbar-opacity);transition:opacity .2s;&:hover{opacity:1}}
+.reader-toolbar-group.is-tts{opacity:1} /* CUSTOM: fork */
 .reader-toolbar,.reader-panel{display:flex;align-items:center;gap:2px;padding:3px 4px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;transition:opacity .2s}
 .toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;svg{width:14px;height:14px}&:hover{background:var(--b3-list-hover)}&.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary)}}
 .toolbar-mark-btn{position:relative;.mark-indicator{position:absolute;right:2px;bottom:2px;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--b3-theme-surface);box-shadow:0 0 0 .5px var(--b3-border-color)}}

@@ -24,6 +24,7 @@ import { createPdfReflowSession, replacePdfDocument, synchronizeReflowAnnotation
 import type { ReflowDocument } from '@/core/pdfReflow'
 import { pdfQuickSendCommandId } from '@/utils/keyboard'
 import { embedPdfLocale } from '@/utils/embedPdfLocale'
+import { pdfSpeakCommand } from '@/fork/tts/pdfSpeakCommand' // CUSTOM: fork
 
 type EmbedPdfContainer = any
 type PluginRegistry = any
@@ -599,6 +600,7 @@ const setupPdfCommands = (registry: PluginRegistry) => {
   ;[
     ['dict', props.i18n?.dict || 'Dictionary', 'book', async (mark: any) => (await import('@/utils/dictionary')).openDict(mark.text, innerWidth / 2, innerHeight / 2, mark)],
     ['translate', props.i18n?.translate || 'Translate', 'text', (mark: any) => openPdfTranslate(mark.text, translation => createPdfTranslationAnnotation(registry, mark.text, translation))],
+    pdfSpeakCommand(props), // CUSTOM: fork
   ].forEach(([id, label, icon, run]: any) => commands?.registerCommand?.({ id: `sireader:${id}-selection`, label, icon, action: async () => { const mark = await selectedMark(); if (mark?.text) run(mark) } }))
   docs.forEach((doc: any) => commands?.registerCommand?.({
     id: pdfQuickSendCommandId('selection', doc.id),
@@ -664,7 +666,7 @@ const setupPdfCommands = (registry: PluginRegistry) => {
     ] } : item) }
   }
   if (!annotationMenu && !selectionMenu && !documentMenu) return ui.mergeSchema?.({ toolbars })
-  const requiredIds = ['sireader:pdf-reflow', 'sireader:lock-annotation-tool', 'sireader:copy-annotation-link', 'sireader:dict-annotation', 'sireader:translate-annotation', 'sireader:create-hole', 'sireader:dict-selection', 'sireader:translate-selection', 'sireader:capture-copy', ...docs.flatMap((doc: any) => [pdfQuickSendCommandId('selection', doc.id), pdfQuickSendCommandId('annotation', doc.id)])]
+  const requiredIds = ['sireader:pdf-reflow', 'sireader:lock-annotation-tool', 'sireader:copy-annotation-link', 'sireader:dict-annotation', 'sireader:translate-annotation', 'sireader:create-hole', 'sireader:dict-selection', 'sireader:translate-selection', 'sireader:speak-selection', 'sireader:capture-copy', ...docs.flatMap((doc: any) => [pdfQuickSendCommandId('selection', doc.id), pdfQuickSendCommandId('annotation', doc.id)])] // CUSTOM: speak-selection
   if (requiredIds.some(id => !installed.some(command => command.id === id))) return disposePdfCommands(rawCommands)
   if (annotationMenu) {
     const items = annotationMenu.items.filter((item: any) => !['sireader-send-annotation-list', 'sireader-send-annotation-divider', 'sireader-send-annotation-menu'].includes(item.id))
@@ -679,11 +681,12 @@ const setupPdfCommands = (registry: PluginRegistry) => {
     ] as any)
   }
   if (selectionMenu) {
-    const items = selectionMenu.items.filter((item: any) => !['sireader-create-mask', 'sireader-create-hole', 'sireader-dict-selection', 'sireader-translate-selection', 'sireader-send-selection-list', 'sireader-send-selection-divider', 'sireader-send-selection-menu'].includes(item.id))
+    const items = selectionMenu.items.filter((item: any) => !['sireader-create-mask', 'sireader-create-hole', 'sireader-dict-selection', 'sireader-translate-selection', 'sireader-speak-selection', 'sireader-send-selection-list', 'sireader-send-selection-divider', 'sireader-send-selection-menu'].includes(item.id))
     selectionMenu.items = addMissingPdfMenuItemsAfterFirst(items, [
       { type: 'command-button', id: 'sireader-create-hole', commandId: 'sireader:create-hole', variant: 'icon-text' },
       { type: 'command-button', id: 'sireader-dict-selection', commandId: 'sireader:dict-selection', variant: 'icon' },
       { type: 'command-button', id: 'sireader-translate-selection', commandId: 'sireader:translate-selection', variant: 'icon' },
+      { type: 'command-button', id: 'sireader-speak-selection', commandId: 'sireader:speak-selection', variant: 'icon' }, // CUSTOM: fork
       ...(docs.length ? [
         { type: 'divider', id: 'sireader-send-selection-divider', categories: ['selection', 'sireader-send'] },
         { type: 'command-button', id: 'sireader-send-selection-menu', commandId: 'sireader:send-selection-menu', variant: 'icon-text', categories: ['selection', 'sireader-send'] },

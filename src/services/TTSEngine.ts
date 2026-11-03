@@ -244,7 +244,7 @@ export async function loadOnlineVoices(): Promise<TTSVoice[]> {
   if (onlineVoiceTask) return onlineVoiceTask
   onlineVoiceTask = (async () => {
   try {
-    const res = await fetch(VOICES_URL)
+    const res = await fetch(VOICES_URL, { referrerPolicy: 'no-referrer' }) // CUSTOM: fork referrerPolicy
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     const voices: TTSVoice[] = data.map((v: any) => ({

@@ -1,0 +1,3314 @@
+diff --git a/CUSTOM_WORKFLOW.md b/CUSTOM_WORKFLOW.md
+new file mode 100644
+index 0000000..e8dca68
+--- /dev/null
++++ b/CUSTOM_WORKFLOW.md
+@@ -0,0 +1,49 @@
++# 二次开发升级工作流
++
++目标：保存自己的二次开发，同时能低冲突地跟上上游 `main`。
++
++Agent 入口：让 Cursor 加载 skill **`sireader-fork-upgrade`**  
++（路径：`.cursor/skills/sireader-fork-upgrade/SKILL.md`）。  
++可以说：「用 sireader-fork-upgrade 合并最新 main」。
++
++## 分支约定
++
++| 分支 | 用途 |
++|------|------|
++| `main` | 只跟踪 `origin/main` |
++| `release` | 对外二次开发版本 = 上游 + `src/fork` + `CUSTOM` 挂钩 |
++| `backup/release-*` | 升级前备份 |
++
++## 已落地的二次开发（v2.6.1 基线）
++
++- `src/fork/**`：license 解锁、图标、PDF 朗读命令、Reader TTS 栏、旧 TTS 实现参考
++- 上游薄挂钩（搜 `CUSTOM:`）：
++  - `src/main.ts` → `applyFork()`
++  - `src/services/TTSEngine.ts` → `referrerPolicy`
++  - `src/services/TTSPlayer.ts` → `isLoading` / `restartText` / `restart`
++  - `src/components/Reader.vue` → `ReaderTtsBar`
++  - `src/components/EmbedPdfReader.vue` → `pdfSpeakCommand`
++  - `src/i18n/*.json` → fork 文案 key
++
++## 升级步骤
++
++```bash
++./scripts/rebuild-from-main.sh
++```
++
++或手工：
++
++```bash
++git branch backup/release-$(date +%Y%m%d) release
++git fetch origin
++git checkout -B release origin/main
++git apply --3way patches/custom/*.patch
++# 解决冲突：fork/** 用 ours；带 CUSTOM 的文件先 theirs 再贴回 CUSTOM
++pnpm install && pnpm run build
++```
++
++## 以后加功能的规矩
++
++1. 优先写到 `src/fork/**` 新文件
++2. 必须改上游文件时，只加几行并标 `// CUSTOM: ...`
++3. 改完后重新导出补丁：`./scripts/export-custom-patches.sh`
+diff --git a/scripts/export-custom-patches.sh b/scripts/export-custom-patches.sh
+new file mode 100755
+index 0000000..98a1fe9
+--- /dev/null
++++ b/scripts/export-custom-patches.sh
+@@ -0,0 +1,31 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname "$0")/.."
++base=${1:-origin/main}
++out=patches/custom
++mkdir -p "$out"
++paths=(
++  src/fork
++  src/main.ts
++  src/services/TTSEngine.ts
++  src/services/TTSPlayer.ts
++  src/components/Reader.vue
++  src/components/EmbedPdfReader.vue
++  src/i18n/zh_CN.json
++  src/i18n/en_US.json
++  CUSTOM_WORKFLOW.md
++  scripts/rebuild-from-main.sh
++  scripts/export-custom-patches.sh
++  scripts/stubs
++  scripts/tts-no-reaction.harness.mjs
++  scripts/tts-no-reaction.test.ts
++  scripts/tts-timeout.harness.mjs
++  vitest.config.ts
++)
++# Stage only overlay paths so new files enter the diff
++git add -A -- "${paths[@]}" 2>/dev/null || true
++git diff --binary --cached "$base" -- "${paths[@]}" > "$out/0001-custom-fork-overlay.patch"
++# keep scripts themselves unstaged if user prefers; patch already captured
++echo "Wrote $out/0001-custom-fork-overlay.patch ($(wc -l < "$out/0001-custom-fork-overlay.patch") lines)"
++# sanity: must mention fork and CUSTOM
++rg -n 'src/fork/index|CUSTOM: fork|applyFork|pdfSpeakCommand|ReaderTtsBar' "$out/0001-custom-fork-overlay.patch" | head -20
+diff --git a/scripts/rebuild-from-main.sh b/scripts/rebuild-from-main.sh
+new file mode 100755
+index 0000000..d8c7c81
+--- /dev/null
++++ b/scripts/rebuild-from-main.sh
+@@ -0,0 +1,19 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname "$0")/.."
++stamp=$(date +%Y%m%d-%H%M%S)
++echo "[1/4] backup release -> backup/release-$stamp"
++git branch "backup/release-$stamp" release 2>/dev/null || git branch "backup/release-$stamp" HEAD
++echo "[2/4] reset release to origin/main"
++git fetch origin
++git checkout -B release origin/main
++echo "[3/4] apply patches/custom"
++shopt -s nullglob
++patches=(patches/custom/*.patch)
++if ((${#patches[@]} == 0)); then
++  echo "No patches found under patches/custom/"
++  exit 1
++fi
++git apply --3way "${patches[@]}"
++echo "[4/4] done. Next: pnpm install && pnpm run build"
++echo "Conflict tip: keep src/fork/**; for CUSTOM hooks take upstream then re-paste // CUSTOM lines."
+diff --git a/scripts/stubs/siyuan.ts b/scripts/stubs/siyuan.ts
+new file mode 100644
+index 0000000..2215d66
+--- /dev/null
++++ b/scripts/stubs/siyuan.ts
+@@ -0,0 +1,4 @@
++export const showMessage = (..._args: any[]) => {}
++export class Menu {}
++export class Dialog {}
++export class Plugin {}
+diff --git a/scripts/tts-no-reaction.harness.mjs b/scripts/tts-no-reaction.harness.mjs
+new file mode 100644
+index 0000000..68a6f9d
+--- /dev/null
++++ b/scripts/tts-no-reaction.harness.mjs
+@@ -0,0 +1,196 @@
++/**
++ * Feedback loop for: "点击朗读没有反应"
++ * Pass = after speak/toggle, isActive stays true for REACTION_MS (user-visible reaction).
++ * Fail = silent no-op or instant reset (looks like no reaction).
++ *
++ * Run: node scripts/tts-no-reaction.harness.mjs
++ */
++import { createRequire } from 'node:module'
++import { pathToFileURL } from 'node:url'
++import path from 'node:path'
++import { fileURLToPath } from 'node:url'
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url))
++const root = path.resolve(__dirname, '..')
++const require = createRequire(import.meta.url)
++
++const REACTION_MS = 250
++const results = []
++
++function assert(name, cond, detail = '') {
++  results.push({ name, ok: !!cond, detail })
++  console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? ` — ${detail}` : ''}`)
++}
++
++async function sleep(ms) {
++  await new Promise(r => setTimeout(r, ms))
++}
++
++async function stayActive(ctrl, ms = REACTION_MS) {
++  const start = Date.now()
++  while (Date.now() - start < ms) {
++    if (!ctrl.isActive.value) return false
++    await sleep(20)
++  }
++  return ctrl.isActive.value
++}
++
++// Minimal DOM + audio mocks for Node
++import { JSDOM } from 'jsdom'
++const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'https://localhost/' })
++globalThis.window = dom.window
++globalThis.document = dom.window.document
++globalThis.DOMParser = dom.window.DOMParser
++globalThis.Range = dom.window.Range
++globalThis.Node = dom.window.Node
++globalThis.HTMLElement = dom.window.HTMLElement
++globalThis.Element = dom.window.Element
++globalThis.AudioContext = class {
++  createBufferSource() {
++    return {
++      buffer: null,
++      connect() {},
++      start() { queueMicrotask(() => this._ended?.()) },
++      stop() {},
++      addEventListener(type, fn) { if (type === 'ended') this._ended = fn },
++      context: { suspend() {}, resume() {} },
++    }
++  }
++  async decodeAudioData() { return {} }
++  get destination() { return {} }
++}
++globalThis.speechSynthesis = {
++  getVoices: () => [{ name: 'MockLocal', lang: 'zh-CN' }],
++  speak(u) { queueMicrotask(() => u.onend?.()) },
++  cancel() {},
++  pause() {},
++  resume() {},
++}
++
++// Stub siyuan showMessage
++const Module = require('module')
++const origLoad = Module._load
++Module._load = function (request, parent, isMain) {
++  if (request === 'siyuan') return { showMessage: () => {} }
++  return origLoad(request, parent, isMain)
++}
++
++// Dynamic import compiled path via vite-node or tsx — use dist if available, else build with esbuild
++async function loadTTS() {
++  try {
++    // Prefer transforming TS in-process with esbuild-register style via vite's dependency
++    const esbuild = await import('esbuild')
++    const entry = path.join(root, 'src/services/TTSPlayer.ts')
++    const outfile = path.join(root, 'scripts/.tts-harness-bundle.mjs')
++    await esbuild.build({
++      entryPoints: [entry],
++      bundle: true,
++      format: 'esm',
++      platform: 'browser',
++      outfile,
++      external: ['siyuan'],
++      alias: {
++        'foliate-js/tts.js': path.join(root, 'node_modules/foliate-js/tts.js'),
++        'foliate-js/text-walker.js': path.join(root, 'node_modules/foliate-js/text-walker.js'),
++      },
++      define: { 'process.env.NODE_ENV': '"test"' },
++    })
++    // Patch siyuan for the bundle via import map — rewrite file to inject stub
++    const fs = await import('node:fs')
++    let code = fs.readFileSync(outfile, 'utf8')
++    code = code.replace(/from\s*["']siyuan["']/g, 'from "data:text/javascript,export const showMessage=()=>{}"')
++    fs.writeFileSync(outfile, code)
++    return import(pathToFileURL(outfile).href + `?t=${Date.now()}`)
++  } catch (e) {
++    console.error('bundle failed', e)
++    throw e
++  }
++}
++
++const { TTSController, EdgeTTSPlayer } = await loadTTS()
++
++const cfg = {
++  enabled: true,
++  voice: 'MockLocal',
++  rate: 1,
++  pitch: 1,
++  sentenceGap: 0,
++  paragraphGap: 0,
++  autoTurnPage: false,
++  highlightText: false,
++}
++
++// --- Case A: speak with enabled:false → exact "no reaction" ---
++{
++  const ctrl = new TTSController()
++  await ctrl.speak('你好世界', { ...cfg, enabled: false })
++  assert('A.enabled-false is silent no-op', !ctrl.isActive.value, `isActive=${ctrl.isActive.value}`)
++}
++
++// --- Case B: speak with enabled:true should stay active (loop) ---
++{
++  const ctrl = new TTSController()
++  const p = ctrl.speak('你好世界。这是第二句。', cfg)
++  await sleep(50)
++  const stayed = await stayActive(ctrl, REACTION_MS)
++  assert('B.speak-enabled stays active (reaction)', stayed, `isActive=${ctrl.isActive.value} text=${ctrl.currentText.value}`)
++  ctrl.destroy()
++  await p.catch(() => {})
++}
++
++// --- Case C: playText once — if SSML empty, instant reset = no reaction ---
++{
++  const ctrl = new TTSController()
++  const p = ctrl.playText('你好世界', cfg, 'test', false)
++  await sleep(30)
++  const activeSoon = ctrl.isActive.value
++  await sleep(REACTION_MS)
++  const still = ctrl.isActive.value
++  assert('C.playText-once visible reaction window', activeSoon && still, `soon=${activeSoon} still=${still} text=${JSON.stringify(ctrl.currentText.value)}`)
++  ctrl.destroy()
++  await p.catch(() => {})
++}
++
++// --- Case D: toggle with synthetic reader doc ---
++{
++  const ctrl = new TTSController()
++  const book = document.implementation.createHTMLDocument()
++  book.body.innerHTML = '<p>这是一本测试书的段落内容，足够长以便分句。</p>'
++  const fakeReader = {
++    getView: () => null,
++  }
++  // Patch getDocument path: when no view, falls back to global document — inject book into body
++  document.body.innerHTML = book.body.innerHTML
++  const p = ctrl.toggle(() => fakeReader, cfg, undefined, 'book')
++  await sleep(50)
++  const stayed = await stayActive(ctrl, REACTION_MS)
++  assert('D.toggle-fallback-doc stays active', stayed, `isActive=${ctrl.isActive.value} text=${JSON.stringify(ctrl.currentText.value)}`)
++  ctrl.destroy()
++  await p.catch(() => {})
++}
++
++// --- Case E: EdgeTTSPlayer firstSSML emptiness on plain text doc ---
++{
++  const doc = document.implementation.createHTMLDocument()
++  const p = doc.createElement('p')
++  p.textContent = '你好世界'
++  doc.body.appendChild(p)
++  const player = new EdgeTTSPlayer(doc, { ...cfg, onBlock: () => {} })
++  const started = Date.now()
++  await Promise.race([player.play(), sleep(2000).then(() => 'timeout')])
++  const elapsed = Date.now() - started
++  // If play returns in <20ms with no audio work, likely empty SSML / instant exit
++  assert('E.player.play does real work (not instant empty exit)', elapsed >= 15, `elapsed=${elapsed}ms`)
++  player.stop()
++}
++
++const failed = results.filter(r => !r.ok)
++console.log('\n---')
++console.log(`total=${results.length} fail=${failed.length}`)
++if (failed.length) {
++  console.log('RED — symptom loop caught failures:')
++  failed.forEach(f => console.log(`  - ${f.name}: ${f.detail}`))
++  process.exit(1)
++}
++console.log('GREEN — all reaction checks passed')
++process.exit(0)
+diff --git a/scripts/tts-no-reaction.test.ts b/scripts/tts-no-reaction.test.ts
+new file mode 100644
+index 0000000..c57dc40
+--- /dev/null
++++ b/scripts/tts-no-reaction.test.ts
+@@ -0,0 +1,197 @@
++/**
++ * Feedback loop: "点击朗读没有反应"
++ * RED = speak/toggle leaves isActive false (or flashes then resets) within REACTION_MS.
++ */
++import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
++
++const REACTION_MS = 250
++
++vi.mock('siyuan', () => ({ showMessage: vi.fn() }))
++
++beforeAll(() => {
++  class MockAudioContext {
++    createBufferSource() {
++      return {
++        buffer: null,
++        connect() {},
++        start() { queueMicrotask(() => this._ended?.()) },
++        stop() {},
++        addEventListener(type: string, fn: () => void) { if (type === 'ended') this._ended = fn },
++        context: { suspend() {}, resume() {} },
++        _ended: undefined as undefined | (() => void),
++      }
++    }
++    async decodeAudioData() { return {} }
++    get destination() { return {} }
++  }
++  class MockUtterance {
++    text = ''
++    voice: any = null
++    rate = 1
++    pitch = 1
++    onend: null | (() => void) = null
++    onerror: null | (() => void) = null
++    constructor(text = '') { this.text = text }
++  }
++  ;(globalThis as any).AudioContext = MockAudioContext
++  ;(globalThis as any).SpeechSynthesisUtterance = MockUtterance
++  ;(globalThis as any).speechSynthesis = {
++    getVoices: () => [{ name: 'MockLocal', lang: 'zh-CN' }],
++    speak(u: any) { setTimeout(() => u.onend?.(), 400) },
++    cancel() {},
++    pause() {},
++    resume() {},
++  }
++})
++
++const cfg = {
++  enabled: true,
++  voice: 'MockLocal',
++  rate: 1,
++  pitch: 0,
++  volume: 0,
++  style: 'general',
++  sentenceGap: 0,
++  paragraphGap: 0,
++  autoTurnPage: false,
++  highlightText: false,
++}
++
++async function staysActive(ctrl: any, ms = REACTION_MS) {
++  const end = Date.now() + ms
++  while (Date.now() < end) {
++    if (!ctrl.isActive.value) return false
++    await new Promise(r => setTimeout(r, 20))
++  }
++  return !!ctrl.isActive.value
++}
++
++describe('TTS click reaction', () => {
++  let TTSController: any
++  let EdgeTTSPlayer: any
++  let ctrl: any
++
++  beforeAll(async () => {
++    const mod = await import('../src/services/TTSPlayer')
++    TTSController = mod.TTSController
++    EdgeTTSPlayer = mod.EdgeTTSPlayer
++  })
++
++  afterEach(() => {
++    ctrl?.destroy?.()
++    ctrl = null
++  })
++
++  it('A: enabled:false is silent no-op (matches "no reaction")', async () => {
++    ctrl = new TTSController()
++    await ctrl.speak('你好世界', { ...cfg, enabled: false })
++    expect(ctrl.isActive.value).toBe(false)
++  })
++
++  it('B: speak(enabled) must stay active long enough to be visible', async () => {
++    ctrl = new TTSController()
++    const p = ctrl.speak('你好世界。这是第二句。', cfg)
++    await new Promise(r => setTimeout(r, 40))
++    expect(await staysActive(ctrl)).toBe(true)
++    ctrl.destroy()
++    await p.catch(() => {})
++  })
++
++  it('C: playText once must not instantly reset (toolbar-like path)', async () => {
++    ctrl = new TTSController()
++    const events: string[] = []
++    const p = ctrl.playText('你好世界', { ...cfg, onBlock: (t: string) => events.push(`block:${t}`) }, 'test', false)
++    await new Promise(r => setTimeout(r, 40))
++    const soon = ctrl.isActive.value
++    const text = ctrl.currentText.value
++    const stayed = await staysActive(ctrl)
++    ctrl.destroy()
++    await p.catch((e: any) => events.push(`err:${e?.message || e}`))
++    expect({ soon, stayed, text, events }, 'playText reaction diagnostics').toEqual({
++      soon: true,
++      stayed: true,
++      text: expect.any(String),
++      events: expect.any(Array),
++    })
++    expect(soon && stayed).toBe(true)
++  })
++
++  it('C2: diagnose why playText dies — capture active timeline', async () => {
++    ctrl = new TTSController()
++    const timeline: Array<{ t: number; active: boolean; text: string }> = []
++    const t0 = Date.now()
++    const stamp = () => timeline.push({ t: Date.now() - t0, active: ctrl.isActive.value, text: ctrl.currentText.value })
++    stamp()
++    const p = ctrl.playText('你好世界', cfg, 'test', false)
++    for (let i = 0; i < 15; i++) {
++      await new Promise(r => setTimeout(r, 20))
++      stamp()
++    }
++    ctrl.destroy()
++    await p.catch(() => {})
++    // Soft assert: print timeline always for diagnosis; fail if never stayed active >40ms
++    const activeSpans = timeline.filter(s => s.active)
++    console.log('[DEBUG-tts] playText timeline', JSON.stringify(timeline))
++    expect(activeSpans.length, `timeline=${JSON.stringify(timeline)}`).toBeGreaterThan(2)
++  })
++
++  it('D: toggle with fallback document must stay active', async () => {
++    ctrl = new TTSController()
++    document.body.innerHTML = '<p>这是一本测试书的段落内容，足够长以便分句朗读。</p>'
++    const timeline: any[] = []
++    const t0 = Date.now()
++    const p = ctrl.toggle(() => ({ getView: () => null }), cfg, undefined, 'book')
++    for (let i = 0; i < 15; i++) {
++      await new Promise(r => setTimeout(r, 20))
++      timeline.push({ t: Date.now() - t0, active: ctrl.isActive.value, text: ctrl.currentText.value })
++    }
++    console.log('[DEBUG-tts] toggle timeline', JSON.stringify(timeline))
++    ctrl.destroy()
++    await p.catch(() => {})
++    expect(timeline.filter(s => s.active).length, JSON.stringify(timeline)).toBeGreaterThan(2)
++  })
++
++  it('E: EdgeTTSPlayer.play on plain <p> must not exit instantly empty', async () => {
++    const doc = document.implementation.createHTMLDocument()
++    const p = doc.createElement('p')
++    p.textContent = '你好世界'
++    doc.body.appendChild(p)
++    let blocks = 0
++    const player = new EdgeTTSPlayer(doc, { ...cfg, onBlock: () => { blocks++ } })
++    const t0 = Date.now()
++    await Promise.race([
++      player.play(),
++      new Promise(r => setTimeout(() => r('timeout'), 2000)),
++    ])
++    const elapsed = Date.now() - t0
++    player.stop()
++    console.log('[DEBUG-tts] player.play', { elapsed, blocks })
++    expect(blocks, `elapsed=${elapsed}`).toBeGreaterThan(0)
++  })
++
++  it('G: MarkPanel speak must survive selectionchange (menu click); mouseup still cancels', async () => {
++    ;(globalThis as any).speechSynthesis.speak = (u: any) => {
++      setTimeout(() => u.onend?.(), 800)
++    }
++    ctrl = new TTSController()
++    const p = ctrl.speak('你好世界，这是一段会被朗读的文字。', cfg)
++    await new Promise(r => setTimeout(r, 30))
++    expect(ctrl.isActive.value, 'speak should activate').toBe(true)
++
++    // selectionchange path must NOT cancel (menu focus-loss)
++    // emulate fixed MarkPanel policy:
++    const onCollapse = (type: string) => {
++      if (type === 'mouseup' || type === 'touchend') ctrl.cancelLoop()
++    }
++    onCollapse('selectionchange')
++    await new Promise(r => setTimeout(r, 20))
++    expect(ctrl.isActive.value, 'selectionchange must not kill speak').toBe(true)
++
++    onCollapse('mouseup')
++    await new Promise(r => setTimeout(r, 20))
++    expect(ctrl.isActive.value, 'mouseup clear must stop speak').toBe(false)
++
++    ctrl.destroy()
++    await p.catch(() => {})
++  })
++})
+diff --git a/scripts/tts-timeout.harness.mjs b/scripts/tts-timeout.harness.mjs
+new file mode 100644
+index 0000000..e06e366
+--- /dev/null
++++ b/scripts/tts-timeout.harness.mjs
+@@ -0,0 +1,103 @@
++/**
++ * Feedback loop: Edge TTS after VoiceCraft HTTP refactor
++ * GREEN = plain-text and foliate-mark both return audio quickly (no "TTS timeout")
++ * Run: node scripts/tts-timeout.harness.mjs
++ */
++import { createRequire } from 'node:module'
++import { pathToFileURL } from 'node:url'
++import path from 'node:path'
++import { fileURLToPath } from 'node:url'
++import { webcrypto } from 'node:crypto'
++import { JSDOM } from 'jsdom'
++
++const __dirname = path.dirname(fileURLToPath(import.meta.url))
++const root = path.resolve(__dirname, '..')
++const require = createRequire(import.meta.url)
++const TIMEOUT_MS = 12000
++
++const dom = new JSDOM('<!doctype html><html><body></body></html>')
++Object.assign(globalThis, {
++  window: Object.assign(dom.window, {
++    require: (id) => require(id),
++  }),
++  document: dom.window.document,
++  DOMParser: dom.window.DOMParser,
++  XMLSerializer: dom.window.XMLSerializer,
++  Blob: globalThis.Blob,
++  localStorage: { getItem: () => null, setItem: () => {} },
++})
++if (!globalThis.crypto?.subtle) Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true })
++try {
++  if (!dom.window.crypto?.subtle) Object.defineProperty(dom.window, 'crypto', { value: webcrypto, configurable: true })
++} catch {}
++
++async function loadEngine() {
++  const candidates = [
++    'esbuild',
++    path.join(root, 'node_modules/esbuild/lib/main.js'),
++    path.join(root, 'node_modules/vite/node_modules/esbuild/lib/main.js'),
++    path.join(root, 'node_modules/.pnpm/esbuild@0.25.12/node_modules/esbuild/lib/main.js'),
++    path.join(root, 'node_modules/.pnpm/esbuild@0.21.5/node_modules/esbuild/lib/main.js'),
++  ]
++  let esbuild
++  for (const id of candidates) {
++    try {
++      esbuild = id.startsWith('/') || id.includes('node_modules')
++        ? await import(pathToFileURL(id).href)
++        : await import(id)
++      if (esbuild?.build) break
++    } catch {}
++  }
++  const out = path.join(root, 'scripts/.tts-engine-bundle.mjs')
++  if (!esbuild?.build) {
++    const { execFileSync } = await import('node:child_process')
++    const bin = path.join(root, 'node_modules/.pnpm/esbuild@0.25.12/node_modules/esbuild/bin/esbuild')
++    execFileSync(bin, [path.join(root, 'src/services/TTSEngine.ts'), '--bundle', '--format=esm', '--platform=neutral', `--outfile=${out}`], { cwd: root, stdio: 'inherit' })
++    return import(pathToFileURL(out).href + `?t=${Date.now()}`)
++  }
++  await esbuild.build({
++    entryPoints: [path.join(root, 'src/services/TTSEngine.ts')],
++    bundle: true,
++    format: 'esm',
++    platform: 'neutral',
++    outfile: out,
++  })
++  return import(pathToFileURL(out).href + `?t=${Date.now()}`)
++}
++
++const { EdgeTTSCore, plainTextFromSSML } = await loadEngine()
++
++const foliate = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en"><s><mark name="0"/>你好世界</s></speak>`
++const stripped = plainTextFromSSML(foliate)
++if (stripped !== '你好世界') {
++  console.log(`FAIL plainTextFromSSML got=${JSON.stringify(stripped)}`)
++  process.exit(1)
++}
++console.log('PASS plainTextFromSSML')
++
++const core = new EdgeTTSCore()
++core.setVoice('zh-CN-XiaoxiaoNeural')
++
++const cases = [
++  { name: 'plain-text', ssml: '你好世界' },
++  { name: 'foliate-mark', ssml: foliate },
++]
++
++let failed = 0
++for (const c of cases) {
++  const t0 = Date.now()
++  try {
++    const buf = await Promise.race([
++      core.toSSMLStream(c.ssml, 1, 0, 0, 'general'),
++      new Promise((_, rej) => setTimeout(() => rej(new Error('TTS timeout')), TIMEOUT_MS)),
++    ])
++    if (!buf?.length) throw new Error('empty audio')
++    console.log(`PASS ${c.name} bytes=${buf.length} elapsed=${Date.now() - t0}`)
++  } catch (e) {
++    failed++
++    console.log(`FAIL ${c.name} ${e.message} elapsed=${Date.now() - t0}`)
++  }
++}
++core.close()
++console.log(failed ? `RED fail=${failed}` : 'GREEN')
++process.exit(failed ? 1 : 0)
+diff --git a/src/components/EmbedPdfReader.vue b/src/components/EmbedPdfReader.vue
+index 74ffaa1..421c6ad 100644
+--- a/src/components/EmbedPdfReader.vue
++++ b/src/components/EmbedPdfReader.vue
+@@ -24,6 +24,7 @@ import { createPdfReflowSession, replacePdfDocument, synchronizeReflowAnnotation
+ import type { ReflowDocument } from '@/core/pdfReflow'
+ import { pdfQuickSendCommandId } from '@/utils/keyboard'
+ import { embedPdfLocale } from '@/utils/embedPdfLocale'
++import { pdfSpeakCommand } from '@/fork/tts/pdfSpeakCommand' // CUSTOM: fork
+ 
+ type EmbedPdfContainer = any
+ type PluginRegistry = any
+@@ -599,6 +600,7 @@ const setupPdfCommands = (registry: PluginRegistry) => {
+   ;[
+     ['dict', props.i18n?.dict || 'Dictionary', 'book', async (mark: any) => (await import('@/utils/dictionary')).openDict(mark.text, innerWidth / 2, innerHeight / 2, mark)],
+     ['translate', props.i18n?.translate || 'Translate', 'text', (mark: any) => openPdfTranslate(mark.text, translation => createPdfTranslationAnnotation(registry, mark.text, translation))],
++    pdfSpeakCommand(props), // CUSTOM: fork
+   ].forEach(([id, label, icon, run]: any) => commands?.registerCommand?.({ id: `sireader:${id}-selection`, label, icon, action: async () => { const mark = await selectedMark(); if (mark?.text) run(mark) } }))
+   docs.forEach((doc: any) => commands?.registerCommand?.({
+     id: pdfQuickSendCommandId('selection', doc.id),
+@@ -664,7 +666,7 @@ const setupPdfCommands = (registry: PluginRegistry) => {
+     ] } : item) }
+   }
+   if (!annotationMenu && !selectionMenu && !documentMenu) return ui.mergeSchema?.({ toolbars })
+-  const requiredIds = ['sireader:pdf-reflow', 'sireader:lock-annotation-tool', 'sireader:copy-annotation-link', 'sireader:dict-annotation', 'sireader:translate-annotation', 'sireader:create-hole', 'sireader:dict-selection', 'sireader:translate-selection', 'sireader:capture-copy', ...docs.flatMap((doc: any) => [pdfQuickSendCommandId('selection', doc.id), pdfQuickSendCommandId('annotation', doc.id)])]
++  const requiredIds = ['sireader:pdf-reflow', 'sireader:lock-annotation-tool', 'sireader:copy-annotation-link', 'sireader:dict-annotation', 'sireader:translate-annotation', 'sireader:create-hole', 'sireader:dict-selection', 'sireader:translate-selection', 'sireader:speak-selection', 'sireader:capture-copy', ...docs.flatMap((doc: any) => [pdfQuickSendCommandId('selection', doc.id), pdfQuickSendCommandId('annotation', doc.id)])] // CUSTOM: speak-selection
+   if (requiredIds.some(id => !installed.some(command => command.id === id))) return disposePdfCommands(rawCommands)
+   if (annotationMenu) {
+     const items = annotationMenu.items.filter((item: any) => !['sireader-send-annotation-list', 'sireader-send-annotation-divider', 'sireader-send-annotation-menu'].includes(item.id))
+@@ -679,11 +681,12 @@ const setupPdfCommands = (registry: PluginRegistry) => {
+     ] as any)
+   }
+   if (selectionMenu) {
+-    const items = selectionMenu.items.filter((item: any) => !['sireader-create-mask', 'sireader-create-hole', 'sireader-dict-selection', 'sireader-translate-selection', 'sireader-send-selection-list', 'sireader-send-selection-divider', 'sireader-send-selection-menu'].includes(item.id))
++    const items = selectionMenu.items.filter((item: any) => !['sireader-create-mask', 'sireader-create-hole', 'sireader-dict-selection', 'sireader-translate-selection', 'sireader-speak-selection', 'sireader-send-selection-list', 'sireader-send-selection-divider', 'sireader-send-selection-menu'].includes(item.id))
+     selectionMenu.items = addMissingPdfMenuItemsAfterFirst(items, [
+       { type: 'command-button', id: 'sireader-create-hole', commandId: 'sireader:create-hole', variant: 'icon-text' },
+       { type: 'command-button', id: 'sireader-dict-selection', commandId: 'sireader:dict-selection', variant: 'icon' },
+       { type: 'command-button', id: 'sireader-translate-selection', commandId: 'sireader:translate-selection', variant: 'icon' },
++      { type: 'command-button', id: 'sireader-speak-selection', commandId: 'sireader:speak-selection', variant: 'icon' }, // CUSTOM: fork
+       ...(docs.length ? [
+         { type: 'divider', id: 'sireader-send-selection-divider', categories: ['selection', 'sireader-send'] },
+         { type: 'command-button', id: 'sireader-send-selection-menu', commandId: 'sireader:send-selection-menu', variant: 'icon-text', categories: ['selection', 'sireader-send'] },
+diff --git a/src/components/Reader.vue b/src/components/Reader.vue
+index db5cc72..f467f03 100644
+--- a/src/components/Reader.vue
++++ b/src/components/Reader.vue
+@@ -1,5 +1,5 @@
+ <template>
+-  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity':(1-((currentSettings?.toolbarOpacity??70)/100))*.55}">
++  <div ref="containerRef" class="reader-container" tabindex="0" :style="{'--toolbar-opacity': ttsActive ? 1 : (1-((currentSettings?.toolbarOpacity??70)/100))*.55}">
+     <ReaderSplash v-if="showOpeningSplash" ref="readerSplashRef" :book-info="props.bookInfo" :file-name="props.file?.name" :i18n="i18n" status="opening" />
+     <div v-if="loading || error" class="reader-loading"><div v-if="loading" class="spinner"></div><div>{{ error || 'Loading...' }}</div></div>
+     <div v-if="showToc&&!loading" class="reader-overlay" @click="closePanels"/>
+@@ -15,7 +15,20 @@
+         </DockShell>
+       </div>
+     </Transition>
+-    <div v-if="!loading" class="reader-toolbar-group">
++    <div v-if="!loading" class="reader-toolbar-group" :class="{'is-tts': ttsActive}">
++      <!-- CUSTOM: fork TTS bar -->
++      <ReaderTtsBar
++        :tts-enabled="ttsEnabled"
++        :tts-active="ttsActive"
++        :tts-playing="ttsPlaying"
++        :tts-loading="ttsLoading"
++        :tts-paused="ttsPaused"
++        :i18n="i18n"
++        @jump="jumpTTS"
++        @toggle="toggleTTS"
++        @restart="restartTTS"
++        @stop="stopTTS"
++      />
+       <div v-if="showSearch" class="reader-panel" @click.stop>
+         <input v-model="searchQuery" class="search-input" :placeholder="i18n.searchPlaceholder||'Search...'" @keydown.enter="handleSearch" @keydown.esc="showSearch=false" ref="searchInputRef">
+         <button class="toolbar-btn ariaLabel" data-position="north" data-tooltip-encoding="none" @click="handleSearch" :aria-label="i18n.search || 'Search'"><svg><use xlink:href="#iconSearch"/></svg></button>
+@@ -80,8 +93,9 @@ import { diagnosticLog } from '@/core/diagnostics'
+ import { trackPending } from '@/core/storage'
+ import { isUserEmbedPdfAnnotation } from '@/core/dataMigration'
+ import { createKeyboardHandler, setupEpubKeyboard, shouldHandleReaderKeydown } from '@/utils/keyboard'
+-import { getTTSController } from '@/services/TTSPlayer'
+ import { useLicense } from '@/core/license'
++import ReaderTtsBar from '@/fork/components/ReaderTtsBar.vue' // CUSTOM: fork
++import { createReaderTtsControls } from '@/fork/tts/readerControls' // CUSTOM: fork
+ import { upsertEmbedPdfAnnotation } from '@/core/storage'
+ import { dispatchReaderLifecycle } from '@/integrations/lifecycle'
+ const props = defineProps<{ file?: File; plugin: Plugin; settings?: ReaderSettings; url?: string; blockId?: string; bookInfo?: any; onReaderReady?: (r: FoliateReader) => void; i18n?: any }>()
+@@ -180,9 +194,6 @@ const searchQuery = ref('')
+ const searchResults = ref<any[]>([])
+ const searchCurrentIndex = ref(0)
+ let reader: FoliateReader | null = null
+-const ttsController = getTTSController()
+-const ttsEnabled = computed(() => currentSettings.value?.tts?.enabled || false)
+-const ttsPlaying = computed(() => ttsController.isActive.value && !ttsController.paused.value)
+ const clearReadingSelection=()=>{try{reader?.getView?.()?.renderer?.getContents?.()?.forEach(({doc}:any)=>doc.defaultView?.getSelection()?.removeAllRanges());document.getSelection()?.removeAllRanges()}catch{}}
+ const syncReadingProgress=(detail?:any)=>{const location=detail||(reader as any)?.getProgress?.()||currentView.value?.lastLocation||reader?.getLocation?.();const f=location?.fraction??0;readingProgress.value=Number.isFinite(f)?Math.max(0,Math.min(1,f)):0;chapterTitle.value=location?.tocItem?.label||location?.tocItem?.title||props.bookInfo?.title||getBookName();const layout=currentSettings.value?.layoutSettings;const renderer=reader?.getView?.()?.renderer as any;const page=Number(renderer?.page);const pages=Number(renderer?.pages);const progress=layout?.showProgressInfo&&Number.isFinite(page)&&Number.isFinite(pages)&&pages>0?(layout.progressStyle==='percentage'?`${Math.round(((page+1)/pages)*100)}%`:layout.progressStyle==='reference'&&layout.referencePageCount>0?`${Math.max(1,Math.round(f*layout.referencePageCount))}/${layout.referencePageCount}`:`${Math.min(pages,Math.max(1,page+1))}/${pages}`):'';const minutes=Number(location?.time?.section);const remaining=layout?.showRemainingTime&&Number.isFinite(minutes)&&minutes>0?(i18n.value.chapterRemaining||'Chapter remaining: {minutes} min').replace(/\{minutes\}/g,String(Math.max(1,Math.round(minutes)))):'';const clock=layout?.showCurrentTime?new Date().toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', hour12:layout.use24HourClock?false:undefined }):'';const level=Number(battery.value?.level);const batteryInfo=layout?.showCurrentBatteryStatus&&Number.isFinite(level)?`${i18n.value.batteryStatus||'Battery'} ${Math.round(Math.max(0,Math.min(1,level))*100)}%`:'';footerInfo.value=[remaining,clock,batteryInfo,progress].filter(Boolean).join(' · ')}
+ const submitProgressJump=async()=>{
+@@ -192,10 +203,25 @@ const submitProgressJump=async()=>{
+   progressJump.value=String(Math.round(fraction*100))
+   try{await reader?.goToFraction(fraction)}catch{showMessage(i18n.value.jumpFailed || 'Jump failed',1500,'error')}
+ }
+-const toggleTTS = () => {if (!can.value('tts')) return showUpgrade(i18n.value.ttsReading || 'Read aloud'); clearReadingSelection(); ttsController.toggle(() => reader, currentSettings.value?.tts, undefined, getBookName())}
+-const syncTTS = async () => ttsController.sync(currentSettings.value?.tts?.enabled || false)
+ const marks=computed(()=>markManager.value)
+ const isEmbedPdfMode=computed(()=>currentView.value?.engine==='embedpdf')
++// CUSTOM: fork TTS controls
++const {
++  ttsController, ttsEnabled, ttsActive, ttsLoading, ttsPaused, ttsPlaying,
++  toggleTTS, restartTTS, jumpTTS, stopTTS, syncTTS,
++} = createReaderTtsControls({
++  getReader: () => reader,
++  currentView,
++  currentSettings,
++  isEmbedPdfMode,
++  embedPdfPages,
++  i18n,
++  can,
++  showUpgrade,
++  getBookName,
++  isEpubScrollMode: () => getSettings()?.viewMode === 'scroll',
++  clearReadingSelection,
++})
+ const hasSearchResults=computed(()=>searchResults.value.length>0)
+ const searchCount=computed(()=>searchResults.value.length?`${searchResults.value.length}`:'0')
+ const browserSource=(path='')=>path.startsWith('/data/public/')?path.replace('/data/public/','/public/'):path.startsWith('/public/')||path.startsWith('/assets/')||/^https?:\/\//.test(path)?path:path.startsWith('public/')||path.startsWith('assets/')?`/${path}`:''
+@@ -564,6 +590,7 @@ onBeforeUnmount(()=>{
+ .spinner{width:48px;height:48px;border:4px solid var(--b3-theme-primary-lighter);border-top-color:var(--b3-theme-primary);border-radius:50%;animation:spin 1s linear infinite}
+ @keyframes spin{to{transform:rotate(360deg)}}
+ .reader-toolbar-group{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:1001;opacity:var(--toolbar-opacity);transition:opacity .2s;&:hover{opacity:1}}
++.reader-toolbar-group.is-tts{opacity:1} /* CUSTOM: fork */
+ .reader-toolbar,.reader-panel{display:flex;align-items:center;gap:2px;padding:3px 4px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002;transition:opacity .2s}
+ .toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;cursor:pointer;transition:all .15s;svg{width:14px;height:14px}&:hover{background:var(--b3-list-hover)}&.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary)}}
+ .toolbar-mark-btn{position:relative;.mark-indicator{position:absolute;right:2px;bottom:2px;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--b3-theme-surface);box-shadow:0 0 0 .5px var(--b3-border-color)}}
+diff --git a/src/fork/README.md b/src/fork/README.md
+new file mode 100644
+index 0000000..c452393
+--- /dev/null
++++ b/src/fork/README.md
+@@ -0,0 +1,55 @@
++# Fork overlay（二次开发）
++
++本目录集中存放相对上游 `main` 的二次开发。上游路径只保留带 `// CUSTOM:` 标记的极薄挂钩。
++
++> **v2.6.1+ 策略**：上游 OfflineTTS API 已重写，**不要**再把 `TTSEngine.ts` / `TTSPlayer.ts` / `TTSMini.vue` 整文件改成 re-export。  
++> 当前以「加法挂钩」接入：保留上游朗读/离线语音，fork 只叠加 license、图标、PDF 朗读、Reader TTS 栏等。  
++> `src/fork/tts/TTSEngine.ts`、`TTSPlayer.ts`、`components/TTSMini.vue` 仍保留作后续移植参考。
++
++## 日常升级（推荐）
++
++```bash
++# 1) 备份当前 release
++git branch backup/release-$(date +%Y%m%d) release
++
++# 2) 以最新上游为基线重建
++git fetch origin
++git checkout -B release origin/main
++
++# 3) 重放 fork 层与挂钩补丁
++git apply --3way patches/custom/*.patch
++# 或：checkout 旧 backup 中的 src/fork/**，再按「挂钩列表」手工确认 CUSTOM 标记仍在
++
++# 4) 构建验证后推送
++```
++
++冲突处理：
++
++1. `src/fork/**` → 优先 **ours**（你的二次开发）
++2. 带 `CUSTOM:` 的上游文件 → 先取 **theirs**，再把 `CUSTOM` 片段贴回
++3. i18n JSON → 合并 key（上游全保留 + fork 文案）
++
++## 挂钩列表（v2.6.1 加法版）
++
++| 上游文件 | 挂钩 |
++|---------|------|
++| `src/main.ts` | `import { applyFork }` + `applyFork()` |
++| `src/services/TTSEngine.ts` | `fetch(..., { referrerPolicy: 'no-referrer' })` |
++| `src/services/TTSPlayer.ts` | fork 兼容 API：`isLoading` / `restartText` / `restart` |
++| `src/components/Reader.vue` | `ReaderTtsBar` + `createReaderTtsControls` |
++| `src/components/EmbedPdfReader.vue` | `pdfSpeakCommand(props)` + 选区菜单按钮 |
++| `src/i18n/*.json` | fork 文案 key（见下） |
++| `src/composables/useSetting.ts` | （可选）扩展 TTS volume/style；默认暂不改 pitch 语义 |
++
++## applyFork() 做什么
++
++- `unlockAllFeatures()`：二次开发解锁会员能力
++- `injectForkIcons()`：注入 TTS 栏用到的 chevron 图标
++
++## Fork 文案 key（i18n）
++
++`ttsRestart`、`ttsPreparing`、`ttsPrev`、`ttsNext`、`ttsStyle`、`ttsStyle_*`
++
++## 本地环境
++
++个人思源路径放 `.env`（勿提交）。`.env.example` 保持通用占位即可。
+diff --git a/src/fork/components/ReaderTtsBar.vue b/src/fork/components/ReaderTtsBar.vue
+new file mode 100644
+index 0000000..fecec03
+--- /dev/null
++++ b/src/fork/components/ReaderTtsBar.vue
+@@ -0,0 +1,36 @@
++<template>
++  <div v-if="ttsEnabled && ttsActive" class="reader-toolbar is-visible is-tts-bar">
++    <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="$emit('jump', -1)" :aria-label="i18n.prevChapter || '上一章'"><svg><use xlink:href="#iconLeft"/></svg></button>
++    <button class="toolbar-btn b3-tooltips b3-tooltips__n" :class="{ active: ttsPlaying && !ttsLoading }" :disabled="ttsLoading" @click.stop="$emit('toggle')" :aria-label="ttsLoading ? (i18n.ttsPreparing || '准备中') : (ttsPaused ? (i18n.ttsResume || '继续朗读') : (i18n.ttsPause || '暂停朗读'))">
++      <span v-if="ttsLoading" class="toolbar-spinner"/>
++      <svg v-else><use :xlink:href="ttsPaused ? '#iconPlay' : '#iconPause'"/></svg>
++    </button>
++    <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="$emit('jump', 1)" :aria-label="i18n.nextChapter || '下一章'"><svg><use xlink:href="#iconRight"/></svg></button>
++    <button class="toolbar-btn b3-tooltips b3-tooltips__n" :disabled="ttsLoading" @click.stop="$emit('restart')" :aria-label="i18n.ttsRestart || '从当前页朗读'"><svg><use xlink:href="#iconRefresh"/></svg></button>
++    <button class="toolbar-btn b3-tooltips b3-tooltips__n" @click.stop="$emit('stop')" :aria-label="i18n.ttsStop || '停止朗读'"><svg><use xlink:href="#iconClose"/></svg></button>
++  </div>
++</template>
++
++<script setup lang="ts">
++defineProps<{
++  ttsEnabled: boolean
++  ttsActive: boolean
++  ttsPlaying: boolean
++  ttsLoading: boolean
++  ttsPaused: boolean
++  i18n: Record<string, any>
++}>()
++defineEmits<{ jump: [delta: number]; toggle: []; restart: []; stop: [] }>()
++</script>
++
++<style scoped>
++/* Mirror Reader.vue toolbar look (scoped parent styles don't pierce child). */
++.reader-toolbar{display:flex;align-items:center;gap:2px;padding:3px 4px;background:var(--b3-theme-surface);border:1px solid var(--b3-border-color);border-radius:6px;box-shadow:0 2px 8px #0002}
++.toolbar-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:none;background:transparent;border-radius:4px;cursor:pointer;color:inherit;transition:all .15s}
++.toolbar-btn svg{width:14px;height:14px}
++.toolbar-btn:hover{background:var(--b3-list-hover)}
++.toolbar-btn.active{background:var(--b3-theme-primary-lightest);color:var(--b3-theme-primary)}
++.toolbar-btn:disabled{opacity:.5;cursor:default}
++.toolbar-spinner{width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
++@keyframes spin{to{transform:rotate(360deg)}}
++</style>
+diff --git a/src/fork/components/TTSMini.vue b/src/fork/components/TTSMini.vue
+new file mode 100644
+index 0000000..468d338
+--- /dev/null
++++ b/src/fork/components/TTSMini.vue
+@@ -0,0 +1,137 @@
++<template>
++  <Transition name="tts-fade">
++    <section v-if="visible" ref="popupRef" class="tts-mini" :class="{ expanded }" role="status" :aria-label="tts.title.value || props.i18n?.ttsControl || 'Reading controls'" @click.stop>
++      <div class="tts-mini-bar">
++        <button class="tts-mini-main" :aria-expanded="expanded" :aria-label="props.i18n?.expandTts || 'Expand reading controls'" @click="expanded = !expanded">
++          <span class="tts-mini-cover">
++            <img v-if="coverUrl" :src="coverUrl" :alt="tts.title.value || props.i18n?.cover || 'Cover'" loading="lazy" decoding="async" @error="coverUrl = ''">
++            <svg v-else aria-hidden="true"><use xlink:href="#lucide-volume-2" /></svg>
++          </span>
++          <span class="tts-mini-info">
++            <strong>{{ tts.title.value || props.i18n?.ttsReadingTitle || 'Reading aloud' }}</strong>
++            <span>{{ tts.currentText.value || (tts.paused.value ? (props.i18n?.ttsPaused || 'Paused') : (props.i18n?.ttsReading || 'Reading aloud')) }}</span>
++          </span>
++          <svg class="tts-mini-chevron" :class="{ rotated: expanded }" aria-hidden="true"><use xlink:href="#iconDown" /></svg>
++        </button>
++        <div class="tts-mini-tools">
++          <button :aria-label="props.i18n?.previousSentence || 'Previous sentence'" @click="tts.jump(-1)"><svg><use xlink:href="#iconLeft" /></svg></button>
++          <button class="primary" :aria-label="tts.isActive.value && !tts.paused.value ? (props.i18n?.pause || 'Pause') : (props.i18n?.play || 'Play')" @click="playOrPause"><svg><use :xlink:href="tts.isActive.value && !tts.paused.value ? '#iconPause' : '#iconPlay'" /></svg></button>
++          <button :aria-label="props.i18n?.nextSentence || 'Next sentence'" @click="tts.jump(1)"><svg><use xlink:href="#iconRight" /></svg></button>
++          <button :aria-label="props.i18n?.ttsStop || 'Stop reading'" @click="stop"><svg><use xlink:href="#iconClose" /></svg></button>
++        </div>
++      </div>
++
++      <div v-if="expanded" class="tts-mini-panel">
++        <div class="tts-mini-current">{{ tts.currentText.value || props.i18n?.readyToRead || 'Ready to read' }}</div>
++        <details v-if="ttsSettings" class="tts-mini-settings">
++          <summary>{{ props.i18n?.ttsSettings || 'Reading settings' }}</summary>
++          <div class="tts-mini-fields">
++            <label class="wide"><span>{{ props.i18n?.voice || 'Voice' }}</span><select class="b3-select" :value="ttsSettings.voice" @focus="loadVoices" @change="update('voice', ($event.target as HTMLSelectElement).value)"><option v-if="loadingVoices" disabled>{{ props.i18n?.loading || 'Loading...' }}</option><option v-for="voice in voiceOptions" :key="voice.name" :value="voice.name">{{ voiceLabel(voice) }}</option></select></label>
++            <label class="wide"><span>{{ props.i18n?.ttsStyle || 'Style' }}</span><select class="b3-select" :value="ttsSettings.style || 'general'" @change="update('style', ($event.target as HTMLSelectElement).value)"><option v-for="s in styleOptions" :key="s" :value="s">{{ styleLabel(s) }}</option></select></label>
++            <label><span>{{ props.i18n?.ttsRate || 'Speech rate' }} <b>{{ Number(ttsSettings.rate || 1).toFixed(1) }}x</b></span><input class="b3-slider" type="range" min="0.5" max="2" step="0.1" :value="ttsSettings.rate || 1" @input="update('rate', Number(($event.target as HTMLInputElement).value))"></label>
++            <label><span>{{ props.i18n?.ttsPitch || 'Pitch' }} <b>{{ Number(ttsSettings.pitch || 0) }}Hz</b></span><input class="b3-slider" type="range" min="-50" max="50" step="5" :value="ttsSettings.pitch || 0" @input="update('pitch', Number(($event.target as HTMLInputElement).value))"></label>
++            <label><span>{{ props.i18n?.ttsVolume || 'Volume' }} <b>{{ Number(ttsSettings.volume || 0) }}%</b></span><input class="b3-slider" type="range" min="-50" max="50" step="5" :value="ttsSettings.volume || 0" @input="update('volume', Number(($event.target as HTMLInputElement).value))"></label>
++            <label><span>{{ props.i18n?.ttsSentenceGap || 'Sentence gap' }} <b>{{ Number(ttsSettings.sentenceGap || 0).toFixed(1) }}s</b></span><input class="b3-slider" type="range" min="0" max="3" step="0.1" :value="ttsSettings.sentenceGap || 0" @input="update('sentenceGap', Number(($event.target as HTMLInputElement).value))"></label>
++            <label><span>{{ props.i18n?.ttsParagraphGap || 'Paragraph gap' }} <b>{{ Number(ttsSettings.paragraphGap ?? 0.3).toFixed(1) }}s</b></span><input class="b3-slider" type="range" min="0" max="5" step="0.1" :value="ttsSettings.paragraphGap ?? 0.3" @input="update('paragraphGap', Number(($event.target as HTMLInputElement).value))"></label>
++          </div>
++        </details>
++      </div>
++    </section>
++  </Transition>
++</template>
++
++<script setup lang="ts">
++import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
++import { settingsManager, type ReaderSettings } from '@/composables/useSetting'
++import { TTS_STYLE_OPTIONS } from '@/fork/tts/settings'
++import { bookshelfManager } from '@/core/bookshelf'
++import { getTTSController } from '@/services/TTSPlayer'
++import { sortVoicesFlat, voiceDisplayLabel, type TTSVoice } from '@/services/TTSEngine'
++
++const props = defineProps<{ i18n?: any }>()
++const tts = getTTSController()
++const visible = ref(false)
++const expanded = ref(false)
++const popupRef = ref<HTMLElement>()
++const settings = ref<ReaderSettings | null>((window as any).__sireader_settings || null)
++const coverUrl = ref('')
++const voices = ref<TTSVoice[]>([])
++const loadingVoices = ref(false)
++const styleOptions = TTS_STYLE_OPTIONS
++const STYLE_LABELS: Record<string, string> = {
++  general: '通用', assistant: '助手', chat: '聊天', customerservice: '客服', newscast: '新闻',
++  affectionate: '亲切', calm: '平静', cheerful: '愉快', gentle: '温和', lyrical: '抒情', serious: '严肃',
++}
++let saveTimer: number | undefined
++
++const styleLabel = (s: string) => STYLE_LABELS[s] || s
++const voiceLabel = (voice: TTSVoice) => voiceDisplayLabel(voice)
++const ttsSettings = computed(() => settings.value?.tts || null)
++const voiceOptions = computed(() => {
++  const current = ttsSettings.value?.voice
++  const favorites = settings.value?.tts?.favoriteVoices || []
++  const list = sortVoicesFlat([
++    ...voices.value.filter(v => v.isLocal),
++    ...favorites.filter(v => !voices.value.some(local => local.name === v.name)),
++    ...voices.value.filter(v => !v.isLocal && !favorites.some(f => f.name === v.name)),
++  ])
++  return current && !list.some(v => v.name === current) ? [{ name: current, displayName: current, locale: '', isLocal: false }, ...list] : list
++})
++
++const position = () => nextTick(() => {
++  const btn = document.querySelector('#tts-btn') as HTMLElement | null
++  if (!btn || !popupRef.value) return
++  const rect = btn.getBoundingClientRect()
++  popupRef.value.style.right = `${window.innerWidth - rect.right}px`
++  popupRef.value.style.bottom = `${window.innerHeight - rect.top + 8}px`
++})
++const syncSettings = (e?: Event) => { settings.value = (e as CustomEvent)?.detail || (window as any).__sireader_settings || settings.value }
++const loadCover = async () => {
++  const info = (window as any).__sireader_bookInfo
++  if (info?.cover) { coverUrl.value = bookshelfManager.getCoverUrl(info); return }
++  const url = (window as any).__currentBookUrl
++  if (!url) return
++  try { const book = await bookshelfManager.getBook(url); if (book) coverUrl.value = bookshelfManager.getCoverUrl(book) } catch {}
++}
++const toggle = (event?: Event) => {
++  const open = (event as CustomEvent)?.detail?.open
++  visible.value = open === true ? true : !visible.value
++  if (visible.value) { syncSettings(); loadCover(); position() }
++}
++const clickOut = (e: MouseEvent) => { const target = e.target as HTMLElement | null; if (!target?.closest('#tts-btn,.tts-mini')) { visible.value = false; expanded.value = false } }
++const stop = () => { tts.destroy(); visible.value = false; expanded.value = false }
++const playOrPause = () => tts.isActive.value ? tts.togglePause() : window.dispatchEvent(new CustomEvent('tts:start-reader'))
++const loadVoices = async () => {
++  if (loadingVoices.value || voices.value.length) return
++  loadingVoices.value = true
++  try {
++    const { loadLocalVoices, loadOnlineVoices, PRESET_VOICES } = await import('@/services/TTSEngine')
++    const [local, online] = await Promise.allSettled([loadLocalVoices(), loadOnlineVoices()])
++    const locals = local.status === 'fulfilled' ? local.value : []
++    const onlines = online.status === 'fulfilled' ? online.value : []
++    const merged = [...locals, ...onlines]
++    const names = new Set(merged.map(v => v.name))
++    voices.value = [...merged, ...PRESET_VOICES.filter(v => !names.has(v.name))]
++  } finally { loadingVoices.value = false }
++}
++const saveSettings = () => { if (!settings.value) return; clearTimeout(saveTimer); saveTimer = window.setTimeout(() => settings.value && settingsManager.save(settings.value).catch(() => {}), 200) }
++const update = (key: string, value: unknown) => { if (!settings.value?.tts) return; (settings.value.tts as any)[key] = value; tts.updateConfig(settings.value.tts); saveSettings() }
++
++watch(tts.isActive, active => { if (!active) { visible.value = false; expanded.value = false } })
++onMounted(() => {
++  !settings.value && settingsManager.get().then(v => settings.value = v).catch(() => {})
++  window.addEventListener('tts:toggle-mini', toggle)
++  window.addEventListener('sireaderSettingsUpdated', syncSettings)
++  window.addEventListener('resize', position)
++  document.addEventListener('click', clickOut)
++})
++onUnmounted(() => { clearTimeout(saveTimer); window.removeEventListener('tts:toggle-mini', toggle); window.removeEventListener('sireaderSettingsUpdated', syncSettings); window.removeEventListener('resize', position); document.removeEventListener('click', clickOut) })
++</script>
++
++<style scoped>
++.tts-mini{position:fixed;z-index:99999;width:min(336px,calc(100vw - 16px));overflow:hidden;border:1px solid var(--b3-border-color);border-radius:12px;background:var(--b3-theme-surface);box-shadow:0 8px 24px #0003;color:var(--b3-theme-on-surface);backdrop-filter:blur(14px)}
++.tts-mini-bar{display:flex;align-items:center;gap:2px;padding:4px 5px}.tts-mini-main{display:flex;min-width:0;flex:1;align-items:center;gap:7px;border:0;background:none;color:inherit;text-align:left;cursor:pointer}.tts-mini-cover{display:flex;width:30px;height:30px;flex:none;align-items:center;justify-content:center;overflow:hidden;border-radius:7px;background:var(--b3-theme-background-light);color:var(--b3-theme-primary)}.tts-mini-cover img{width:100%;height:100%;object-fit:cover}.tts-mini-cover svg{width:16px;height:16px}.tts-mini-info{display:flex;min-width:0;flex:1;flex-direction:column;gap:1px}.tts-mini-info strong,.tts-mini-info span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tts-mini-info strong{font-size:12px}.tts-mini-info span{font-size:10px;color:var(--b3-theme-on-surface-variant)}.tts-mini-chevron{width:14px;height:14px;color:var(--b3-theme-on-surface-variant);transition:transform .18s}.tts-mini-chevron.rotated{transform:rotate(180deg)}
++.tts-mini-tools{display:flex;flex:none;align-items:center}.tts-mini-tools button{display:flex;width:27px;height:27px;align-items:center;justify-content:center;border:0;border-radius:50%;background:transparent;color:var(--b3-theme-on-surface-variant);cursor:pointer}.tts-mini-tools button:hover{background:var(--b3-theme-background-light);color:var(--b3-theme-primary)}.tts-mini-tools button.primary{background:var(--b3-theme-primary);color:var(--b3-theme-on-primary)}.tts-mini-tools svg{width:15px;height:15px}
++.tts-mini-panel{border-top:1px solid var(--b3-border-color);padding:8px 10px}.tts-mini-current{max-height:48px;overflow:auto;font-size:12px;line-height:1.5;color:var(--b3-theme-on-surface-variant)}.tts-mini-settings{margin-top:7px;border-top:1px solid var(--b3-border-color)}.tts-mini-settings summary{padding:7px 0 3px;cursor:pointer;font-size:11px}.tts-mini-fields{display:grid;grid-template-columns:1fr 1fr;gap:7px}.tts-mini-fields label{display:grid;gap:3px;font-size:10px;color:var(--b3-theme-on-surface-variant)}.tts-mini-fields label.wide{grid-column:1/-1;display:flex;align-items:center;gap:8px}.tts-mini-fields .wide select{min-width:0;flex:1;height:26px}.tts-mini-fields label span{display:flex;justify-content:space-between}.tts-mini-fields b{font-weight:500;color:var(--b3-theme-on-surface)}.tts-fade-enter-active,.tts-fade-leave-active{transition:opacity .15s,transform .15s}.tts-fade-enter-from,.tts-fade-leave-to{opacity:0;transform:translateY(5px)}
++@media(max-width:380px){.tts-mini-fields{grid-template-columns:1fr}.tts-mini-fields label.wide{grid-column:auto}}
++</style>
+diff --git a/src/fork/icons.ts b/src/fork/icons.ts
+new file mode 100644
+index 0000000..91a5e5a
+--- /dev/null
++++ b/src/fork/icons.ts
+@@ -0,0 +1,18 @@
++/** Extra lucide symbols used by fork TTS UI. Injected into the reader icon sprite. */
++export const FORK_ICON_SYMBOLS = `
++  <symbol id="lucide-chevrons-left" viewBox="0 0 24 24">
++    <path d="m11 17-5-5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
++    <path d="m18 17-5-5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
++  </symbol>
++  <symbol id="lucide-chevrons-right" viewBox="0 0 24 24">
++    <path d="m6 17 5-5-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
++    <path d="m13 17 5-5-5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
++  </symbol>
++`
++
++export function injectForkIcons() {
++  const sprite = document.querySelector('svg[data-sireader-icons]')
++  if (!sprite || sprite.querySelector('#lucide-chevrons-left')) return
++  const defs = sprite.querySelector('defs') || sprite
++  defs.insertAdjacentHTML('beforeend', FORK_ICON_SYMBOLS)
++}
+diff --git a/src/fork/index.ts b/src/fork/index.ts
+new file mode 100644
+index 0000000..d9d32bd
+--- /dev/null
++++ b/src/fork/index.ts
+@@ -0,0 +1,8 @@
++import { unlockAllFeatures } from './license'
++import { injectForkIcons } from './icons'
++
++/** Apply all secondary-development overlays. Call once during plugin init. */
++export function applyFork() {
++  unlockAllFeatures()
++  try { injectForkIcons() } catch {}
++}
+diff --git a/src/fork/license.ts b/src/fork/license.ts
+new file mode 100644
+index 0000000..e0045e9
+--- /dev/null
++++ b/src/fork/license.ts
+@@ -0,0 +1,6 @@
++import { LicenseManager, type LicenseInfo } from '@/core/license'
++
++/** Unlock all paid features (secondary-development override). */
++export function unlockAllFeatures() {
++  LicenseManager.can = (_feature: string, _license: LicenseInfo | null) => true
++}
+diff --git a/src/fork/tts/TTSEngine.ts b/src/fork/tts/TTSEngine.ts
+new file mode 100644
+index 0000000..1b7e3e7
+--- /dev/null
++++ b/src/fork/tts/TTSEngine.ts
+@@ -0,0 +1,433 @@
++// TTS 引擎：VoiceCraft 风格 HTTP Edge TTS + 语音列表管理
++declare const window: any
++
++const TRUSTED_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
++const VOICES_URL = `https://speech.platform.bing.com/consumer/speech/synthesize/readaloud/voices/list?trustedclienttoken=${TRUSTED_TOKEN}`
++const CACHE_TTL = 24 * 60 * 60 * 1000
++const OUTPUT_FORMAT = 'audio-24khz-48kbitrate-mono-mp3'
++const TOKEN_REFRESH_BEFORE_EXPIRY = 3 * 60
++const ENDPOINT_URL = 'https://dev.microsofttranslator.com/apps/endpoint?api-version=1.0'
++const SIGN_KEY_B64 = 'oik6PdDdMnOXemTbwvMn9de/h9lFnfBaCWbGMMZqqoSaQaqUOqjVGm5NqsmjcBI1x+sS9ugjB55HEJWRiFXYFw=='
++const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36 Edg/127.0.0.0'
++
++export const TTS_STYLES = [
++  'general', 'assistant', 'chat', 'customerservice', 'newscast',
++  'affectionate', 'calm', 'cheerful', 'gentle', 'lyrical', 'serious',
++] as const
++
++export const PRESET_VOICES: TTSVoice[] = [
++  { name: 'zh-CN-XiaoxiaoNeural', displayName: '晓晓 (女声·温柔)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-YunxiNeural', displayName: '云希 (男声·清朗)', locale: 'zh-CN', gender: 'Male' },
++  { name: 'zh-CN-YunyangNeural', displayName: '云扬 (男声·阳光)', locale: 'zh-CN', gender: 'Male' },
++  { name: 'zh-CN-XiaoyiNeural', displayName: '晓伊 (女声·甜美)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-YunjianNeural', displayName: '云健 (男声·稳重)', locale: 'zh-CN', gender: 'Male' },
++  { name: 'zh-CN-XiaochenNeural', displayName: '晓辰 (女声·知性)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaohanNeural', displayName: '晓涵 (女声·优雅)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaomengNeural', displayName: '晓梦 (女声·梦幻)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaomoNeural', displayName: '晓墨 (女声·文艺)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaoqiuNeural', displayName: '晓秋 (女声·成熟)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaoruiNeural', displayName: '晓睿 (女声·智慧)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaoshuangNeural', displayName: '晓双 (女声·活泼)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaoxuanNeural', displayName: '晓萱 (女声·清新)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaoyanNeural', displayName: '晓颜 (女声·柔美)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaoyouNeural', displayName: '晓悠 (女声·悠扬)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-XiaozhenNeural', displayName: '晓甄 (女声·端庄)', locale: 'zh-CN', gender: 'Female' },
++  { name: 'zh-CN-YunfengNeural', displayName: '云枫 (男声·磁性)', locale: 'zh-CN', gender: 'Male' },
++  { name: 'zh-CN-YunhaoNeural', displayName: '云皓 (男声·豪迈)', locale: 'zh-CN', gender: 'Male' },
++  { name: 'zh-CN-YunxiaNeural', displayName: '云夏 (男声·热情)', locale: 'zh-CN', gender: 'Male' },
++  { name: 'zh-CN-YunyeNeural', displayName: '云野 (男声·野性)', locale: 'zh-CN', gender: 'Male' },
++  { name: 'zh-CN-YunzeNeural', displayName: '云泽 (男声·深沉)', locale: 'zh-CN', gender: 'Male' },
++]
++
++export const toArrayBuffer = (buf: ArrayBuffer | Uint8Array | Buffer) => {
++  if (buf instanceof ArrayBuffer) return buf
++  const view = buf instanceof Uint8Array ? buf : new Uint8Array(buf as any)
++  return view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength)
++}
++
++export interface TTSVoice {
++  name: string
++  displayName: string
++  locale: string
++  gender: 'Male' | 'Female'
++  isLocal?: boolean
++}
++
++/**
++ * Edge TTS 粗粒度语种分组（按语言，不按地区变体）。
++ * 目录顺序对齐 Edge TTS locale 说明：中文 / 英语 / 西班牙语 / …
++ */
++export const LANGUAGE_LABELS: Record<string, string> = {
++  zh: '中文', en: '英语', es: '西班牙语', fr: '法语', de: '德语',
++  pt: '葡萄牙语', it: '意大利语', ja: '日语', ko: '韩语', ru: '俄语',
++  uk: '乌克兰语', pl: '波兰语', nl: '荷兰语', tr: '土耳其语',
++  hi: '印地语', th: '泰语', vi: '越南语', ar: '阿拉伯语',
++  ta: '泰米尔语', te: '泰卢固语', kn: '卡纳达语', ml: '马拉雅拉姆语',
++  bn: '孟加拉语', mr: '马拉地语', gu: '古吉拉特语', pa: '旁遮普语',
++  sv: '瑞典语', nb: '挪威语', nn: '挪威语', no: '挪威语', da: '丹麦语', fi: '芬兰语', is: '冰岛语',
++  id: '印尼语', ms: '马来语', fil: '菲律宾语', tl: '菲律宾语', my: '缅甸语',
++  el: '希腊语', cs: '捷克语', sk: '斯洛伐克语', hu: '匈牙利语', ro: '罗马尼亚语',
++  bg: '保加利亚语', hr: '克罗地亚语', sl: '斯洛文尼亚语', et: '爱沙尼亚语',
++  lv: '拉脱维亚语', lt: '立陶宛语', sr: '塞尔维亚语', mk: '马其顿语',
++  ca: '加泰罗尼亚语', gl: '加利西亚语', eu: '巴斯克语', cy: '威尔士语', ga: '爱尔兰语', mt: '马耳他语',
++  he: '希伯来语', fa: '波斯语', ur: '乌尔都语', si: '僧伽罗语', ne: '尼泊尔语',
++  km: '高棉语', lo: '老挝语', ka: '格鲁吉亚语', hy: '亚美尼亚语', az: '阿塞拜疆语', kk: '哈萨克语', uz: '乌兹别克语',
++  af: '南非荷兰语', zu: '祖鲁语', xh: '科萨语', yo: '约鲁巴语', ig: '伊博语', ha: '豪萨语', am: '阿姆哈拉语', sw: '斯瓦希里语', so: '索马里语',
++  qu: '克丘亚语',
++  other: '其他',
++}
++
++const LANGUAGE_ORDER = [
++  'zh', 'en', 'es', 'fr', 'de', 'pt', 'it', 'ja', 'ko', 'ru',
++  'uk', 'pl', 'nl', 'tr', 'hi', 'th', 'vi',
++  'ta', 'te', 'kn', 'ml', 'bn', 'mr', 'gu', 'pa',
++  'ar',
++  'sv', 'nb', 'nn', 'no', 'da', 'fi', 'is',
++  'id', 'ms', 'fil', 'tl', 'my',
++  'el', 'cs', 'sk', 'hu', 'ro', 'bg', 'hr', 'sl', 'et', 'lv', 'lt', 'sr',
++  'he', 'fa', 'ur', 'si',
++  'af', 'zu', 'xh', 'yo', 'ig', 'ha', 'am', 'sw',
++  'qu',
++] as const
++
++export const LOCALE_HINTS: Record<string, string> = {
++  'zh-CN': '简体', 'zh-TW': '台湾', 'zh-HK': '香港', 'zh-SG': '新加坡',
++  'zh-CN-liaoning': '辽宁', 'zh-CN-shaanxi': '陕西',
++  'en-US': '美国', 'en-GB': '英国', 'en-AU': '澳大利亚', 'en-CA': '加拿大', 'en-IN': '印度',
++  'en-IE': '爱尔兰', 'en-NZ': '新西兰', 'en-ZA': '南非', 'en-KE': '肯尼亚', 'en-NG': '尼日利亚',
++  'en-PH': '菲律宾', 'en-SG': '新加坡',
++  'es-ES': '西班牙', 'es-MX': '墨西哥', 'es-AR': '阿根廷', 'es-CO': '哥伦比亚', 'es-CL': '智利',
++  'es-PE': '秘鲁', 'es-US': '美国', 'es-VE': '委内瑞拉', 'es-CR': '哥斯达黎加', 'es-UY': '乌拉圭',
++  'fr-FR': '法国', 'fr-CA': '加拿大', 'fr-BE': '比利时', 'fr-CH': '瑞士',
++  'de-DE': '德国', 'de-AT': '奥地利', 'de-CH': '瑞士',
++  'pt-BR': '巴西', 'pt-PT': '葡萄牙',
++  'nl-NL': '荷兰', 'nl-BE': '比利时',
++  'ar-SA': '沙特', 'ar-EG': '埃及', 'ar-AE': '阿联酋', 'ar-MA': '摩洛哥',
++}
++
++export const languageOfLocale = (locale?: string) => {
++  const raw = (locale || '').trim()
++  if (!raw) return 'other'
++  const primary = raw.split(/[-_]/)[0]?.toLowerCase() || 'other'
++  return primary || 'other'
++}
++
++export const languageLabel = (lang: string) => {
++  const key = (lang || '').toLowerCase()
++  return LANGUAGE_LABELS[key] || key || '其他'
++}
++
++export const localeHint = (locale?: string) => {
++  const key = (locale || '').trim()
++  if (!key) return ''
++  if (LOCALE_HINTS[key]) return LOCALE_HINTS[key]
++  const lower = key.toLowerCase()
++  for (const [k, v] of Object.entries(LOCALE_HINTS)) {
++    if (lower === k.toLowerCase() || lower.startsWith(`${k.toLowerCase()}-`)) return v
++  }
++  return key
++}
++
++const languagePriority = (lang: string) => {
++  const i = (LANGUAGE_ORDER as readonly string[]).indexOf(lang)
++  return i >= 0 ? i : 900 + (lang.codePointAt(0) || 0)
++}
++
++/** Group voices by coarse language (中文/英语/西班牙语/…), not full locale. */
++export const groupVoicesByLocale = <T extends { locale?: string; displayName?: string; name?: string }>(voices: T[]) => {
++  const map = new Map<string, T[]>()
++  for (const v of voices) {
++    const lang = languageOfLocale(v.locale)
++    if (!map.has(lang)) map.set(lang, [])
++    map.get(lang)!.push(v)
++  }
++  return [...map.entries()]
++    .sort(([a], [b]) => languagePriority(a) - languagePriority(b) || a.localeCompare(b))
++    .map(([lang, list]) => ({
++      locale: lang,
++      label: languageLabel(lang),
++      voices: [...list].sort((x, y) => {
++        const la = (x.locale || '').localeCompare(y.locale || '')
++        if (la) return la
++        return (x.displayName || x.name || '').localeCompare(y.displayName || y.name || '', 'zh')
++      }),
++    }))
++}
++
++export const groupVoicesByLanguage = groupVoicesByLocale
++export const localeLabel = (locale: string) => languageLabel(languageOfLocale(locale))
++
++/** Flat list label: 「中文 · 晓晓」/「英语 · Jenny」 */
++export const voiceDisplayLabel = (voice: { displayName?: string; name?: string; locale?: string; isLocal?: boolean }) => {
++  const name = (voice.displayName || voice.name || '').trim() || '未知语音'
++  if (voice.isLocal) return `本地 · ${name}`
++  const lang = languageLabel(languageOfLocale(voice.locale))
++  const region = localeHint(voice.locale)
++  const prefix = region && region !== lang && region !== voice.locale ? `${lang}（${region}）` : lang
++  if (!voice.locale && lang === '其他') return name
++  return name.startsWith(`${prefix} · `) || name.startsWith(`${lang} · `) ? name : `${prefix} · ${name}`
++}
++
++/** Sort for flat lists: language order → locale → display name */
++export const sortVoicesFlat = <T extends { locale?: string; displayName?: string; name?: string; isLocal?: boolean }>(voices: T[]) =>
++  [...voices].sort((a, b) => {
++    if (!!a.isLocal !== !!b.isLocal) return a.isLocal ? -1 : 1
++    const pa = languagePriority(languageOfLocale(a.locale))
++    const pb = languagePriority(languageOfLocale(b.locale))
++    if (pa !== pb) return pa - pb
++    const la = (a.locale || '').localeCompare(b.locale || '')
++    if (la) return la
++    return (a.displayName || a.name || '').localeCompare(b.displayName || b.name || '', 'zh')
++  })
++
++let voiceCache: { at: number; voices: TTSVoice[] } | null = null
++let onlineVoiceTask: Promise<TTSVoice[]> | null = null
++let localVoiceTask: Promise<TTSVoice[]> | null = null
++let localVoiceCache: TTSVoice[] | null = null
++let tokenInfo: { endpoint: any; token: string; expiredAt: number } = { endpoint: null, token: '', expiredAt: 0 }
++
++const readVoiceCache = () => {
++  if (voiceCache) return voiceCache
++  try { return voiceCache = JSON.parse(localStorage.getItem('sireader:tts:voices') || 'null') } catch { return null }
++}
++const writeVoiceCache = (voices: TTSVoice[]) => {
++  voiceCache = { at: Date.now(), voices }
++  try { localStorage.setItem('sireader:tts:voices', JSON.stringify(voiceCache)) } catch {}
++}
++
++export async function loadOnlineVoices(): Promise<TTSVoice[]> {
++  const cached = readVoiceCache()
++  if (cached && Date.now() - cached.at < CACHE_TTL) return cached.voices
++  if (onlineVoiceTask) return onlineVoiceTask
++  onlineVoiceTask = (async () => {
++    try {
++      const res = await fetch(VOICES_URL, { referrerPolicy: 'no-referrer' })
++      if (!res.ok) throw new Error(`HTTP ${res.status}`)
++      const data = await res.json()
++      const voices: TTSVoice[] = data.map((v: any) => ({
++        name: v.ShortName || v.Name,
++        displayName: v.FriendlyName || v.DisplayName || v.ShortName,
++        locale: v.Locale,
++        gender: v.Gender === 'Male' ? 'Male' : 'Female',
++        isLocal: false,
++      }))
++      writeVoiceCache(voices)
++      return voices
++    }
++    catch {
++      return cached?.voices?.length ? cached.voices : PRESET_VOICES
++    }
++  })().finally(() => { onlineVoiceTask = null })
++  return onlineVoiceTask
++}
++
++export async function loadLocalVoices(): Promise<TTSVoice[]> {
++  if (!('speechSynthesis' in window)) return []
++  if (localVoiceCache) return localVoiceCache
++  if (localVoiceTask) return localVoiceTask
++  localVoiceTask = (async () => {
++    let voices = window.speechSynthesis.getVoices()
++    if (!voices.length) {
++      voices = await new Promise<SpeechSynthesisVoice[]>((resolve) => {
++        const handler = () => {
++          const v = window.speechSynthesis.getVoices()
++          if (v.length) {
++            window.speechSynthesis.removeEventListener('voiceschanged', handler)
++            resolve(v)
++          }
++        }
++        window.speechSynthesis.addEventListener('voiceschanged', handler)
++        setTimeout(() => {
++          window.speechSynthesis.removeEventListener('voiceschanged', handler)
++          resolve(window.speechSynthesis.getVoices())
++        }, 800)
++      })
++    }
++    return localVoiceCache = voices.map((v: SpeechSynthesisVoice) => ({
++      name: v.name,
++      displayName: v.name,
++      locale: v.lang || '',
++      gender: 'Female' as const,
++      isLocal: true,
++    }))
++  })().finally(() => { localVoiceTask = null })
++  return localVoiceTask
++}
++
++const escapeXmlText = (text: string) => text
++  .replace(/&/g, '&amp;')
++  .replace(/</g, '&lt;')
++  .replace(/>/g, '&gt;')
++  .replace(/"/g, '&quot;')
++  .replace(/'/g, '&apos;')
++
++/** Strip foliate SSML marks/tags → plain speaking text. */
++export const plainTextFromSSML = (input: string) => {
++  if (!input?.trim()) return ''
++  try {
++    if (input.includes('<') && typeof DOMParser !== 'undefined') {
++      const el = new DOMParser().parseFromString(input, 'application/xml').documentElement
++      if (el && el.localName !== 'parsererror' && !el.querySelector('parsererror')) {
++        return (el.textContent || '').replace(/\s+/g, ' ').trim()
++      }
++    }
++  }
++  catch {}
++  return input.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
++}
++
++const formatRate = (rate = 1) => {
++  const n = Math.round((rate - 1) * 100)
++  return `${n >= 0 ? '+' : ''}${n}%`
++}
++const formatPitchHz = (pitchHz = 0) => {
++  const n = Math.round(Number(pitchHz) || 0)
++  return `${n >= 0 ? '+' : ''}${n}Hz`
++}
++const formatVolume = (volume = 0) => {
++  const n = Math.round(Number(volume) || 0)
++  return `${n >= 0 ? '+' : ''}${n}%`
++}
++
++const getSsml = (text: string, voiceName: string, rate: string, pitch: string, volume: string, style: string) => {
++  const escaped = escapeXmlText(text)
++  const safeStyle = TTS_STYLES.includes(style as any) ? style : 'general'
++  return `<speak xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts" version="1.0" xml:lang="zh-CN">
++  <voice name="${voiceName}">
++    <mstts:express-as style="${safeStyle}" styledegree="2.0" role="default">
++      <prosody rate="${rate}" pitch="${pitch}" volume="${volume}">${escaped}</prosody>
++    </mstts:express-as>
++  </voice>
++</speak>`
++}
++
++const uuid = () => (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).replace(/-/g, '')
++
++const dateFormat = () => (`${new Date().toUTCString().replace(/GMT/, '').trim()} GMT`).toLowerCase()
++
++const base64ToBytes = (base64: string) => {
++  const binary = atob(base64)
++  const bytes = new Uint8Array(binary.length)
++  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
++  return bytes
++}
++
++const bytesToBase64 = (bytes: Uint8Array) => {
++  let s = ''
++  bytes.forEach(b => { s += String.fromCharCode(b) })
++  return btoa(s)
++}
++
++const hmacSha256 = async (key: Uint8Array, data: string) => {
++  const subtle = globalThis.crypto?.subtle
++  if (!subtle) throw new Error('WebCrypto is unavailable')
++  const cryptoKey = await subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
++  return new Uint8Array(await subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(data)))
++}
++
++const sign = async (urlStr: string) => {
++  const url = urlStr.split('://')[1]
++  const encodedUrl = encodeURIComponent(url)
++  const uuidStr = uuid()
++  const formattedDate = dateFormat()
++  const bytesToSign = `MSTranslatorAndroidApp${encodedUrl}${formattedDate}${uuidStr}`.toLowerCase()
++  const key = base64ToBytes(SIGN_KEY_B64)
++  const signData = await hmacSha256(key, bytesToSign)
++  return `MSTranslatorAndroidApp::${bytesToBase64(signData)}::${formattedDate}::${uuidStr}`
++}
++
++async function getEndpoint() {
++  const now = Date.now() / 1000
++  if (tokenInfo.token && tokenInfo.expiredAt && now < tokenInfo.expiredAt - TOKEN_REFRESH_BEFORE_EXPIRY) {
++    return tokenInfo.endpoint
++  }
++  const clientId = uuid()
++  try {
++    // Browser auto-sends Referer (e.g. http://127.0.0.1:6806/); Microsoft returns 401001 if present.
++    const response = await fetch(ENDPOINT_URL, {
++      method: 'POST',
++      referrerPolicy: 'no-referrer',
++      headers: {
++        'Accept-Language': 'zh-Hans',
++        'X-ClientVersion': '4.0.530a 5fe1dc6c',
++        'X-UserId': '0f04d16a175c411e',
++        'X-HomeGeographicRegion': 'zh-Hans-CN',
++        'X-ClientTraceId': clientId,
++        'X-MT-Signature': await sign(ENDPOINT_URL),
++        'User-Agent': USER_AGENT,
++        'Content-Type': 'application/json; charset=utf-8',
++      },
++    })
++    if (!response.ok) throw new Error(`获取 endpoint 失败: ${response.status}`)
++    const data = await response.json()
++    const jwt = data.t.split('.')[1]
++    const decodedJwt = JSON.parse(atob(jwt))
++    tokenInfo = { endpoint: data, token: data.t, expiredAt: decodedJwt.exp }
++    return data
++  }
++  catch (error) {
++    if (tokenInfo.token) return tokenInfo.endpoint
++    throw error
++  }
++}
++
++export class EdgeTTSCore {
++  private voice = 'zh-CN-XiaoxiaoNeural'
++
++  setVoice(voice: string) { if (voice) this.voice = voice }
++
++  close() { /* HTTP 无长连接 */ }
++
++  async toStream(text: string, rate = 1, pitchHz = 0, volume = 0, style = 'general'): Promise<Uint8Array> {
++    return this.synthesize(plainTextFromSSML(text) || text, rate, pitchHz, volume, style)
++  }
++
++  async toSSMLStream(ssml: string, rate = 1, pitchHz = 0, volume = 0, style = 'general'): Promise<Uint8Array> {
++    const text = plainTextFromSSML(ssml)
++    if (!text) throw new Error('TTS 文本为空')
++    return this.synthesize(text, rate, pitchHz, volume, style)
++  }
++
++  private async synthesize(text: string, rate = 1, pitchHz = 0, volume = 0, style = 'general', maxRetries = 3): Promise<Uint8Array> {
++    const clean = text.trim()
++    if (!clean) throw new Error('TTS 文本为空')
++    let lastError: Error | null = null
++    for (let attempt = 0; attempt <= maxRetries; attempt++) {
++      try {
++        const endpoint = await getEndpoint()
++        const url = `https://${endpoint.r}.tts.speech.microsoft.com/cognitiveservices/v1`
++        const response = await fetch(url, {
++          method: 'POST',
++          referrerPolicy: 'no-referrer',
++          headers: {
++            Authorization: endpoint.t,
++            'Content-Type': 'application/ssml+xml',
++            'User-Agent': USER_AGENT,
++            'X-Microsoft-OutputFormat': OUTPUT_FORMAT,
++          },
++          body: getSsml(clean, this.voice, formatRate(rate), formatPitchHz(pitchHz), formatVolume(volume), style),
++        })
++        if (!response.ok) {
++          const errorText = await response.text().catch(() => '')
++          if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
++            await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
++            continue
++          }
++          throw new Error(`Edge TTS API 错误: ${response.status} ${errorText}`)
++        }
++        const buf = new Uint8Array(await response.arrayBuffer())
++        if (!buf.length) throw new Error('No audio')
++        return buf
++      }
++      catch (error) {
++        lastError = error instanceof Error ? error : new Error(String(error))
++        if (attempt < maxRetries && /fetch|network|Failed to fetch|endpoint/i.test(lastError.message)) {
++          await new Promise(r => setTimeout(r, 500 * (attempt + 1)))
++          continue
++        }
++        if (attempt === maxRetries) break
++      }
++    }
++    throw lastError || new Error('TTS 合成失败')
++  }
++}
+diff --git a/src/fork/tts/TTSPlayer.ts b/src/fork/tts/TTSPlayer.ts
+new file mode 100644
+index 0000000..197a719
+--- /dev/null
++++ b/src/fork/tts/TTSPlayer.ts
+@@ -0,0 +1,455 @@
++import { ref } from 'vue'
++import { showMessage } from 'siyuan'
++import { TTS } from 'foliate-js/tts.js'
++import { textWalker } from 'foliate-js/text-walker.js'
++import { EdgeTTSCore, loadLocalVoices, toArrayBuffer } from './TTSEngine'
++import { ttsNodeFilter } from '@/services/TTSExtractor'
++import { OFFLINE_TTS_VOICE, synthesizeOfflineTTS } from '@/services/OfflineTTS'
++
++declare const window: any
++const BLOCK_SELECTOR = 'article,aside,blockquote,div,dl,dt,dd,figure,footer,form,h1,h2,h3,h4,h5,h6,header,li,main,ol,p,pre,section,tr'
++
++export class EdgeTTSPlayer {
++  private edge = new EdgeTTSCore()
++  private foliateTTS: any
++  private view: any
++  private doc?: Document
++  private renderer: any
++  private startRange?: Range
++  private config: any
++  private audioCtx = new AudioContext()
++  private stopped = false
++  private paused = false
++  private isLocal = false
++  private currentSource: any = null
++  private voiceTask: Promise<void>
++  private ticket = 0
++  private lastSpokenText = ''
++
++  constructor(source: Document | any, config: any, startRange?: Range) {
++    this.view = source?.initTTS ? source : null
++    this.doc = this.view ? undefined : source
++    this.renderer = this.view?.renderer
++    this.config = config
++    this.startRange = startRange
++    this.edge.setVoice(config.voice)
++    this.voiceTask = this.checkLocalVoice(config.voice)
++  }
++
++  private async checkLocalVoice(voiceName: string) {
++    if (!voiceName || voiceName === OFFLINE_TTS_VOICE.name) {
++      this.isLocal = false
++      return
++    }
++    const locals = await loadLocalVoices()
++    this.isLocal = locals.some(v => v.name === voiceName)
++  }
++
++  async updateConfig(config: any) {
++    const voiceChanged = config.voice && config.voice !== this.config.voice
++    this.config = { ...this.config, ...config }
++    if (!voiceChanged) return
++    this.edge.setVoice(config.voice)
++    await this.checkLocalVoice(config.voice)
++    this.stopCurrent()
++  }
++
++  private highlighter = (range: Range) => {
++    this.config.highlightText && this.renderer?.scrollToAnchor?.(range, true)
++  }
++
++  private stopCurrent() {
++    try { this.isLocal ? window.speechSynthesis.cancel() : this.currentSource?.stop?.() } catch {}
++    this.currentSource = null
++  }
++
++  private async initPipeline() {
++    if (this.view) {
++      await this.view.initTTS('sentence', ttsNodeFilter, this.highlighter)
++      this.foliateTTS = this.view.tts
++      this.renderer = this.view.renderer
++    } else if (this.doc) {
++      this.foliateTTS ||= new TTS(this.doc, textWalker, ttsNodeFilter, this.highlighter, 'sentence')
++    }
++  }
++
++  private textOf(ssml: string) {
++    try { return new DOMParser().parseFromString(ssml, 'application/xml').documentElement?.textContent?.trim() || '' }
++    catch { return ssml.replace(/<[^>]+>/g, ' ').trim() }
++  }
++
++  private ssmlOf(range?: Range, fallback = '') {
++    if (!range) return fallback
++    const doc = document.implementation.createHTMLDocument()
++    doc.body.appendChild(range.cloneContents())
++    return new TTS(doc, textWalker, ttsNodeFilter, () => {}, 'sentence').start() || fallback
++  }
++
++  private markSSML(ssml = '') {
++    const mark = /<mark\b[^>]*\bname="([^"]+)"/.exec(ssml)?.[1]
++    mark && this.foliateTTS?.setMark(mark)
++    // Foliate #speak(from mark) returns mark→end-of-block; only speak the current sentence range.
++    return this.ssmlOf(this.foliateTTS?.getLastRange?.(), ssml)
++  }
++
++  private firstSSML(fromCurrent: boolean) {
++    if (fromCurrent) return this.ssmlOf(this.foliateTTS?.getLastRange?.(), this.foliateTTS?.resume())
++    const range = this.startRange
++    this.startRange = undefined
++    // Prefer from(range); otherwise start() at first block — do NOT call nextMark() here
++    // (nextMark with lastMark=null advances to the *next* block and skips the first).
++    return this.markSSML(range ? this.foliateTTS?.from(range) : this.foliateTTS?.start())
++  }
++
++  private async nextSSML(paused = false) {
++    const raw = this.foliateTTS?.nextMark(paused || this.config.highlightText)
++    if (raw) return this.markSSML(raw)
++    if (!this.view || !this.config.autoTurnPage) return ''
++    const doc = this.foliateTTS?.doc
++    await this.view.next()
++    await this.view.initTTS('sentence', ttsNodeFilter, this.highlighter)
++    this.foliateTTS = this.view.tts
++    if (this.foliateTTS?.doc === doc) return ''
++    // After page turn, start at first sentence of the new document (not nextMark).
++    return this.markSSML(this.foliateTTS?.start())
++  }
++
++  private waitWhilePaused(ticket: number) {
++    return new Promise<void>((resolve) => {
++      const check = () => {
++        if (this.stopped || ticket !== this.ticket || !this.paused) return resolve()
++        setTimeout(check, 50)
++      }
++      check()
++    })
++  }
++
++  private async playSSML(ssml: string, ticket: number) {
++    while (this.paused && !this.stopped && ticket === this.ticket) await this.waitWhilePaused(ticket)
++    if (this.stopped || ticket !== this.ticket || !ssml) return
++    const text = this.textOf(ssml)
++    if (!text) return
++    // Guard against accidental duplicate utterance of the exact same sentence.
++    if (text === this.lastSpokenText) return
++    this.lastSpokenText = text
++    this.config.onBlock?.(text)
++    const range = this.foliateTTS?.getLastRange?.()
++    this.config.highlightText && range && this.renderer?.scrollToAnchor?.(range, true)
++    if (this.config.voice === OFFLINE_TTS_VOICE.name) return this.playOfflineText(text, ticket)
++    return this.isLocal ? this.playLocal(text, ticket) : this.playOnline(text, ticket)
++  }
++
++  private notifySpeakStart() {
++    this.config.onSpeakStart?.()
++  }
++
++  private playLocal(text: string, ticket: number) {
++    return new Promise<void>((resolve) => {
++      if (this.stopped || ticket !== this.ticket) return resolve()
++      const utterance = new SpeechSynthesisUtterance(text)
++      const voice = window.speechSynthesis.getVoices().find((v: any) => v.name === this.config.voice)
++      if (voice) utterance.voice = voice
++      utterance.rate = this.config.rate || 1
++      const pitchHz = Number(this.config.pitch) || 0
++      utterance.pitch = Math.max(0.5, Math.min(2, 1 + pitchHz / 100))
++      this.currentSource = utterance
++      utterance.onend = utterance.onerror = () => (this.currentSource = null, resolve())
++      this.notifySpeakStart()
++      window.speechSynthesis.speak(utterance)
++    })
++  }
++
++  private async playOnline(text: string, ticket: number) {
++    if (!text) return
++    const buf = await this.edge.toSSMLStream(
++      text,
++      this.config.rate || 1,
++      Number(this.config.pitch) || 0,
++      Number(this.config.volume) || 0,
++      this.config.style || 'general',
++    )
++    if (this.stopped || ticket !== this.ticket) return
++    while (this.paused && !this.stopped && ticket === this.ticket) await this.waitWhilePaused(ticket)
++    if (this.stopped || ticket !== this.ticket) return
++    let audioBuffer: AudioBuffer
++    try {
++      audioBuffer = await this.audioCtx.decodeAudioData(toArrayBuffer(buf))
++    }
++    catch {
++      throw new Error('音频解码失败')
++    }
++    this.stopCurrent()
++    const source = this.audioCtx.createBufferSource()
++    source.buffer = audioBuffer
++    source.connect(this.audioCtx.destination)
++    return new Promise<void>((resolve) => {
++      if (this.stopped || ticket !== this.ticket) return resolve()
++      this.currentSource = source
++      source.addEventListener('ended', () => (this.currentSource = null, resolve()), { once: true })
++      try {
++        this.notifySpeakStart()
++        source.start(0)
++      } catch { this.currentSource = null; resolve() }
++    })
++  }
++
++  private async playOfflineText(text: string, ticket: number) {
++    if (!text) return
++    const audio = await synthesizeOfflineTTS(text, this.config.rate || 1)
++    if (this.stopped || ticket !== this.ticket) return
++    while (this.paused && !this.stopped && ticket === this.ticket) await this.waitWhilePaused(ticket)
++    if (this.stopped || ticket !== this.ticket) return
++    if (this.audioCtx.state !== 'running') await this.audioCtx.resume()
++    const buffer = this.audioCtx.createBuffer(1, audio.samples.length, audio.sampleRate)
++    buffer.copyToChannel(audio.samples, 0)
++    this.stopCurrent()
++    const source = this.audioCtx.createBufferSource()
++    source.buffer = buffer
++    source.connect(this.audioCtx.destination)
++    return new Promise<void>((resolve) => {
++      if (this.stopped || ticket !== this.ticket) return resolve()
++      this.currentSource = source
++      source.addEventListener('ended', () => (this.currentSource = null, resolve()), { once: true })
++      try {
++        this.notifySpeakStart()
++        source.start(0)
++      } catch { this.currentSource = null; resolve() }
++    })
++  }
++
++  private async playFrom(ssml: string, ticket: number) {
++    if (!ssml) {
++      this.config.onSpeakStart?.()
++      return
++    }
++    while (!this.stopped && ticket === this.ticket && ssml) {
++      await this.playSSML(ssml, ticket)
++      if (this.stopped || ticket !== this.ticket) break
++      while (this.paused && !this.stopped && ticket === this.ticket) await this.waitWhilePaused(ticket)
++      if (this.stopped || ticket !== this.ticket) break
++      const prev = this.foliateTTS?.getLastRange?.()
++      this.lastSpokenText = '' // allow identical wording on a later sentence
++      ssml = await this.nextSSML()
++      if (!ssml) break
++      const gap = this.gapOf(prev, this.foliateTTS?.getLastRange?.())
++      if (gap > 0) {
++        await this.delay(gap)
++        while (this.paused && !this.stopped && ticket === this.ticket) await this.waitWhilePaused(ticket)
++        if (this.stopped || ticket !== this.ticket) break
++      }
++    }
++  }
++
++  private blockOf(range?: Range) {
++    const node = range?.startContainer
++    const el = node?.nodeType === Node.ELEMENT_NODE ? node as Element : node?.parentElement
++    return el?.closest?.(BLOCK_SELECTOR)
++  }
++
++  private gapOf(prev?: Range, next?: Range) {
++    return 1000 * (this.blockOf(prev) && this.blockOf(prev) !== this.blockOf(next)
++      ? this.config.paragraphGap ?? 0.3
++      : this.config.sentenceGap ?? 0)
++  }
++
++  private delay(ms: number) {
++    return ms > 0 ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve()
++  }
++
++  async play(fromCurrent = false) {
++    await this.initPipeline()
++    await this.voiceTask
++    this.stopped = this.paused = false
++    this.lastSpokenText = ''
++    await this.playFrom(this.firstSSML(fromCurrent), ++this.ticket)
++  }
++
++  jump(delta: number) {
++    if (!this.foliateTTS) {
++      this.config.onSpeakStart?.()
++      return
++    }
++    const ticket = ++this.ticket
++    const seek = delta < 0 ? this.markSSML(this.foliateTTS.prevMark(true)) : this.nextSSML(true)
++    this.stopped = this.paused = false
++    this.lastSpokenText = ''
++    this.stopCurrent()
++    Promise.resolve(seek).then(ssml => this.playFrom(ssml, ticket))
++  }
++
++  pause() { this.paused = true; this.isLocal ? window.speechSynthesis.pause() : this.currentSource?.context?.suspend() }
++  resume() {
++    if (!this.paused) return
++    this.paused = false
++    this.isLocal ? window.speechSynthesis.resume() : this.currentSource?.context?.resume()
++  }
++
++  stop() {
++    this.stopped = true
++    this.paused = false
++    this.ticket++
++    this.lastSpokenText = ''
++    this.stopCurrent()
++    this.edge.close()
++  }
++}
++
++export class TTSController {
++  private player: EdgeTTSPlayer | null = null
++  private loopText: string | null = null
++  public isActive = ref(false)
++  public isLoading = ref(false)
++  public paused = ref(false)
++  public title = ref('')
++  public currentText = ref('')
++
++  async speak(text: string, config: any, title = '选中文本') {
++    return this.playText(text, config, title, true)
++  }
++
++  async playText(text: string, config: any, title = '朗读中', loop = false) {
++    if (!config?.enabled || !text?.trim()) return
++    if (this.isActive.value) return this.togglePause()
++    return this.restartText(text, config, title, loop)
++  }
++
++  /** Always stop and restart plain-text / loop playback (ignores pause toggle). */
++  async restartText(text: string, config: any, title = '朗读中', loop = false) {
++    if (!config?.enabled || !text?.trim()) return
++    this.beginPlayback(title)
++    const trimmed = text.trim()
++    this.loopText = loop ? trimmed : null
++    try {
++      if (loop) await this.playLoop(config)
++      else await this.playDocument(trimmed, config)
++    }
++    catch (error) { showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error') }
++    finally { if (!this.loopText && !this.paused.value) this.reset() }
++  }
++
++  private playerConfig(config: any) {
++    return {
++      ...config,
++      onBlock: (text: string) => this.currentText.value = text,
++      onSpeakStart: () => { this.isLoading.value = false },
++    }
++  }
++
++  private beginPlayback(title: string) {
++    this.stop()
++    this.paused.value = false
++    this.isLoading.value = true
++    this.isActive.value = true
++    this.title.value = title
++  }
++
++  private async playDocument(text: string, config: any) {
++    const doc = document.implementation.createHTMLDocument(), p = doc.createElement('p')
++    p.textContent = text
++    doc.body.appendChild(p)
++    this.player = new EdgeTTSPlayer(doc, this.playerConfig(config))
++    await this.player.play()
++  }
++
++  private waitWhileControllerPaused() {
++    return new Promise<void>((resolve) => {
++      const check = () => {
++        if (!this.loopText || !this.paused.value) return resolve()
++        setTimeout(check, 50)
++      }
++      check()
++    })
++  }
++
++  private async playLoop(config: any) {
++    while (this.loopText) {
++      while (this.loopText && this.paused.value) await this.waitWhileControllerPaused()
++      if (!this.loopText) break
++      const doc = document.implementation.createHTMLDocument(), p = doc.createElement('p')
++      p.textContent = this.loopText
++      doc.body.appendChild(p)
++      this.player = new EdgeTTSPlayer(doc, this.playerConfig(config))
++      await this.player.play()
++      if (!this.loopText) break
++    }
++  }
++
++  async toggle(getReader: () => any, config: any, selection?: { text: string; range?: Range }, title = '朗读中') {
++    if (!config?.enabled) return
++    if (this.isActive.value) return this.togglePause()
++    return this.restart(getReader, config, selection, title)
++  }
++
++  /** Always stop and restart from selection or current visible page (ignores pause toggle). */
++  async restart(getReader: () => any, config: any, selection?: { text: string; range?: Range }, title = '朗读中') {
++    if (!config?.enabled) return
++    this.beginPlayback(title)
++    try {
++      const { view, doc, renderer, location } = this.getDocument(getReader)
++      if (!view && !doc?.body) throw new Error('无法获取文档内容')
++      const startRange = selection?.range || (renderer && doc && this.getVisibleRange(renderer, doc, location))
++      this.player = new EdgeTTSPlayer(view || doc, this.playerConfig(config), startRange)
++      await this.player.play()
++      if (!this.paused.value) this.reset()
++    } catch (error) { this.reset(); showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error') }
++  }
++
++  cancelLoop() { this.loopText && this.destroy() }
++  updateConfig(config: any) { this.player?.updateConfig(config) }
++  jump(delta: number) {
++    if (!this.isActive.value) return
++    this.paused.value = false
++    this.isLoading.value = true
++    this.player?.jump(delta)
++  }
++  togglePause() {
++    if (!this.isActive.value || this.isLoading.value) return
++    this.paused.value = !this.paused.value
++    this.paused.value ? this.player?.pause() : this.player?.resume()
++  }
++  stop() {
++    this.loopText = null
++    this.player?.stop()
++    this.player = null
++    this.currentText.value = ''
++    this.isLoading.value = false
++  }
++  destroy() { this.stop(); this.reset() }
++  sync(tts: { enabled?: boolean } | boolean | null | undefined) {
++    if (tts === false || tts == null) return this.destroy()
++    if (typeof tts === 'boolean') return tts ? undefined : this.destroy()
++    if (!tts.enabled) return this.destroy()
++    this.updateConfig(tts)
++  }
++
++  private getDocument(getReader: () => any) {
++    const view = getReader()?.getView?.()
++    let doc: Document | null = null, renderer: any = null, location: any = null
++    if (view?.renderer) doc = view.renderer.getContents?.()?.[0]?.doc, renderer = view.renderer, location = view.lastLocation
++    if (!doc?.body) doc = document, renderer = null
++    return { view, doc, renderer, location }
++  }
++
++  private getVisibleRange(renderer: any, doc: Document, location?: any) {
++    try {
++      if (renderer?.lastVisibleRange) return renderer.lastVisibleRange
++      if (location?.range) return location.range
++      for (const tag of ['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote']) {
++        for (const el of Array.from(doc.querySelectorAll(tag))) {
++          const text = el.textContent?.trim()
++          if (text && text.length > 10) { const range = doc.createRange(); range.selectNodeContents(el); return range }
++        }
++      }
++    } catch {}
++  }
++
++  private reset() {
++    this.isActive.value = this.paused.value = this.isLoading.value = false
++    this.player = null
++    this.title.value = ''
++    this.currentText.value = ''
++  }
++}
++
++let globalTTSController: TTSController | null = null
++export const getTTSController = () => globalTTSController || (globalTTSController = new TTSController())
+diff --git a/src/fork/tts/pdfSpeakCommand.ts b/src/fork/tts/pdfSpeakCommand.ts
+new file mode 100644
+index 0000000..1ff35cb
+--- /dev/null
++++ b/src/fork/tts/pdfSpeakCommand.ts
+@@ -0,0 +1,13 @@
++/** Factory for EmbedPDF selection "speak" command (fork overlay). */
++export function pdfSpeakCommand(props: { i18n?: any; settings?: any }) {
++  return [
++    'speak',
++    props.i18n?.ttsPlay || '朗读',
++    'volume',
++    async (mark: any) => {
++      const { getTTSController } = await import('@/services/TTSPlayer')
++      const tts = props.settings?.tts || (window as any).__sireader_settings?.tts
++      getTTSController().speak(mark.text, tts)
++    },
++  ] as const
++}
+diff --git a/src/fork/tts/readerControls.ts b/src/fork/tts/readerControls.ts
+new file mode 100644
+index 0000000..635a7a5
+--- /dev/null
++++ b/src/fork/tts/readerControls.ts
+@@ -0,0 +1,105 @@
++import { computed, type ComputedRef, type Ref } from 'vue'
++import { showMessage } from 'siyuan'
++import { getTTSController } from '@/services/TTSPlayer'
++
++export type ReaderTtsDeps = {
++  getReader: () => any
++  currentView: Ref<any>
++  currentSettings: Ref<any>
++  isEmbedPdfMode: ComputedRef<boolean>
++  embedPdfPages: Ref<any>
++  i18n: ComputedRef<any>
++  can: ComputedRef<(feature: string) => boolean>
++  showUpgrade: (name: string) => void
++  getBookName: () => string
++  isEpubScrollMode: () => boolean
++  clearReadingSelection?: () => void
++}
++
++export function createReaderTtsControls(deps: ReaderTtsDeps) {
++  const ttsController = getTTSController()
++  const ttsEnabled = computed(() => deps.currentSettings.value?.tts?.enabled || false)
++  const ttsActive = computed(() => ttsController.isActive.value)
++  const ttsLoading = computed(() => ttsController.isLoading.value)
++  const ttsPaused = computed(() => ttsController.paused.value)
++  const ttsPlaying = computed(() => ttsController.isActive.value && !ttsController.paused.value && !ttsController.isLoading.value)
++
++  const getReadingSelection = () => {
++    try {
++      const reader = deps.getReader()
++      for (const { doc } of reader?.getView?.()?.renderer?.getContents?.() || []) {
++        const sel = doc.defaultView?.getSelection?.()
++        if (sel && !sel.isCollapsed && sel.rangeCount) {
++          const text = sel.toString().trim()
++          if (text) return { text, range: sel.getRangeAt(0).cloneRange() }
++        }
++      }
++      const sel = document.getSelection()
++      if (sel && !sel.isCollapsed && sel.rangeCount) {
++        const text = sel.toString().trim()
++        if (text) return { text, range: sel.getRangeAt(0).cloneRange() }
++      }
++    } catch {}
++  }
++
++  const startTTS = async (fromPageOnly = false) => {
++    const tts = deps.currentSettings.value?.tts
++    if (deps.isEmbedPdfMode.value) {
++      if (!fromPageOnly) {
++        const selected = await deps.currentView.value?.getSelectionText?.()
++        if (selected?.trim()) return ttsController.restartText(selected.trim(), tts, '选中文本', true)
++      }
++      const page = deps.embedPdfPages.value?.getCurrentPage?.() || 1
++      const text = await deps.currentView.value?.getPageText?.(page)
++      if (!text?.trim()) return showMessage(deps.i18n.value.ttsNoText || '当前页无文本', 2000, 'info')
++      return ttsController.restartText(text.trim(), tts, deps.getBookName(), false)
++    }
++    const selection = fromPageOnly ? undefined : getReadingSelection()
++    deps.clearReadingSelection?.()
++    return ttsController.restart(() => deps.getReader(), tts, selection?.range ? { text: selection.text, range: selection.range } : undefined, deps.getBookName())
++  }
++
++  const toggleTTS = async () => {
++    if (!deps.can.value('tts')) return deps.showUpgrade(deps.i18n.value.ttsReading || 'TTS朗读')
++    if (ttsController.isActive.value) return ttsController.togglePause()
++    return startTTS(false)
++  }
++
++  const restartTTS = async () => {
++    if (!deps.can.value('tts')) return deps.showUpgrade(deps.i18n.value.ttsReading || 'TTS朗读')
++    return startTTS(true)
++  }
++
++  const jumpTTS = async (delta: number) => {
++    if (deps.isEmbedPdfMode.value) {
++      return deps.embedPdfPages.value?.[delta < 0 ? 'scrollToPreviousPage' : 'scrollToNextPage']?.('smooth')
++    }
++    const reader = deps.getReader()
++    if (!reader) return
++    if (deps.isEpubScrollMode()) return delta < 0 ? reader.prev() : reader.next()
++    return delta < 0 ? reader.goLeft() : reader.goRight()
++  }
++
++  const stopTTS = () => ttsController.destroy()
++  // Compatible with upstream sync(enabled: boolean) + updateConfig(settings)
++  const syncTTS = async () => {
++    const tts = deps.currentSettings.value?.tts
++    ttsController.sync(!!tts?.enabled)
++    if (tts) ttsController.updateConfig?.(tts)
++  }
++
++  return {
++    ttsController,
++    ttsEnabled,
++    ttsActive,
++    ttsLoading,
++    ttsPaused,
++    ttsPlaying,
++    startTTS,
++    toggleTTS,
++    restartTTS,
++    jumpTTS,
++    stopTTS,
++    syncTTS,
++  }
++}
+diff --git a/src/fork/tts/settings.ts b/src/fork/tts/settings.ts
+new file mode 100644
+index 0000000..af1ae74
+--- /dev/null
++++ b/src/fork/tts/settings.ts
+@@ -0,0 +1,73 @@
++/** Fork TTS settings extensions (volume / style / pitch Hz). */
++
++export interface TTSVoice {
++  name: string
++  displayName: string
++  locale: string
++  isLocal?: boolean
++  gender?: 'Male' | 'Female'
++  isOffline?: boolean
++}
++
++export interface TTSSettings {
++  enabled: boolean
++  voice: string
++  rate: number
++  pitch: number
++  volume: number
++  style: string
++  sentenceGap: number
++  paragraphGap: number
++  autoTurnPage: boolean
++  highlightText: boolean
++  favoriteVoices?: TTSVoice[]
++}
++
++export const TTS_STYLE_OPTIONS = [
++  'general', 'assistant', 'chat', 'customerservice', 'newscast',
++  'affectionate', 'calm', 'cheerful', 'gentle', 'lyrical', 'serious',
++] as const
++
++/** Migrate legacy pitch multiplier (0.5–2) → Hz offset (-50…50). */
++export const migrateTtsPitch = (pitch: unknown) => {
++  const n = Number(pitch)
++  if (!Number.isFinite(n)) return 0
++  if (n > 0 && n <= 2) return Math.round((n - 1) * 50)
++  return Math.max(-50, Math.min(50, Math.round(n)))
++}
++
++export const DEFAULT_TTS_SETTINGS: TTSSettings = {
++  enabled: false,
++  voice: 'zh-CN-XiaoxiaoNeural',
++  rate: 1.0,
++  pitch: 0,
++  volume: 0,
++  style: 'general',
++  sentenceGap: 0,
++  paragraphGap: 0.3,
++  autoTurnPage: true,
++  highlightText: true,
++  favoriteVoices: [],
++}
++
++export const normalizeTtsSettings = (tts?: Partial<TTSSettings> | null): TTSSettings => {
++  const merged = { ...DEFAULT_TTS_SETTINGS, ...(tts || {}) }
++  return {
++    ...merged,
++    pitch: migrateTtsPitch(merged.pitch),
++    volume: Math.max(-50, Math.min(50, Math.round(Number(merged.volume) || 0))),
++    style: TTS_STYLE_OPTIONS.includes(merged.style as any) ? merged.style : 'general',
++    favoriteVoices: Array.isArray(merged.favoriteVoices) ? merged.favoriteVoices : [],
++  }
++}
++
++/** Fork UI items for Settings.vue TTS section (replaces upstream ttsItems). */
++export const forkTtsItems = (r: (k: string, min: number, max: number, step: number, unit?: string) => any) => [
++  { key: 'enabled', type: 'checkbox' as const },
++  r('rate', 0.5, 2.0, 0.1, 'x'),
++  r('pitch', -50, 50, 5, 'Hz'),
++  r('volume', -50, 50, 5, '%'),
++  { key: 'style', opts: [...TTS_STYLE_OPTIONS], labels: TTS_STYLE_OPTIONS.map(s => `ttsStyle_${s}`) },
++  r('sentenceGap', 0, 3, 0.1, 's'),
++  r('paragraphGap', 0, 5, 0.1, 's'),
++]
+diff --git a/src/i18n/en_US.json b/src/i18n/en_US.json
+index db757c3..b7809f8 100644
+--- a/src/i18n/en_US.json
++++ b/src/i18n/en_US.json
+@@ -69,7 +69,7 @@
+   "notSelected": "Not selected",
+   "searchDoc": "Search documents",
+   "searchDocDesc": "Enter keywords to find documents",
+-  "searchDocPlaceholder": "Press Enter to search",
++  "searchDocPlaceholder": "Search documents...",
+   "selectDoc": "Select Document",
+   "usageTitle": "How it works",
+   "pageAnimation": "Page-turn style",
+@@ -137,7 +137,7 @@
+   "loadingNext": "Loading next chapter...",
+   "tocBtn": "Contents",
+   "prevBtn": "Previous",
+-  "nextBtn": "Next", 
++  "nextBtn": "Next",
+   "settingsBtn": "Settings",
+   "highlight": "Highlight",
+   "underline": "Underline",
+@@ -181,7 +181,7 @@
+   "inputNote": "Add a note (optional)",
+   "inputTags": "Tags",
+   "pdfMigrated": "Migrated {count} PDF annotations",
+-  "page": "Page ",
++  "page": "Page",
+   "pageSuffix": "",
+   "searchChapter": "Search chapters...",
+   "loadingToc": "Loading table of contents...",
+@@ -334,9 +334,8 @@
+   "prevChapter": "Previous Chapter",
+   "nextChapter": "Next Chapter",
+   "note": "Note",
+-  "mark": "Mark",
++  "mark": "Annotation",
+   "sendTo": "Send to",
+-  "searchDocPlaceholder": "Search documents...",
+   "copy": "Copy",
+   "copied": "Copied",
+   "dict": "Dictionary",
+@@ -350,7 +349,6 @@
+   "parentDocDesc": "Select parent document for annotations",
+   "tabInterface": "Interface",
+   "tabAppearance": "Appearance",
+-  "viewDetail": "View Details",
+   "copySettings": "Copy Settings",
+   "noteInsert": "Note Insert",
+   "noteInsertTarget": "Insert Target",
+@@ -390,7 +388,6 @@
+   "import": "Import",
+   "bindDoc": "Bind Document",
+   "imported": "Imported",
+-  "importFailed": "Import failed",
+   "noBindDoc": "No bound document",
+   "openBlock": "Open Block",
+   "bound": "Bound",
+@@ -534,7 +531,7 @@
+   "unread": "Unread",
+   "reading": "Reading",
+   "finished": "Finished",
+-  "group": "Group",
++  "group": "Groups",
+   "groups": "Groups",
+   "recentRead": "Recently Read",
+   "toolbarBack": "Back",
+@@ -615,233 +612,216 @@
+   "copyText": "Copy Text",
+   "copyChapter": "Copy Chapter",
+   "pdfKeepTool": "Keep the selected tool active after drawing",
+-  "copyBacklink": "Copy Backlink",
++  "copyBacklink": "Copy backlink",
+   "redaction": "Redaction",
+-  "copyScreenshot": "Copy Screenshot",
+-  "copyImage": "Copy Image",
+-  "exportImage": "Export Image",
+-  "markImage": "Annotate Image",
+-  "copyTable": "Copy Table",
+-  "locateTable": "Locate Table"
+-  ,"ttsOfflinePack": "Offline Voice Pack"
+-  ,"ttsOfflinePackDesc": "Download for offline TTS"
+-  ,"intro": "Introduction"
+-  ,"addToShelf": "Add to Shelf"
+-  ,"downloadAddToShelf": "Download to Shelf"
+-  ,"pdfThumbnailsOnly": "Thumbnails are available for PDF only"
+-  ,"unnamedChapter": "Unnamed chapter"
+-  ,"copyFailed": "Copy failed"
+-  ,"exportFailed": "Export failed"
+-  ,"copiedText": "Text copied"
+-  ,"pdfCopyChapterUnsupported": "PDF does not support copying chapter text from the table of contents"
+-  ,"copiedChapter": "Chapter text copied"
+-  ,"copyChapterFailed": "Failed to copy chapter text"
+-  ,"bookmarkUnavailable": "Bookmark feature is not initialized"
+-  ,"bookmarkAdded": "Bookmark added"
+-  ,"bookmarkRemoved": "Bookmark removed"
+-  ,"operationFailed": "Operation failed"
+-  ,"filterAnnotations": "Filter annotations"
+-  ,"reverseSort": "Reverse sort"
+-  ,"resetFilter": "Reset filters"
+-  ,"done": "Done"
+-  ,"marksSearchPlaceholder": "Search annotations, notes, bookmarks, ink, and shapes"
+-  ,"filtering": "Filtering"
+-  ,"allAnnotations": "All annotations"
+-  ,"showPdfAnnotations": "Show PDF annotations"
+-  ,"hidePdfAnnotations": "Hide PDF annotations"
+-  ,"type": "Type"
+-  ,"textStyle": "Text Style"
+-  ,"additionalCondition": "Additional condition"
+-  ,"withNote": "With notes"
+-  ,"noBooks": "No books"
+-  ,"noContent": "No content"
+-  ,"updated": "Updated"
+-  ,"marksUnavailable": "Annotation system is not initialized"
+-  ,"deleteFailed": "Delete failed"
+-  ,"bookNotFound": "Book not found"
+-  ,"sortTime": "Time"
+-  ,"sortDate": "Date"
+-  ,"sortChapter": "Chapter"
+-  ,"sortPage": "Page"
+-  ,"sortName": "Name"
+-  ,"sortCustom": "Custom"
+-  ,"invalidBookLink": "Invalid book link"
+-  ,"fileNotFound": "File not found"
+-  ,"addFailed": "Failed to add"
+-  ,"ttsReading": "Reading aloud"
+-  ,"onlineUrlEmpty": "Online reading URL is empty"
+-  ,"prevPage": "Previous page"
+-  ,"nextPage": "Next page"
+-  ,"toggleBookmark": "Toggle bookmark"
+-  ,"quickNote": "Quick note"
+-  ,"unknownAuthor": "Unknown Author"
+-  ,"unnamedBook": "Unnamed book"
+-  ,"readingCompleteMotto": "Reading complete"
+-  ,"openingMotto": "A good book awaits"
+-  ,"readingComplete": "Reading complete"
+-  ,"readyToRead": "Ready to read"
+-  ,"booksUnit": "books"
+-  ,"failed": "Failed"
+-  ,"parsing": "Parsing..."
+-  ,"pendingImport": "Pending import"
+-  ,"noContentFound": "No content found"
+-  ,"emptyBookshelfHint": "No books yet. Click Add Content in the top right."
+-  ,"confirmDelete": "Delete"
+-  ,"deletePermanently": "Delete permanently"
+-  ,"confirmDeletePermanently": "Confirm permanent deletion"
+-  ,"enterLinks": "Enter Links"
+-  ,"importLinksPlaceholder": "One local path, file link, web URL, or cloud link per line"
+-  ,"parseLinks": "Parse Links"
+-  ,"cloudPathPlaceholder": "Enter cloud path"
+-  ,"keywordPlaceholder": "Enter keywords to search"
+-  ,"input": "Input"
+-  ,"browseAll": "Browse All"
+-  ,"selectAllImport": "Select All"
+-  ,"deselectAll": "Deselect All"
+-  ,"importSettings": "Import Settings"
+-  ,"tagsCommaPlaceholder": "Add tags, separated by commas"
+-  ,"searchGroups": "Search groups..."
+-  ,"groupSort": "Group Order"
+-  ,"existingGroups": "Existing Groups"
+-  ,"resetOrganize": "Reset"
+-  ,"noGroups": "No groups"
+-  ,"sourceText": "Source text"
+-  ,"translatedText": "Translation"
+-  ,"targetLanguage": "Target language"
+-  ,"translating": "Translating..."
+-  ,"translationFailed": "Translation failed"
+-  ,"annotationAdded": "Annotation added"
+-  ,"adding": "Adding..."
+-  ,"addAsAnnotation": "Add as annotation"
+-  ,"ttsControl": "Reading controls"
+-  ,"expandTts": "Expand reading controls"
+-  ,"cover": "Cover"
+-  ,"ttsReadingTitle": "Reading aloud"
+-  ,"ttsPaused": "Paused"
+-  ,"previousSentence": "Previous sentence"
+-  ,"nextSentence": "Next sentence"
+-  ,"pause": "Pause"
+-  ,"play": "Play"
+-  ,"voice": "Voice"
+-  ,"showTopToolbar": "Show top toolbar"
+-  ,"hideTopToolbar": "Hide top toolbar"
+-  ,"pdfOperationFailed": "PDF operation failed"
+-  ,"annotationMigrationDone": "Annotation migration complete"
+-  ,"annotationMigrating": "Migrating annotations"
+-  ,"pdfAnnotationCommitFailed": "Failed to commit PDF annotations. Export diagnostic logs for details."
+-  ,"pdfAnnotationReadFailed": "Failed to read PDF annotations. Existing records were preserved. Export diagnostic logs for details."
+-  ,"pdfAnnotationSaveFailed": "Failed to save PDF annotations. Export diagnostic logs for details."
+-  ,"loadingQr": "Loading QR code..."
+-  ,"membershipQr": "Membership QR code"
+-  ,"downloading": "Downloading"
+-  ,"downloaded": "Downloaded"
+-  ,"downloadVoicePack": "Download Voice Pack"
+-  ,"previousResult": "Previous result"
+-  ,"nextResult": "Next result"
+-  ,"jumpToProgress": "Jump to reading progress"
+-  ,"quickMark": "Quick annotation"
+-  ,"exitQuickMark": "Exit quick annotation"
+-  ,"sidebarToc": "Table of Contents"
+-  ,"sidebarAnnotation": "Annotations"
+-  ,"sidebarSettings": "Settings"
+-  ,"permanent": "Permanent"
+-  ,"validUntil": "Valid until"
+-  ,"copy": "Copy"
+-  ,"copied": "Copied"
+-  ,"copyFailed": "Copy failed"
+-  ,"noContent": "No content"
+-  ,"translate": "Translate"
+-  ,"dict": "Dictionary"
+-  ,"capture": "Drag to select a screenshot area"
+-  ,"close": "Close"
+-  ,"copyScreenshot": "Copy screenshot"
+-  ,"copyBacklink": "Copy backlink"
+-  ,"sendTo": "Send to"
+-  ,"redaction": "Redaction"
+-  ,"pdfKeepTool": "Keep the selected tool active after drawing"
+-  ,"copyImage": "Copy image"
+-  ,"exportImage": "Export image"
+-  ,"markImage": "Annotate image"
+-  ,"copyTable": "Copy table"
+-  ,"locateTable": "Locate table"
+-  ,"pdfCopyAnnotationLink": "Copy annotation backlink"
+-  ,"pdfDictAnnotation": "Annotation dictionary"
+-  ,"pdfTranslateAnnotation": "Translate annotation"
+-  ,"pdfCreateHole": "Redact selection"
+-  ,"pdfDictSelection": "Selection dictionary"
+-  ,"pdfTranslateSelection": "Translate selection"
+-  ,"pdfSendSelection": "Send selection"
+-  ,"pdfSendAnnotation": "Send annotation"
+-  ,"pdfCaptureCopy": "Copy screenshot"
+-  ,"pdfZoomIn": "Zoom in"
+-  ,"pdfZoomOut": "Zoom out"
+-  ,"pdfFitPage": "Fit page"
+-  ,"pdfFitWidth": "Fit width"
+-  ,"pdfMarqueeZoom": "Marquee zoom"
+-  ,"pdfRotateClockwise": "Rotate clockwise"
+-  ,"pdfRotateCounterClockwise": "Rotate counter-clockwise"
+-  ,"pdfPreviousPage": "Previous page"
+-  ,"pdfNextPage": "Next page"
+-  ,"annotation": "Annotation"
+-  ,"mark": "Annotation"
+-  ,"operationFailed": "Operation failed"
+-  ,"copyImageFailed": "Copy image failed"
+-  ,"jumpFailed": "Jump failed"
+-  ,"bookMissing": "No book provided"
+-  ,"pdfFileMissing": "PDF file is missing"
+-  ,"page": "Page"
+-  ,"pageSuffix": ""
+-  ,"addContent": "Add Content"
+-  ,"organizeBookshelf": "Organize Bookshelf"
+-  ,"bookDetails": "Book Details"
+-  ,"editBook": "Edit Book"
+-  ,"editGroup": "Edit Group"
+-  ,"bookshelf": "Bookshelf"
+-  ,"selectedCount": "Selected"
+-  ,"selectAll": "Select all"
+-  ,"invertSelection": "Invert selection"
+-  ,"exit": "Exit"
+-  ,"rating": "Rating"
+-  ,"status": "Status"
+-  ,"tags": "Tags"
+-  ,"group": "Groups"
+-  ,"completingData": "Completing data"
+-  ,"completeData": "Complete data"
+-  ,"remove": "Remove"
+-  ,"tagsPlaceholder": "Tags, separated by commas"
+-  ,"clearTags": "Clear tags"
+-  ,"tagsCleared": "Tags cleared"
+-  ,"add": "Add"
+-  ,"replace": "Replace"
+-  ,"addToGroup": "Add to group"
+-  ,"removeFromGroup": "Remove from group"
+-  ,"setGroup": "Set groups"
+-  ,"removeAllGroups": "Remove from all groups"
+-  ,"groupsRemoved": "Removed from groups"
+-  ,"dictYoudaoDesc": "English-Chinese dictionary, simple and fast"
+-  ,"dictBingDesc": "Bing dictionary web edition"
+-  ,"dictCambridgeDesc": "Bilingual dictionary with pronunciation"
+-  ,"dictHaiciDesc": "English-Chinese dictionary with rich examples"
+-  ,"dictMxnzpDesc": "Chinese character dictionary with detailed definitions"
+-  ,"dictCiyuDesc": "Chinese phrases and idioms"
+-  ,"dictZdicDesc": "Chinese character and phrase lookup"
+-  ,"ttsFavoriteVoices": "My voices"
+-  ,"ttsVoiceList": "Online voices"
+-  ,"ttsCurrentVoice": "Current"
+-  ,"ttsOnlineHint": "Click a voice to select it, or click the star to favorite it"
+-  ,"ttsNoFavorites": "No favorite voices yet. Choose one below to add it"
+-  ,"ttsNoVoices": "No voices"
+-  ,"ttsLoadVoices": "Load voices"
+-  ,"ttsFavorite": "Favorite"
+-  ,"ttsUnfavorite": "Unfavorite"
+-  ,"format": "Format"
+-  ,"allRatings": "All ratings"
+-  ,"fiveStarsOnly": "5 stars only"
+-  ,"stars": "stars"
+-  ,"sortByAdded": "Recently added"
+-  ,"sortByProgress": "Reading progress"
+-  ,"sortByRating": "Rating"
+-  ,"sortByReadTime": "Reading time"
+-  ,"recentReading": "Recent reading"
+-  ,"continueReading": "Continue reading a recently opened book"
++  "copyScreenshot": "Copy screenshot",
++  "copyImage": "Copy image",
++  "exportImage": "Export image",
++  "markImage": "Annotate image",
++  "copyTable": "Copy table",
++  "locateTable": "Locate table",
++  "ttsOfflinePack": "Offline Voice Pack",
++  "ttsOfflinePackDesc": "Download for offline TTS",
++  "intro": "Introduction",
++  "downloadAddToShelf": "Download to Shelf",
++  "pdfThumbnailsOnly": "Thumbnails are available for PDF only",
++  "unnamedChapter": "Unnamed chapter",
++  "copyFailed": "Copy failed",
++  "exportFailed": "Export failed",
++  "copiedText": "Text copied",
++  "pdfCopyChapterUnsupported": "PDF does not support copying chapter text from the table of contents",
++  "copiedChapter": "Chapter text copied",
++  "copyChapterFailed": "Failed to copy chapter text",
++  "bookmarkUnavailable": "Bookmark feature is not initialized",
++  "bookmarkAdded": "Bookmark added",
++  "bookmarkRemoved": "Bookmark removed",
++  "operationFailed": "Operation failed",
++  "filterAnnotations": "Filter annotations",
++  "reverseSort": "Reverse sort",
++  "resetFilter": "Reset filters",
++  "done": "Done",
++  "marksSearchPlaceholder": "Search annotations, notes, bookmarks, ink, and shapes",
++  "filtering": "Filtering",
++  "allAnnotations": "All annotations",
++  "showPdfAnnotations": "Show PDF annotations",
++  "hidePdfAnnotations": "Hide PDF annotations",
++  "type": "Type",
++  "textStyle": "Text Style",
++  "additionalCondition": "Additional condition",
++  "withNote": "With notes",
++  "noBooks": "No books",
++  "noContent": "No content",
++  "updated": "Updated",
++  "marksUnavailable": "Annotation system is not initialized",
++  "deleteFailed": "Delete failed",
++  "bookNotFound": "Book not found",
++  "sortPage": "Page",
++  "sortName": "Name",
++  "sortCustom": "Custom",
++  "invalidBookLink": "Invalid book link",
++  "fileNotFound": "File not found",
++  "ttsReading": "Reading aloud",
++  "onlineUrlEmpty": "Online reading URL is empty",
++  "prevPage": "Previous page",
++  "nextPage": "Next page",
++  "toggleBookmark": "Toggle bookmark",
++  "quickNote": "Quick note",
++  "unknownAuthor": "Unknown Author",
++  "unnamedBook": "Unnamed book",
++  "readingCompleteMotto": "Reading complete",
++  "openingMotto": "A good book awaits",
++  "readingComplete": "Reading complete",
++  "readyToRead": "Ready to read",
++  "booksUnit": "books",
++  "failed": "Failed",
++  "parsing": "Parsing...",
++  "pendingImport": "Pending import",
++  "noContentFound": "No content found",
++  "emptyBookshelfHint": "No books yet. Click Add Content in the top right.",
++  "confirmDelete": "Delete",
++  "deletePermanently": "Delete permanently",
++  "confirmDeletePermanently": "Confirm permanent deletion",
++  "enterLinks": "Enter Links",
++  "importLinksPlaceholder": "One local path, file link, web URL, or cloud link per line",
++  "parseLinks": "Parse Links",
++  "cloudPathPlaceholder": "Enter cloud path",
++  "keywordPlaceholder": "Enter keywords to search",
++  "input": "Input",
++  "browseAll": "Browse All",
++  "selectAllImport": "Select All",
++  "deselectAll": "Deselect All",
++  "importSettings": "Import Settings",
++  "tagsCommaPlaceholder": "Add tags, separated by commas",
++  "searchGroups": "Search groups...",
++  "groupSort": "Group Order",
++  "existingGroups": "Existing Groups",
++  "resetOrganize": "Reset",
++  "noGroups": "No groups",
++  "sourceText": "Source text",
++  "translatedText": "Translation",
++  "targetLanguage": "Target language",
++  "translating": "Translating...",
++  "translationFailed": "Translation failed",
++  "annotationAdded": "Annotation added",
++  "adding": "Adding...",
++  "addAsAnnotation": "Add as annotation",
++  "ttsControl": "Reading controls",
++  "expandTts": "Expand reading controls",
++  "cover": "Cover",
++  "ttsReadingTitle": "Reading aloud",
++  "ttsPaused": "Paused",
++  "previousSentence": "Previous sentence",
++  "nextSentence": "Next sentence",
++  "pause": "Pause",
++  "play": "Play",
++  "voice": "Voice",
++  "showTopToolbar": "Show top toolbar",
++  "hideTopToolbar": "Hide top toolbar",
++  "pdfOperationFailed": "PDF operation failed",
++  "annotationMigrationDone": "Annotation migration complete",
++  "annotationMigrating": "Migrating annotations",
++  "pdfAnnotationCommitFailed": "Failed to commit PDF annotations. Export diagnostic logs for details.",
++  "pdfAnnotationReadFailed": "Failed to read PDF annotations. Existing records were preserved. Export diagnostic logs for details.",
++  "pdfAnnotationSaveFailed": "Failed to save PDF annotations. Export diagnostic logs for details.",
++  "loadingQr": "Loading QR code...",
++  "membershipQr": "Membership QR code",
++  "downloading": "Downloading",
++  "downloaded": "Downloaded",
++  "downloadVoicePack": "Download Voice Pack",
++  "previousResult": "Previous result",
++  "nextResult": "Next result",
++  "jumpToProgress": "Jump to reading progress",
++  "quickMark": "Quick annotation",
++  "exitQuickMark": "Exit quick annotation",
++  "permanent": "Permanent",
++  "validUntil": "Valid until",
++  "translate": "Translate",
++  "capture": "Drag to select a screenshot area",
++  "pdfCopyAnnotationLink": "Copy annotation backlink",
++  "pdfDictAnnotation": "Annotation dictionary",
++  "pdfTranslateAnnotation": "Translate annotation",
++  "pdfCreateHole": "Redact selection",
++  "pdfDictSelection": "Selection dictionary",
++  "pdfTranslateSelection": "Translate selection",
++  "pdfSendSelection": "Send selection",
++  "pdfSendAnnotation": "Send annotation",
++  "pdfCaptureCopy": "Copy screenshot",
++  "pdfZoomIn": "Zoom in",
++  "pdfZoomOut": "Zoom out",
++  "pdfFitPage": "Fit page",
++  "pdfFitWidth": "Fit width",
++  "pdfMarqueeZoom": "Marquee zoom",
++  "pdfRotateClockwise": "Rotate clockwise",
++  "pdfRotateCounterClockwise": "Rotate counter-clockwise",
++  "pdfPreviousPage": "Previous page",
++  "pdfNextPage": "Next page",
++  "copyImageFailed": "Copy image failed",
++  "jumpFailed": "Jump failed",
++  "bookMissing": "No book provided",
++  "pdfFileMissing": "PDF file is missing",
++  "addContent": "Add Content",
++  "organizeBookshelf": "Organize Bookshelf",
++  "editBook": "Edit Book",
++  "editGroup": "Edit Group",
++  "selectedCount": "Selected",
++  "selectAll": "Select all",
++  "invertSelection": "Invert selection",
++  "exit": "Exit",
++  "rating": "Rating",
++  "status": "Status",
++  "tags": "Tags",
++  "completingData": "Completing data",
++  "completeData": "Complete data",
++  "tagsPlaceholder": "Tags, separated by commas",
++  "clearTags": "Clear tags",
++  "tagsCleared": "Tags cleared",
++  "add": "Add",
++  "replace": "Replace",
++  "addToGroup": "Add to group",
++  "removeFromGroup": "Remove from group",
++  "setGroup": "Set groups",
++  "removeAllGroups": "Remove from all groups",
++  "groupsRemoved": "Removed from groups",
++  "dictYoudaoDesc": "English-Chinese dictionary, simple and fast",
++  "dictBingDesc": "Bing dictionary web edition",
++  "dictCambridgeDesc": "Bilingual dictionary with pronunciation",
++  "dictHaiciDesc": "English-Chinese dictionary with rich examples",
++  "dictMxnzpDesc": "Chinese character dictionary with detailed definitions",
++  "dictCiyuDesc": "Chinese phrases and idioms",
++  "dictZdicDesc": "Chinese character and phrase lookup",
++  "ttsFavoriteVoices": "My voices",
++  "ttsVoiceList": "Online voices",
++  "ttsCurrentVoice": "Current",
++  "ttsOnlineHint": "Click a voice to select it, or click the star to favorite it",
++  "ttsNoFavorites": "No favorite voices yet. Choose one below to add it",
++  "ttsNoVoices": "No voices",
++  "ttsLoadVoices": "Load voices",
++  "ttsFavorite": "Favorite",
++  "ttsUnfavorite": "Unfavorite",
++  "format": "Format",
++  "allRatings": "All ratings",
++  "fiveStarsOnly": "5 stars only",
++  "stars": "stars",
++  "sortByAdded": "Recently added",
++  "sortByProgress": "Reading progress",
++  "sortByRating": "Rating",
++  "sortByReadTime": "Reading time",
++  "recentReading": "Recent reading",
++  "continueReading": "Continue reading a recently opened book",
++  "ttsNext": "Next sentence",
++  "ttsPreparing": "Preparing",
++  "ttsPrev": "Previous sentence",
++  "ttsRestart": "Read from current page",
++  "ttsStyle": "Style",
++  "ttsStyle_affectionate": "Affectionate",
++  "ttsStyle_assistant": "Assistant",
++  "ttsStyle_calm": "Calm",
++  "ttsStyle_chat": "Chat",
++  "ttsStyle_cheerful": "Cheerful",
++  "ttsStyle_customerservice": "Customer Service",
++  "ttsStyle_general": "General",
++  "ttsStyle_gentle": "Gentle",
++  "ttsStyle_lyrical": "Lyrical",
++  "ttsStyle_newscast": "Newscast",
++  "ttsStyle_serious": "Serious"
+ }
+diff --git a/src/i18n/zh_CN.json b/src/i18n/zh_CN.json
+index 3b31801..09e6d6d 100644
+--- a/src/i18n/zh_CN.json
++++ b/src/i18n/zh_CN.json
+@@ -194,7 +194,7 @@
+   "deleteMark": "删除标记",
+   "deleteBookmark": "删除书签",
+   "styleDefault": "默认",
+-  "styleBorder": "边框", 
++  "styleBorder": "边框",
+   "styleCard": "卡片",
+   "styleThumb": "封面",
+   "styleReader": "阅读器",
+@@ -296,7 +296,7 @@
+   "downloadEpub": "下载EPUB",
+   "bookshelf": "书架",
+   "viewDetail": "查看详情",
+-  "addToShelf": "加入书架",
++  "addToShelf": "添加到书架",
+   "inShelf": "已在书架",
+   "addedToShelf": "已加入书架",
+   "removed": "已移出书架",
+@@ -337,7 +337,7 @@
+   "nextChapter": "下一章",
+   "note": "笔记",
+   "mark": "标注",
+-  "sendTo": "发送到",
++  "sendTo": "发送至",
+   "copy": "复制",
+   "copied": "已复制",
+   "dict": "词典",
+@@ -417,7 +417,7 @@
+   "endnote": "尾注",
+   "reference": "参考文献",
+   "glossary": "术语",
+-  "annotation": "注释",
++  "annotation": "标注",
+   "clickToJump": "点击跳转",
+   "float": "浮动",
+   "fixed": "固定",
+@@ -614,7 +614,7 @@
+   "copyChapter": "复制章节",
+   "pdfKeepTool": "绘制后保持当前工具",
+   "copyBacklink": "复制回链",
+-  "redaction": "遮蔽",
++  "redaction": "选区挖空",
+   "copyScreenshot": "复制截图",
+   "copyImage": "复制图片",
+   "exportImage": "导出图片",
+@@ -624,7 +624,6 @@
+   "ttsOfflinePack": "离线语音包",
+   "ttsOfflinePackDesc": "下载后可供离线 TTS 引擎使用",
+   "intro": "简介",
+-  "addToShelf": "添加到书架",
+   "downloadAddToShelf": "下载并添加到书架",
+   "pdfThumbnailsOnly": "仅 PDF 支持缩略图",
+   "unnamedChapter": "未命名章节",
+@@ -637,209 +636,192 @@
+   "bookmarkUnavailable": "书签功能未初始化",
+   "bookmarkAdded": "已添加书签",
+   "bookmarkRemoved": "已移除书签",
+-  "operationFailed": "操作失败"
+-  ,"filterAnnotations": "筛选标注"
+-  ,"reverseSort": "反向排序"
+-  ,"resetFilter": "重置筛选"
+-  ,"done": "完成"
+-  ,"marksSearchPlaceholder": "搜索标注、笔记、书签、墨迹、形状"
+-  ,"filtering": "筛选中"
+-  ,"allAnnotations": "全部标注"
+-  ,"showPdfAnnotations": "显示 PDF 标注"
+-  ,"hidePdfAnnotations": "隐藏 PDF 标注"
+-  ,"type": "类型"
+-  ,"textStyle": "文本样式"
+-  ,"additionalCondition": "附加条件"
+-  ,"withNote": "仅带笔记"
+-  ,"noBooks": "暂无书籍"
+-  ,"noContent": "无内容"
+-  ,"updated": "已更新"
+-  ,"marksUnavailable": "标注系统未初始化"
+-  ,"deleteFailed": "删除失败"
+-  ,"bookNotFound": "书籍不存在"
+-  ,"sortTime": "时间"
+-  ,"sortDate": "日期"
+-  ,"sortChapter": "章节"
+-  ,"sortPage": "页码"
+-  ,"sortName": "名称"
+-  ,"sortCustom": "自定义"
+-  ,"invalidBookLink": "无效的书籍链接"
+-  ,"fileNotFound": "文件不存在"
+-  ,"addFailed": "添加失败"
+-  ,"ttsReading": "朗读中"
+-  ,"onlineUrlEmpty": "在线阅读地址为空"
+-  ,"prevPage": "上一页"
+-  ,"nextPage": "下一页"
+-  ,"toggleBookmark": "切换书签"
+-  ,"quickNote": "快速笔记"
+-  ,"unknownAuthor": "未知作者"
+-  ,"unnamedBook": "未命名书籍"
+-  ,"readingCompleteMotto": "读毕有得"
+-  ,"openingMotto": "开卷有益"
+-  ,"readingComplete": "已完成阅读"
+-  ,"readyToRead": "准备阅读"
+-  ,"booksUnit": "本"
+-  ,"failed": "失败"
+-  ,"parsing": "解析中..."
+-  ,"pendingImport": "待导入"
+-  ,"noContentFound": "未找到内容"
+-  ,"emptyBookshelfHint": "暂无书籍，点击右上角添加内容"
+-  ,"confirmDelete": "确认删除"
+-  ,"deletePermanently": "彻底删除"
+-  ,"confirmDeletePermanently": "确认彻底删除"
+-  ,"enterLinks": "输入链接"
+-  ,"importLinksPlaceholder": "每行一个本地路径、file 链接、网络直链或思盘链接"
+-  ,"parseLinks": "解析链接"
+-  ,"cloudPathPlaceholder": "输入思盘路径"
+-  ,"keywordPlaceholder": "输入关键词搜索"
+-  ,"input": "输入"
+-  ,"browseAll": "浏览全部"
+-  ,"selectAllImport": "全选导入"
+-  ,"deselectAll": "取消全选"
+-  ,"importSettings": "导入设置"
+-  ,"tagsCommaPlaceholder": "添加标签，用逗号分隔"
+-  ,"searchGroups": "搜索分组..."
+-  ,"groupSort": "分组排序"
+-  ,"existingGroups": "现有分组"
+-  ,"resetOrganize": "重置整理"
+-  ,"noGroups": "暂无分组"
+-  ,"sourceText": "原文"
+-  ,"translatedText": "译文"
+-  ,"targetLanguage": "目标语言"
+-  ,"translating": "翻译中..."
+-  ,"translationFailed": "翻译失败"
+-  ,"annotationAdded": "已添加批注"
+-  ,"adding": "正在添加..."
+-  ,"addAsAnnotation": "添加为批注"
+-  ,"ttsControl": "朗读控制"
+-  ,"expandTts": "展开朗读控制"
+-  ,"cover": "封面"
+-  ,"ttsReadingTitle": "朗读"
+-  ,"ttsPaused": "已暂停"
+-  ,"previousSentence": "上一句"
+-  ,"nextSentence": "下一句"
+-  ,"pause": "暂停"
+-  ,"play": "播放"
+-  ,"voice": "语音"
+-  ,"showTopToolbar": "显示顶部工具栏"
+-  ,"hideTopToolbar": "隐藏顶部工具栏"
+-  ,"pdfOperationFailed": "PDF 操作失败"
+-  ,"annotationMigrationDone": "标注迁移完成"
+-  ,"annotationMigrating": "正在迁移标注"
+-  ,"pdfAnnotationCommitFailed": "PDF 批注提交失败，请导出诊断日志"
+-  ,"pdfAnnotationReadFailed": "PDF 批注读取失败，未覆盖原记录。请导出诊断日志"
+-  ,"pdfAnnotationSaveFailed": "PDF 批注保存失败，请导出诊断日志"
+-  ,"loadingQr": "正在获取二维码..."
+-  ,"membershipQr": "思阅会员绑定小程序码"
+-  ,"downloading": "下载中"
+-  ,"downloaded": "已下载"
+-  ,"downloadVoicePack": "下载语音包"
+-  ,"previousResult": "上一个"
+-  ,"nextResult": "下一个"
+-  ,"jumpToProgress": "跳转到阅读进度"
+-  ,"quickMark": "快速标注"
+-  ,"exitQuickMark": "退出快速标注"
+-  ,"sidebarToc": "目录"
+-  ,"sidebarAnnotation": "标注"
+-  ,"sidebarSettings": "设置"
+-  ,"permanent": "永久有效"
+-  ,"validUntil": "有效期至"
+-  ,"copy": "复制"
+-  ,"copied": "已复制"
+-  ,"copyFailed": "复制失败"
+-  ,"noContent": "无内容"
+-  ,"translate": "翻译"
+-  ,"dict": "词典"
+-  ,"capture": "拖选截图区域"
+-  ,"close": "关闭"
+-  ,"copyScreenshot": "复制截图"
+-  ,"copyBacklink": "复制回链"
+-  ,"sendTo": "发送至"
+-  ,"redaction": "选区挖空"
+-  ,"pdfKeepTool": "绘制后保持当前工具"
+-  ,"copyImage": "复制图片"
+-  ,"exportImage": "导出图片"
+-  ,"markImage": "标注图片"
+-  ,"copyTable": "复制表格"
+-  ,"locateTable": "定位表格"
+-  ,"pdfCopyAnnotationLink": "复制标注回链"
+-  ,"pdfDictAnnotation": "标注词典"
+-  ,"pdfTranslateAnnotation": "标注翻译"
+-  ,"pdfCreateHole": "选区挖空"
+-  ,"pdfDictSelection": "选区词典"
+-  ,"pdfTranslateSelection": "选区翻译"
+-  ,"pdfSendSelection": "发送选区"
+-  ,"pdfSendAnnotation": "发送标注"
+-  ,"pdfCaptureCopy": "复制截图"
+-  ,"pdfZoomIn": "放大"
+-  ,"pdfZoomOut": "缩小"
+-  ,"pdfFitPage": "适合页面"
+-  ,"pdfFitWidth": "适合宽度"
+-  ,"pdfMarqueeZoom": "框选缩放"
+-  ,"pdfRotateClockwise": "顺时针旋转"
+-  ,"pdfRotateCounterClockwise": "逆时针旋转"
+-  ,"pdfPreviousPage": "上一页"
+-  ,"pdfNextPage": "下一页"
+-  ,"annotation": "标注"
+-  ,"mark": "标注"
+-  ,"operationFailed": "操作失败"
+-  ,"copyImageFailed": "复制图片失败"
+-  ,"jumpFailed": "跳转失败"
+-  ,"bookMissing": "未提供书籍"
+-  ,"pdfFileMissing": "PDF 文件不存在"
+-  ,"page": "第"
+-  ,"pageSuffix": "页"
+-  ,"addContent": "添加内容"
+-  ,"organizeBookshelf": "整理书架"
+-  ,"bookDetails": "书籍详情"
+-  ,"editBook": "编辑书籍"
+-  ,"editGroup": "编辑分组"
+-  ,"bookshelf": "书架"
+-  ,"selectedCount": "选中"
+-  ,"selectAll": "全选"
+-  ,"invertSelection": "反选"
+-  ,"exit": "退出"
+-  ,"rating": "评分"
+-  ,"status": "状态"
+-  ,"tags": "标签"
+-  ,"group": "分组"
+-  ,"completingData": "补全中"
+-  ,"completeData": "数据补全"
+-  ,"remove": "移除"
+-  ,"tagsPlaceholder": "标签，用逗号分隔"
+-  ,"clearTags": "清空标签"
+-  ,"tagsCleared": "已清空标签"
+-  ,"add": "添加"
+-  ,"replace": "替换"
+-  ,"addToGroup": "加入分组"
+-  ,"removeFromGroup": "移出分组"
+-  ,"setGroup": "设置分组"
+-  ,"removeAllGroups": "移出所有分组"
+-  ,"groupsRemoved": "已移出分组"
+-  ,"dictYoudaoDesc": "英汉词典，简洁快速"
+-  ,"dictBingDesc": "必应词典网页版"
+-  ,"dictCambridgeDesc": "英汉双解，支持发音"
+-  ,"dictHaiciDesc": "英汉词典，例句丰富"
+-  ,"dictMxnzpDesc": "汉字字典，详细解释"
+-  ,"dictCiyuDesc": "汉语词语，成语典故"
+-  ,"dictZdicDesc": "汉字词语查询"
+-  ,"ttsFavoriteVoices": "我的语音"
+-  ,"ttsVoiceList": "在线语音"
+-  ,"ttsCurrentVoice": "当前"
+-  ,"ttsOnlineHint": "点击语音名称选择，点击星号收藏"
+-  ,"ttsNoFavorites": "暂无收藏，请点击下方语音添加"
+-  ,"ttsNoVoices": "暂无语音"
+-  ,"ttsLoadVoices": "加载语音"
+-  ,"ttsFavorite": "收藏"
+-  ,"ttsUnfavorite": "取消收藏"
+-  ,"format": "格式"
+-  ,"allRatings": "全部评分"
+-  ,"fiveStarsOnly": "仅 5 星"
+-  ,"stars": "星"
+-  ,"sortByAdded": "最近添加"
+-  ,"sortByProgress": "阅读进度"
+-  ,"sortByRating": "评分"
+-  ,"sortByReadTime": "阅读时长"
+-  ,"recentReading": "最近阅读"
+-  ,"continueReading": "继续阅读最近打开的书籍"
++  "operationFailed": "操作失败",
++  "filterAnnotations": "筛选标注",
++  "reverseSort": "反向排序",
++  "resetFilter": "重置筛选",
++  "done": "完成",
++  "marksSearchPlaceholder": "搜索标注、笔记、书签、墨迹、形状",
++  "filtering": "筛选中",
++  "allAnnotations": "全部标注",
++  "showPdfAnnotations": "显示 PDF 标注",
++  "hidePdfAnnotations": "隐藏 PDF 标注",
++  "type": "类型",
++  "textStyle": "文本样式",
++  "additionalCondition": "附加条件",
++  "withNote": "仅带笔记",
++  "noBooks": "暂无书籍",
++  "noContent": "无内容",
++  "updated": "已更新",
++  "marksUnavailable": "标注系统未初始化",
++  "deleteFailed": "删除失败",
++  "bookNotFound": "书籍不存在",
++  "sortPage": "页码",
++  "sortName": "名称",
++  "sortCustom": "自定义",
++  "invalidBookLink": "无效的书籍链接",
++  "fileNotFound": "文件不存在",
++  "ttsReading": "朗读中",
++  "onlineUrlEmpty": "在线阅读地址为空",
++  "prevPage": "上一页",
++  "nextPage": "下一页",
++  "toggleBookmark": "切换书签",
++  "quickNote": "快速笔记",
++  "unknownAuthor": "未知作者",
++  "unnamedBook": "未命名书籍",
++  "readingCompleteMotto": "读毕有得",
++  "openingMotto": "开卷有益",
++  "readingComplete": "已完成阅读",
++  "readyToRead": "准备阅读",
++  "booksUnit": "本",
++  "failed": "失败",
++  "parsing": "解析中...",
++  "pendingImport": "待导入",
++  "noContentFound": "未找到内容",
++  "emptyBookshelfHint": "暂无书籍，点击右上角添加内容",
++  "confirmDelete": "确认删除",
++  "deletePermanently": "彻底删除",
++  "confirmDeletePermanently": "确认彻底删除",
++  "enterLinks": "输入链接",
++  "importLinksPlaceholder": "每行一个本地路径、file 链接、网络直链或思盘链接",
++  "parseLinks": "解析链接",
++  "cloudPathPlaceholder": "输入思盘路径",
++  "keywordPlaceholder": "输入关键词搜索",
++  "input": "输入",
++  "browseAll": "浏览全部",
++  "selectAllImport": "全选导入",
++  "deselectAll": "取消全选",
++  "importSettings": "导入设置",
++  "tagsCommaPlaceholder": "添加标签，用逗号分隔",
++  "searchGroups": "搜索分组...",
++  "groupSort": "分组排序",
++  "existingGroups": "现有分组",
++  "resetOrganize": "重置整理",
++  "noGroups": "暂无分组",
++  "sourceText": "原文",
++  "translatedText": "译文",
++  "targetLanguage": "目标语言",
++  "translating": "翻译中...",
++  "translationFailed": "翻译失败",
++  "annotationAdded": "已添加批注",
++  "adding": "正在添加...",
++  "addAsAnnotation": "添加为批注",
++  "ttsControl": "朗读控制",
++  "expandTts": "展开朗读控制",
++  "cover": "封面",
++  "ttsReadingTitle": "朗读",
++  "ttsPaused": "已暂停",
++  "previousSentence": "上一句",
++  "nextSentence": "下一句",
++  "pause": "暂停",
++  "play": "播放",
++  "voice": "语音",
++  "showTopToolbar": "显示顶部工具栏",
++  "hideTopToolbar": "隐藏顶部工具栏",
++  "pdfOperationFailed": "PDF 操作失败",
++  "annotationMigrationDone": "标注迁移完成",
++  "annotationMigrating": "正在迁移标注",
++  "pdfAnnotationCommitFailed": "PDF 批注提交失败，请导出诊断日志",
++  "pdfAnnotationReadFailed": "PDF 批注读取失败，未覆盖原记录。请导出诊断日志",
++  "pdfAnnotationSaveFailed": "PDF 批注保存失败，请导出诊断日志",
++  "loadingQr": "正在获取二维码...",
++  "membershipQr": "思阅会员绑定小程序码",
++  "downloading": "下载中",
++  "downloaded": "已下载",
++  "downloadVoicePack": "下载语音包",
++  "previousResult": "上一个",
++  "nextResult": "下一个",
++  "jumpToProgress": "跳转到阅读进度",
++  "quickMark": "快速标注",
++  "exitQuickMark": "退出快速标注",
++  "permanent": "永久有效",
++  "validUntil": "有效期至",
++  "capture": "拖选截图区域",
++  "pdfCopyAnnotationLink": "复制标注回链",
++  "pdfDictAnnotation": "标注词典",
++  "pdfTranslateAnnotation": "标注翻译",
++  "pdfCreateHole": "选区挖空",
++  "pdfDictSelection": "选区词典",
++  "pdfTranslateSelection": "选区翻译",
++  "pdfSendSelection": "发送选区",
++  "pdfSendAnnotation": "发送标注",
++  "pdfCaptureCopy": "复制截图",
++  "pdfZoomIn": "放大",
++  "pdfZoomOut": "缩小",
++  "pdfFitPage": "适合页面",
++  "pdfFitWidth": "适合宽度",
++  "pdfMarqueeZoom": "框选缩放",
++  "pdfRotateClockwise": "顺时针旋转",
++  "pdfRotateCounterClockwise": "逆时针旋转",
++  "pdfPreviousPage": "上一页",
++  "pdfNextPage": "下一页",
++  "copyImageFailed": "复制图片失败",
++  "jumpFailed": "跳转失败",
++  "bookMissing": "未提供书籍",
++  "pdfFileMissing": "PDF 文件不存在",
++  "addContent": "添加内容",
++  "organizeBookshelf": "整理书架",
++  "editBook": "编辑书籍",
++  "editGroup": "编辑分组",
++  "selectedCount": "选中",
++  "selectAll": "全选",
++  "invertSelection": "反选",
++  "exit": "退出",
++  "rating": "评分",
++  "status": "状态",
++  "tags": "标签",
++  "completingData": "补全中",
++  "completeData": "数据补全",
++  "tagsPlaceholder": "标签，用逗号分隔",
++  "clearTags": "清空标签",
++  "tagsCleared": "已清空标签",
++  "add": "添加",
++  "replace": "替换",
++  "addToGroup": "加入分组",
++  "removeFromGroup": "移出分组",
++  "setGroup": "设置分组",
++  "removeAllGroups": "移出所有分组",
++  "groupsRemoved": "已移出分组",
++  "dictYoudaoDesc": "英汉词典，简洁快速",
++  "dictBingDesc": "必应词典网页版",
++  "dictCambridgeDesc": "英汉双解，支持发音",
++  "dictHaiciDesc": "英汉词典，例句丰富",
++  "dictMxnzpDesc": "汉字字典，详细解释",
++  "dictCiyuDesc": "汉语词语，成语典故",
++  "dictZdicDesc": "汉字词语查询",
++  "ttsFavoriteVoices": "我的语音",
++  "ttsVoiceList": "在线语音",
++  "ttsCurrentVoice": "当前",
++  "ttsOnlineHint": "点击语音名称选择，点击星号收藏",
++  "ttsNoFavorites": "暂无收藏，请点击下方语音添加",
++  "ttsNoVoices": "暂无语音",
++  "ttsLoadVoices": "加载语音",
++  "ttsFavorite": "收藏",
++  "ttsUnfavorite": "取消收藏",
++  "format": "格式",
++  "allRatings": "全部评分",
++  "fiveStarsOnly": "仅 5 星",
++  "stars": "星",
++  "sortByAdded": "最近添加",
++  "sortByProgress": "阅读进度",
++  "sortByRating": "评分",
++  "sortByReadTime": "阅读时长",
++  "recentReading": "最近阅读",
++  "continueReading": "继续阅读最近打开的书籍",
++  "ttsNext": "下一段",
++  "ttsPreparing": "准备中",
++  "ttsPrev": "上一段",
++  "ttsRestart": "从当前页朗读",
++  "ttsStyle": "风格",
++  "ttsStyle_affectionate": "亲切",
++  "ttsStyle_assistant": "助手",
++  "ttsStyle_calm": "平静",
++  "ttsStyle_chat": "聊天",
++  "ttsStyle_cheerful": "愉快",
++  "ttsStyle_customerservice": "客服",
++  "ttsStyle_general": "通用",
++  "ttsStyle_gentle": "温和",
++  "ttsStyle_lyrical": "抒情",
++  "ttsStyle_newscast": "新闻",
++  "ttsStyle_serious": "严肃"
+ }
+diff --git a/src/main.ts b/src/main.ts
+index 261cf65..8196998 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -8,6 +8,7 @@ import { setPlugin } from '@/utils/copy'
+ import { flushStorage, storageEngine, recoverBackupRecords } from '@/core/storage'
+ import { drainPendingTasks, trackPending } from '@/core/storage'
+ import { installDiagnostics, diagnosticLog, disposeDiagnostics } from '@/core/diagnostics'
++import { applyFork } from '@/fork' // CUSTOM: fork overlay
+ 
+ let plugin: Plugin | null = null
+ let app: any = null
+@@ -48,6 +49,7 @@ export async function init(p: Plugin) {
+   mountReaderIconSprite(div)
+   document.body.appendChild(div)
+   registerReaderIcons(p)
++  applyFork() // CUSTOM: fork overlay
+   app = createApp(App)
+   app.mount(div)
+   resolveAppReady()
+diff --git a/src/services/TTSEngine.ts b/src/services/TTSEngine.ts
+index dbfe56a..d14ec79 100644
+--- a/src/services/TTSEngine.ts
++++ b/src/services/TTSEngine.ts
+@@ -244,7 +244,7 @@ export async function loadOnlineVoices(): Promise<TTSVoice[]> {
+   if (onlineVoiceTask) return onlineVoiceTask
+   onlineVoiceTask = (async () => {
+   try {
+-    const res = await fetch(VOICES_URL)
++    const res = await fetch(VOICES_URL, { referrerPolicy: 'no-referrer' }) // CUSTOM: fork referrerPolicy
+     if (!res.ok) throw new Error(`HTTP ${res.status}`)
+     const data = await res.json()
+     const voices: TTSVoice[] = data.map((v: any) => ({
+diff --git a/src/services/TTSPlayer.ts b/src/services/TTSPlayer.ts
+index 8133aff..a2ccf26 100644
+--- a/src/services/TTSPlayer.ts
++++ b/src/services/TTSPlayer.ts
+@@ -347,22 +347,54 @@ export class TTSController {
+   private operation = 0
+   public isActive = ref(false)
+   public paused = ref(false)
++  public isLoading = ref(false) // CUSTOM: fork TTS bar
+   public title = ref('')
+   public currentText = ref('')
+   public status = ref('ready')
+ 
+   async speak(text: string, config: any, title = '选中文本') {
++    // CUSTOM: fork PDF speak / restartText entry
++    if (this.isActive.value) return this.togglePause()
++    return this.restartText(text, config, title, true)
++  }
++
++  // CUSTOM: fork-compatible text restart (PDF page / selection)
++  async restartText(text: string, config: any, title = '朗读中', loop = false) {
+     if (!config?.enabled || !text?.trim()) return
+     this.stop()
+-    this.loopText = text.trim()
++    this.loopText = loop ? text.trim() : null
+     this.title.value = title
+     this.isActive.value = true
+-    try { await this.playLoop(config) }
+-    catch (error) { showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error') }
+-    finally { this.reset() }
++    this.isLoading.value = true
++    try {
++      if (loop) await this.playLoop(config)
++      else {
++        const doc = document.implementation.createHTMLDocument(), p = doc.createElement('p')
++        p.textContent = text.trim()
++        doc.body.appendChild(p)
++        const operation = ++this.operation
++        const player = new EdgeTTSPlayer(doc, {
++          ...config,
++          autoTurnPage: true,
++          onBlock: (t: string) => this.currentText.value = t,
++          onStatus: (status: string) => this.status.value = status,
++          onSpeakStart: () => { this.isLoading.value = false },
++        })
++        this.player = player
++        this.isLoading.value = false
++        await player.play()
++        if (this.operation === operation && this.player === player) this.reset()
++      }
++    } catch (error) {
++      this.reset()
++      showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error')
++    } finally {
++      if (loop) this.reset()
++    }
+   }
+ 
+   private async playLoop(config: any) {
++    this.isLoading.value = false
+     while (this.loopText && !this.paused.value) {
+       const doc = document.implementation.createHTMLDocument(), p = doc.createElement('p')
+       p.textContent = this.loopText
+@@ -376,7 +408,14 @@ export class TTSController {
+   async toggle(getReader: () => any, config: any, selection?: { text: string; range?: Range }, title = '朗读中') {
+     if (!config?.enabled) return
+     if (this.isActive.value) return this.togglePause()
++    return this.restart(getReader, config, selection, title) // CUSTOM: fork
++  }
++
++  // CUSTOM: fork-compatible restart from reader
++  async restart(getReader: () => any, config: any, selection?: { text: string; range?: Range }, title = '朗读中') {
++    if (!config?.enabled) return
+     this.stop()
++    this.isLoading.value = true
+     try {
+       const { view, doc, renderer, location } = this.getDocument(getReader)
+       if (!view && !doc?.body) throw new Error('无法获取文档内容')
+@@ -386,6 +425,7 @@ export class TTSController {
+       const player = new EdgeTTSPlayer(view || doc, { ...config, onBlock: (text: string) => this.currentText.value = text, onStatus: (status: string) => this.status.value = status }, startRange)
+       this.player = player
+       this.isActive.value = true
++      this.isLoading.value = false
+       await player.play()
+       if (this.operation === operation && this.player === player) this.reset()
+     } catch (error) { this.reset(); showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error') }
+@@ -400,8 +440,13 @@ export class TTSController {
+     const player = this.player
+     void player.jump(delta).then(() => { if (this.operation === operation && this.player === player) this.reset() })
+   }
+-  togglePause() { if (this.isActive.value) this.paused.value = !this.paused.value, this.paused.value ? this.player?.pause() : this.player?.resume() }
+-  stop() { this.operation++; this.loopText = null; this.player?.stop(); this.player = null; this.currentText.value = ''; this.status.value = 'ready' }
++  togglePause() {
++    // CUSTOM: ignore while preparing
++    if (!this.isActive.value || this.isLoading.value) return
++    this.paused.value = !this.paused.value
++    this.paused.value ? this.player?.pause() : this.player?.resume()
++  }
++  stop() { this.operation++; this.loopText = null; this.player?.stop(); this.player = null; this.currentText.value = ''; this.status.value = 'ready'; this.isLoading.value = false }
+   destroy() { this.stop(); this.reset() }
+   sync(enabled: boolean) { !enabled && this.destroy() }
+ 
+@@ -426,7 +471,7 @@ export class TTSController {
+     } catch {}
+   }
+ 
+-  private reset() { this.isActive.value = this.paused.value = false; this.player = null; this.title.value = ''; this.currentText.value = ''; this.status.value = 'ready' }
++  private reset() { this.isActive.value = this.paused.value = this.isLoading.value = false; this.player = null; this.title.value = ''; this.currentText.value = ''; this.status.value = 'ready' }
+ }
+ 
+ let globalTTSController: TTSController | null = null
+diff --git a/vitest.config.ts b/vitest.config.ts
+new file mode 100644
+index 0000000..7956dec
+--- /dev/null
++++ b/vitest.config.ts
+@@ -0,0 +1,18 @@
++import { defineConfig } from 'vitest/config'
++import { resolve } from 'node:path'
++import vue from '@vitejs/plugin-vue'
++
++export default defineConfig({
++  plugins: [vue()],
++  resolve: {
++    alias: {
++      '@': resolve(__dirname, 'src'),
++      siyuan: resolve(__dirname, 'scripts/stubs/siyuan.ts'),
++      'foliate-js': resolve(__dirname, 'node_modules/foliate-js'),
++    },
++  },
++  test: {
++    environment: 'jsdom',
++    include: ['scripts/**/*.test.ts', 'src/**/*.test.ts'],
++  },
++})

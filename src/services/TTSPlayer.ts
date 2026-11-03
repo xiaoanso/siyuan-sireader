@@ -347,22 +347,54 @@ export class TTSController {
   private operation = 0
   public isActive = ref(false)
   public paused = ref(false)
+  public isLoading = ref(false) // CUSTOM: fork TTS bar
   public title = ref('')
   public currentText = ref('')
   public status = ref('ready')
 
   async speak(text: string, config: any, title = '选中文本') {
+    // CUSTOM: fork PDF speak / restartText entry
+    if (this.isActive.value) return this.togglePause()
+    return this.restartText(text, config, title, true)
+  }
+
+  // CUSTOM: fork-compatible text restart (PDF page / selection)
+  async restartText(text: string, config: any, title = '朗读中', loop = false) {
     if (!config?.enabled || !text?.trim()) return
     this.stop()
-    this.loopText = text.trim()
+    this.loopText = loop ? text.trim() : null
     this.title.value = title
     this.isActive.value = true
-    try { await this.playLoop(config) }
-    catch (error) { showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error') }
-    finally { this.reset() }
+    this.isLoading.value = true
+    try {
+      if (loop) await this.playLoop(config)
+      else {
+        const doc = document.implementation.createHTMLDocument(), p = doc.createElement('p')
+        p.textContent = text.trim()
+        doc.body.appendChild(p)
+        const operation = ++this.operation
+        const player = new EdgeTTSPlayer(doc, {
+          ...config,
+          autoTurnPage: true,
+          onBlock: (t: string) => this.currentText.value = t,
+          onStatus: (status: string) => this.status.value = status,
+          onSpeakStart: () => { this.isLoading.value = false },
+        })
+        this.player = player
+        this.isLoading.value = false
+        await player.play()
+        if (this.operation === operation && this.player === player) this.reset()
+      }
+    } catch (error) {
+      this.reset()
+      showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error')
+    } finally {
+      if (loop) this.reset()
+    }
   }
 
   private async playLoop(config: any) {
+    this.isLoading.value = false
     while (this.loopText && !this.paused.value) {
       const doc = document.implementation.createHTMLDocument(), p = doc.createElement('p')
       p.textContent = this.loopText
@@ -376,7 +408,14 @@ export class TTSController {
   async toggle(getReader: () => any, config: any, selection?: { text: string; range?: Range }, title = '朗读中') {
     if (!config?.enabled) return
     if (this.isActive.value) return this.togglePause()
+    return this.restart(getReader, config, selection, title) // CUSTOM: fork
+  }
+
+  // CUSTOM: fork-compatible restart from reader
+  async restart(getReader: () => any, config: any, selection?: { text: string; range?: Range }, title = '朗读中') {
+    if (!config?.enabled) return
     this.stop()
+    this.isLoading.value = true
     try {
       const { view, doc, renderer, location } = this.getDocument(getReader)
       if (!view && !doc?.body) throw new Error('无法获取文档内容')
@@ -386,6 +425,7 @@ export class TTSController {
       const player = new EdgeTTSPlayer(view || doc, { ...config, onBlock: (text: string) => this.currentText.value = text, onStatus: (status: string) => this.status.value = status }, startRange)
       this.player = player
       this.isActive.value = true
+      this.isLoading.value = false
       await player.play()
       if (this.operation === operation && this.player === player) this.reset()
     } catch (error) { this.reset(); showMessage((error instanceof Error ? error.message : String(error)) || 'TTS 播放失败', 3000, 'error') }
@@ -400,8 +440,13 @@ export class TTSController {
     const player = this.player
     void player.jump(delta).then(() => { if (this.operation === operation && this.player === player) this.reset() })
   }
-  togglePause() { if (this.isActive.value) this.paused.value = !this.paused.value, this.paused.value ? this.player?.pause() : this.player?.resume() }
-  stop() { this.operation++; this.loopText = null; this.player?.stop(); this.player = null; this.currentText.value = ''; this.status.value = 'ready' }
+  togglePause() {
+    // CUSTOM: ignore while preparing
+    if (!this.isActive.value || this.isLoading.value) return
+    this.paused.value = !this.paused.value
+    this.paused.value ? this.player?.pause() : this.player?.resume()
+  }
+  stop() { this.operation++; this.loopText = null; this.player?.stop(); this.player = null; this.currentText.value = ''; this.status.value = 'ready'; this.isLoading.value = false }
   destroy() { this.stop(); this.reset() }
   sync(enabled: boolean) { !enabled && this.destroy() }
 
@@ -426,7 +471,7 @@ export class TTSController {
     } catch {}
   }
 
-  private reset() { this.isActive.value = this.paused.value = false; this.player = null; this.title.value = ''; this.currentText.value = ''; this.status.value = 'ready' }
+  private reset() { this.isActive.value = this.paused.value = this.isLoading.value = false; this.player = null; this.title.value = ''; this.currentText.value = ''; this.status.value = 'ready' }
 }
 
 let globalTTSController: TTSController | null = null

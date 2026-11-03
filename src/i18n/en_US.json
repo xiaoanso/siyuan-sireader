@@ -69,7 +69,7 @@
   "notSelected": "Not selected",
   "searchDoc": "Search documents",
   "searchDocDesc": "Enter keywords to find documents",
-  "searchDocPlaceholder": "Press Enter to search",
+  "searchDocPlaceholder": "Search documents...",
   "selectDoc": "Select Document",
   "usageTitle": "How it works",
   "pageAnimation": "Page-turn style",
@@ -137,7 +137,7 @@
   "loadingNext": "Loading next chapter...",
   "tocBtn": "Contents",
   "prevBtn": "Previous",
-  "nextBtn": "Next", 
+  "nextBtn": "Next",
   "settingsBtn": "Settings",
   "highlight": "Highlight",
   "underline": "Underline",
@@ -181,7 +181,7 @@
   "inputNote": "Add a note (optional)",
   "inputTags": "Tags",
   "pdfMigrated": "Migrated {count} PDF annotations",
-  "page": "Page ",
+  "page": "Page",
   "pageSuffix": "",
   "searchChapter": "Search chapters...",
   "loadingToc": "Loading table of contents...",
@@ -334,9 +334,8 @@
   "prevChapter": "Previous Chapter",
   "nextChapter": "Next Chapter",
   "note": "Note",
-  "mark": "Mark",
+  "mark": "Annotation",
   "sendTo": "Send to",
-  "searchDocPlaceholder": "Search documents...",
   "copy": "Copy",
   "copied": "Copied",
   "dict": "Dictionary",
@@ -350,7 +349,6 @@
   "parentDocDesc": "Select parent document for annotations",
   "tabInterface": "Interface",
   "tabAppearance": "Appearance",
-  "viewDetail": "View Details",
   "copySettings": "Copy Settings",
   "noteInsert": "Note Insert",
   "noteInsertTarget": "Insert Target",
@@ -390,7 +388,6 @@
   "import": "Import",
   "bindDoc": "Bind Document",
   "imported": "Imported",
-  "importFailed": "Import failed",
   "noBindDoc": "No bound document",
   "openBlock": "Open Block",
   "bound": "Bound",
@@ -534,7 +531,7 @@
   "unread": "Unread",
   "reading": "Reading",
   "finished": "Finished",
-  "group": "Group",
+  "group": "Groups",
   "groups": "Groups",
   "recentRead": "Recently Read",
   "toolbarBack": "Back",
@@ -615,233 +612,216 @@
   "copyText": "Copy Text",
   "copyChapter": "Copy Chapter",
   "pdfKeepTool": "Keep the selected tool active after drawing",
-  "copyBacklink": "Copy Backlink",
+  "copyBacklink": "Copy backlink",
   "redaction": "Redaction",
-  "copyScreenshot": "Copy Screenshot",
-  "copyImage": "Copy Image",
-  "exportImage": "Export Image",
-  "markImage": "Annotate Image",
-  "copyTable": "Copy Table",
-  "locateTable": "Locate Table"
-  ,"ttsOfflinePack": "Offline Voice Pack"
-  ,"ttsOfflinePackDesc": "Download for offline TTS"
-  ,"intro": "Introduction"
-  ,"addToShelf": "Add to Shelf"
-  ,"downloadAddToShelf": "Download to Shelf"
-  ,"pdfThumbnailsOnly": "Thumbnails are available for PDF only"
-  ,"unnamedChapter": "Unnamed chapter"
-  ,"copyFailed": "Copy failed"
-  ,"exportFailed": "Export failed"
-  ,"copiedText": "Text copied"
-  ,"pdfCopyChapterUnsupported": "PDF does not support copying chapter text from the table of contents"
-  ,"copiedChapter": "Chapter text copied"
-  ,"copyChapterFailed": "Failed to copy chapter text"
-  ,"bookmarkUnavailable": "Bookmark feature is not initialized"
-  ,"bookmarkAdded": "Bookmark added"
-  ,"bookmarkRemoved": "Bookmark removed"
-  ,"operationFailed": "Operation failed"
-  ,"filterAnnotations": "Filter annotations"
-  ,"reverseSort": "Reverse sort"
-  ,"resetFilter": "Reset filters"
-  ,"done": "Done"
-  ,"marksSearchPlaceholder": "Search annotations, notes, bookmarks, ink, and shapes"
-  ,"filtering": "Filtering"
-  ,"allAnnotations": "All annotations"
-  ,"showPdfAnnotations": "Show PDF annotations"
-  ,"hidePdfAnnotations": "Hide PDF annotations"
-  ,"type": "Type"
-  ,"textStyle": "Text Style"
-  ,"additionalCondition": "Additional condition"
-  ,"withNote": "With notes"
-  ,"noBooks": "No books"
-  ,"noContent": "No content"
-  ,"updated": "Updated"
-  ,"marksUnavailable": "Annotation system is not initialized"
-  ,"deleteFailed": "Delete failed"
-  ,"bookNotFound": "Book not found"
-  ,"sortTime": "Time"
-  ,"sortDate": "Date"
-  ,"sortChapter": "Chapter"
-  ,"sortPage": "Page"
-  ,"sortName": "Name"
-  ,"sortCustom": "Custom"
-  ,"invalidBookLink": "Invalid book link"
-  ,"fileNotFound": "File not found"
-  ,"addFailed": "Failed to add"
-  ,"ttsReading": "Reading aloud"
-  ,"onlineUrlEmpty": "Online reading URL is empty"
-  ,"prevPage": "Previous page"
-  ,"nextPage": "Next page"
-  ,"toggleBookmark": "Toggle bookmark"
-  ,"quickNote": "Quick note"
-  ,"unknownAuthor": "Unknown Author"
-  ,"unnamedBook": "Unnamed book"
-  ,"readingCompleteMotto": "Reading complete"
-  ,"openingMotto": "A good book awaits"
-  ,"readingComplete": "Reading complete"
-  ,"readyToRead": "Ready to read"
-  ,"booksUnit": "books"
-  ,"failed": "Failed"
-  ,"parsing": "Parsing..."
-  ,"pendingImport": "Pending import"
-  ,"noContentFound": "No content found"
-  ,"emptyBookshelfHint": "No books yet. Click Add Content in the top right."
-  ,"confirmDelete": "Delete"
-  ,"deletePermanently": "Delete permanently"
-  ,"confirmDeletePermanently": "Confirm permanent deletion"
-  ,"enterLinks": "Enter Links"
-  ,"importLinksPlaceholder": "One local path, file link, web URL, or cloud link per line"
-  ,"parseLinks": "Parse Links"
-  ,"cloudPathPlaceholder": "Enter cloud path"
-  ,"keywordPlaceholder": "Enter keywords to search"
-  ,"input": "Input"
-  ,"browseAll": "Browse All"
-  ,"selectAllImport": "Select All"
-  ,"deselectAll": "Deselect All"
-  ,"importSettings": "Import Settings"
-  ,"tagsCommaPlaceholder": "Add tags, separated by commas"
-  ,"searchGroups": "Search groups..."
-  ,"groupSort": "Group Order"
-  ,"existingGroups": "Existing Groups"
-  ,"resetOrganize": "Reset"
-  ,"noGroups": "No groups"
-  ,"sourceText": "Source text"
-  ,"translatedText": "Translation"
-  ,"targetLanguage": "Target language"
-  ,"translating": "Translating..."
-  ,"translationFailed": "Translation failed"
-  ,"annotationAdded": "Annotation added"
-  ,"adding": "Adding..."
-  ,"addAsAnnotation": "Add as annotation"
-  ,"ttsControl": "Reading controls"
-  ,"expandTts": "Expand reading controls"
-  ,"cover": "Cover"
-  ,"ttsReadingTitle": "Reading aloud"
-  ,"ttsPaused": "Paused"
-  ,"previousSentence": "Previous sentence"
-  ,"nextSentence": "Next sentence"
-  ,"pause": "Pause"
-  ,"play": "Play"
-  ,"voice": "Voice"
-  ,"showTopToolbar": "Show top toolbar"
-  ,"hideTopToolbar": "Hide top toolbar"
-  ,"pdfOperationFailed": "PDF operation failed"
-  ,"annotationMigrationDone": "Annotation migration complete"
-  ,"annotationMigrating": "Migrating annotations"
-  ,"pdfAnnotationCommitFailed": "Failed to commit PDF annotations. Export diagnostic logs for details."
-  ,"pdfAnnotationReadFailed": "Failed to read PDF annotations. Existing records were preserved. Export diagnostic logs for details."
-  ,"pdfAnnotationSaveFailed": "Failed to save PDF annotations. Export diagnostic logs for details."
-  ,"loadingQr": "Loading QR code..."
-  ,"membershipQr": "Membership QR code"
-  ,"downloading": "Downloading"
-  ,"downloaded": "Downloaded"
-  ,"downloadVoicePack": "Download Voice Pack"
-  ,"previousResult": "Previous result"
-  ,"nextResult": "Next result"
-  ,"jumpToProgress": "Jump to reading progress"
-  ,"quickMark": "Quick annotation"
-  ,"exitQuickMark": "Exit quick annotation"
-  ,"sidebarToc": "Table of Contents"
-  ,"sidebarAnnotation": "Annotations"
-  ,"sidebarSettings": "Settings"
-  ,"permanent": "Permanent"
-  ,"validUntil": "Valid until"
-  ,"copy": "Copy"
-  ,"copied": "Copied"
-  ,"copyFailed": "Copy failed"
-  ,"noContent": "No content"
-  ,"translate": "Translate"
-  ,"dict": "Dictionary"
-  ,"capture": "Drag to select a screenshot area"
-  ,"close": "Close"
-  ,"copyScreenshot": "Copy screenshot"
-  ,"copyBacklink": "Copy backlink"
-  ,"sendTo": "Send to"
-  ,"redaction": "Redaction"
-  ,"pdfKeepTool": "Keep the selected tool active after drawing"
-  ,"copyImage": "Copy image"
-  ,"exportImage": "Export image"
-  ,"markImage": "Annotate image"
-  ,"copyTable": "Copy table"
-  ,"locateTable": "Locate table"
-  ,"pdfCopyAnnotationLink": "Copy annotation backlink"
-  ,"pdfDictAnnotation": "Annotation dictionary"
-  ,"pdfTranslateAnnotation": "Translate annotation"
-  ,"pdfCreateHole": "Redact selection"
-  ,"pdfDictSelection": "Selection dictionary"
-  ,"pdfTranslateSelection": "Translate selection"
-  ,"pdfSendSelection": "Send selection"
-  ,"pdfSendAnnotation": "Send annotation"
-  ,"pdfCaptureCopy": "Copy screenshot"
-  ,"pdfZoomIn": "Zoom in"
-  ,"pdfZoomOut": "Zoom out"
-  ,"pdfFitPage": "Fit page"
-  ,"pdfFitWidth": "Fit width"
-  ,"pdfMarqueeZoom": "Marquee zoom"
-  ,"pdfRotateClockwise": "Rotate clockwise"
-  ,"pdfRotateCounterClockwise": "Rotate counter-clockwise"
-  ,"pdfPreviousPage": "Previous page"
-  ,"pdfNextPage": "Next page"
-  ,"annotation": "Annotation"
-  ,"mark": "Annotation"
-  ,"operationFailed": "Operation failed"
-  ,"copyImageFailed": "Copy image failed"
-  ,"jumpFailed": "Jump failed"
-  ,"bookMissing": "No book provided"
-  ,"pdfFileMissing": "PDF file is missing"
-  ,"page": "Page"
-  ,"pageSuffix": ""
-  ,"addContent": "Add Content"
-  ,"organizeBookshelf": "Organize Bookshelf"
-  ,"bookDetails": "Book Details"
-  ,"editBook": "Edit Book"
-  ,"editGroup": "Edit Group"
-  ,"bookshelf": "Bookshelf"
-  ,"selectedCount": "Selected"
-  ,"selectAll": "Select all"
-  ,"invertSelection": "Invert selection"
-  ,"exit": "Exit"
-  ,"rating": "Rating"
-  ,"status": "Status"
-  ,"tags": "Tags"
-  ,"group": "Groups"
-  ,"completingData": "Completing data"
-  ,"completeData": "Complete data"
-  ,"remove": "Remove"
-  ,"tagsPlaceholder": "Tags, separated by commas"
-  ,"clearTags": "Clear tags"
-  ,"tagsCleared": "Tags cleared"
-  ,"add": "Add"
-  ,"replace": "Replace"
-  ,"addToGroup": "Add to group"
-  ,"removeFromGroup": "Remove from group"
-  ,"setGroup": "Set groups"
-  ,"removeAllGroups": "Remove from all groups"
-  ,"groupsRemoved": "Removed from groups"
-  ,"dictYoudaoDesc": "English-Chinese dictionary, simple and fast"
-  ,"dictBingDesc": "Bing dictionary web edition"
-  ,"dictCambridgeDesc": "Bilingual dictionary with pronunciation"
-  ,"dictHaiciDesc": "English-Chinese dictionary with rich examples"
-  ,"dictMxnzpDesc": "Chinese character dictionary with detailed definitions"
-  ,"dictCiyuDesc": "Chinese phrases and idioms"
-  ,"dictZdicDesc": "Chinese character and phrase lookup"
-  ,"ttsFavoriteVoices": "My voices"
-  ,"ttsVoiceList": "Online voices"
-  ,"ttsCurrentVoice": "Current"
-  ,"ttsOnlineHint": "Click a voice to select it, or click the star to favorite it"
-  ,"ttsNoFavorites": "No favorite voices yet. Choose one below to add it"
-  ,"ttsNoVoices": "No voices"
-  ,"ttsLoadVoices": "Load voices"
-  ,"ttsFavorite": "Favorite"
-  ,"ttsUnfavorite": "Unfavorite"
-  ,"format": "Format"
-  ,"allRatings": "All ratings"
-  ,"fiveStarsOnly": "5 stars only"
-  ,"stars": "stars"
-  ,"sortByAdded": "Recently added"
-  ,"sortByProgress": "Reading progress"
-  ,"sortByRating": "Rating"
-  ,"sortByReadTime": "Reading time"
-  ,"recentReading": "Recent reading"
-  ,"continueReading": "Continue reading a recently opened book"
+  "copyScreenshot": "Copy screenshot",
+  "copyImage": "Copy image",
+  "exportImage": "Export image",
+  "markImage": "Annotate image",
+  "copyTable": "Copy table",
+  "locateTable": "Locate table",
+  "ttsOfflinePack": "Offline Voice Pack",
+  "ttsOfflinePackDesc": "Download for offline TTS",
+  "intro": "Introduction",
+  "downloadAddToShelf": "Download to Shelf",
+  "pdfThumbnailsOnly": "Thumbnails are available for PDF only",
+  "unnamedChapter": "Unnamed chapter",
+  "copyFailed": "Copy failed",
+  "exportFailed": "Export failed",
+  "copiedText": "Text copied",
+  "pdfCopyChapterUnsupported": "PDF does not support copying chapter text from the table of contents",
+  "copiedChapter": "Chapter text copied",
+  "copyChapterFailed": "Failed to copy chapter text",
+  "bookmarkUnavailable": "Bookmark feature is not initialized",
+  "bookmarkAdded": "Bookmark added",
+  "bookmarkRemoved": "Bookmark removed",
+  "operationFailed": "Operation failed",
+  "filterAnnotations": "Filter annotations",
+  "reverseSort": "Reverse sort",
+  "resetFilter": "Reset filters",
+  "done": "Done",
+  "marksSearchPlaceholder": "Search annotations, notes, bookmarks, ink, and shapes",
+  "filtering": "Filtering",
+  "allAnnotations": "All annotations",
+  "showPdfAnnotations": "Show PDF annotations",
+  "hidePdfAnnotations": "Hide PDF annotations",
+  "type": "Type",
+  "textStyle": "Text Style",
+  "additionalCondition": "Additional condition",
+  "withNote": "With notes",
+  "noBooks": "No books",
+  "noContent": "No content",
+  "updated": "Updated",
+  "marksUnavailable": "Annotation system is not initialized",
+  "deleteFailed": "Delete failed",
+  "bookNotFound": "Book not found",
+  "sortPage": "Page",
+  "sortName": "Name",
+  "sortCustom": "Custom",
+  "invalidBookLink": "Invalid book link",
+  "fileNotFound": "File not found",
+  "ttsReading": "Reading aloud",
+  "onlineUrlEmpty": "Online reading URL is empty",
+  "prevPage": "Previous page",
+  "nextPage": "Next page",
+  "toggleBookmark": "Toggle bookmark",
+  "quickNote": "Quick note",
+  "unknownAuthor": "Unknown Author",
+  "unnamedBook": "Unnamed book",
+  "readingCompleteMotto": "Reading complete",
+  "openingMotto": "A good book awaits",
+  "readingComplete": "Reading complete",
+  "readyToRead": "Ready to read",
+  "booksUnit": "books",
+  "failed": "Failed",
+  "parsing": "Parsing...",
+  "pendingImport": "Pending import",
+  "noContentFound": "No content found",
+  "emptyBookshelfHint": "No books yet. Click Add Content in the top right.",
+  "confirmDelete": "Delete",
+  "deletePermanently": "Delete permanently",
+  "confirmDeletePermanently": "Confirm permanent deletion",
+  "enterLinks": "Enter Links",
+  "importLinksPlaceholder": "One local path, file link, web URL, or cloud link per line",
+  "parseLinks": "Parse Links",
+  "cloudPathPlaceholder": "Enter cloud path",
+  "keywordPlaceholder": "Enter keywords to search",
+  "input": "Input",
+  "browseAll": "Browse All",
+  "selectAllImport": "Select All",
+  "deselectAll": "Deselect All",
+  "importSettings": "Import Settings",
+  "tagsCommaPlaceholder": "Add tags, separated by commas",
+  "searchGroups": "Search groups...",
+  "groupSort": "Group Order",
+  "existingGroups": "Existing Groups",
+  "resetOrganize": "Reset",
+  "noGroups": "No groups",
+  "sourceText": "Source text",
+  "translatedText": "Translation",
+  "targetLanguage": "Target language",
+  "translating": "Translating...",
+  "translationFailed": "Translation failed",
+  "annotationAdded": "Annotation added",
+  "adding": "Adding...",
+  "addAsAnnotation": "Add as annotation",
+  "ttsControl": "Reading controls",
+  "expandTts": "Expand reading controls",
+  "cover": "Cover",
+  "ttsReadingTitle": "Reading aloud",
+  "ttsPaused": "Paused",
+  "previousSentence": "Previous sentence",
+  "nextSentence": "Next sentence",
+  "pause": "Pause",
+  "play": "Play",
+  "voice": "Voice",
+  "showTopToolbar": "Show top toolbar",
+  "hideTopToolbar": "Hide top toolbar",
+  "pdfOperationFailed": "PDF operation failed",
+  "annotationMigrationDone": "Annotation migration complete",
+  "annotationMigrating": "Migrating annotations",
+  "pdfAnnotationCommitFailed": "Failed to commit PDF annotations. Export diagnostic logs for details.",
+  "pdfAnnotationReadFailed": "Failed to read PDF annotations. Existing records were preserved. Export diagnostic logs for details.",
+  "pdfAnnotationSaveFailed": "Failed to save PDF annotations. Export diagnostic logs for details.",
+  "loadingQr": "Loading QR code...",
+  "membershipQr": "Membership QR code",
+  "downloading": "Downloading",
+  "downloaded": "Downloaded",
+  "downloadVoicePack": "Download Voice Pack",
+  "previousResult": "Previous result",
+  "nextResult": "Next result",
+  "jumpToProgress": "Jump to reading progress",
+  "quickMark": "Quick annotation",
+  "exitQuickMark": "Exit quick annotation",
+  "permanent": "Permanent",
+  "validUntil": "Valid until",
+  "translate": "Translate",
+  "capture": "Drag to select a screenshot area",
+  "pdfCopyAnnotationLink": "Copy annotation backlink",
+  "pdfDictAnnotation": "Annotation dictionary",
+  "pdfTranslateAnnotation": "Translate annotation",
+  "pdfCreateHole": "Redact selection",
+  "pdfDictSelection": "Selection dictionary",
+  "pdfTranslateSelection": "Translate selection",
+  "pdfSendSelection": "Send selection",
+  "pdfSendAnnotation": "Send annotation",
+  "pdfCaptureCopy": "Copy screenshot",
+  "pdfZoomIn": "Zoom in",
+  "pdfZoomOut": "Zoom out",
+  "pdfFitPage": "Fit page",
+  "pdfFitWidth": "Fit width",
+  "pdfMarqueeZoom": "Marquee zoom",
+  "pdfRotateClockwise": "Rotate clockwise",
+  "pdfRotateCounterClockwise": "Rotate counter-clockwise",
+  "pdfPreviousPage": "Previous page",
+  "pdfNextPage": "Next page",
+  "copyImageFailed": "Copy image failed",
+  "jumpFailed": "Jump failed",
+  "bookMissing": "No book provided",
+  "pdfFileMissing": "PDF file is missing",
+  "addContent": "Add Content",
+  "organizeBookshelf": "Organize Bookshelf",
+  "editBook": "Edit Book",
+  "editGroup": "Edit Group",
+  "selectedCount": "Selected",
+  "selectAll": "Select all",
+  "invertSelection": "Invert selection",
+  "exit": "Exit",
+  "rating": "Rating",
+  "status": "Status",
+  "tags": "Tags",
+  "completingData": "Completing data",
+  "completeData": "Complete data",
+  "tagsPlaceholder": "Tags, separated by commas",
+  "clearTags": "Clear tags",
+  "tagsCleared": "Tags cleared",
+  "add": "Add",
+  "replace": "Replace",
+  "addToGroup": "Add to group",
+  "removeFromGroup": "Remove from group",
+  "setGroup": "Set groups",
+  "removeAllGroups": "Remove from all groups",
+  "groupsRemoved": "Removed from groups",
+  "dictYoudaoDesc": "English-Chinese dictionary, simple and fast",
+  "dictBingDesc": "Bing dictionary web edition",
+  "dictCambridgeDesc": "Bilingual dictionary with pronunciation",
+  "dictHaiciDesc": "English-Chinese dictionary with rich examples",
+  "dictMxnzpDesc": "Chinese character dictionary with detailed definitions",
+  "dictCiyuDesc": "Chinese phrases and idioms",
+  "dictZdicDesc": "Chinese character and phrase lookup",
+  "ttsFavoriteVoices": "My voices",
+  "ttsVoiceList": "Online voices",
+  "ttsCurrentVoice": "Current",
+  "ttsOnlineHint": "Click a voice to select it, or click the star to favorite it",
+  "ttsNoFavorites": "No favorite voices yet. Choose one below to add it",
+  "ttsNoVoices": "No voices",
+  "ttsLoadVoices": "Load voices",
+  "ttsFavorite": "Favorite",
+  "ttsUnfavorite": "Unfavorite",
+  "format": "Format",
+  "allRatings": "All ratings",
+  "fiveStarsOnly": "5 stars only",
+  "stars": "stars",
+  "sortByAdded": "Recently added",
+  "sortByProgress": "Reading progress",
+  "sortByRating": "Rating",
+  "sortByReadTime": "Reading time",
+  "recentReading": "Recent reading",
+  "continueReading": "Continue reading a recently opened book",
+  "ttsNext": "Next sentence",
+  "ttsPreparing": "Preparing",
+  "ttsPrev": "Previous sentence",
+  "ttsRestart": "Read from current page",
+  "ttsStyle": "Style",
+  "ttsStyle_affectionate": "Affectionate",
+  "ttsStyle_assistant": "Assistant",
+  "ttsStyle_calm": "Calm",
+  "ttsStyle_chat": "Chat",
+  "ttsStyle_cheerful": "Cheerful",
+  "ttsStyle_customerservice": "Customer Service",
+  "ttsStyle_general": "General",
+  "ttsStyle_gentle": "Gentle",
+  "ttsStyle_lyrical": "Lyrical",
+  "ttsStyle_newscast": "Newscast",
+  "ttsStyle_serious": "Serious"
 }
